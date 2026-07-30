@@ -1,10 +1,74 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\Auth\RegisterController;
+use App\Http\Controllers\Loans\LoanBookController;
+use Illuminate\Support\Facades\Auth;
 
+// Root: redirect based on auth state
 Route::get('/', function () {
-    return view('welcome');
+    return Auth::check()
+        ? redirect()->route('home')
+        : redirect()->route('login');
 });
+
+/*
+|--------------------------------------------------------------------------
+| Authentication
+|--------------------------------------------------------------------------
+*/
+
+// Guest-only routes
+Route::middleware('guest')->group(function () {
+    Route::get('login',  [LoginController::class, 'showLoginForm'])->name('login');
+    Route::post('login', [LoginController::class, 'login']);
+
+    Route::get('register',  [RegisterController::class, 'showRegistrationForm'])->name('register');
+    Route::post('register', [RegisterController::class, 'register']);
+});
+
+// Logout
+Route::post('logout', [LoginController::class, 'logout'])->middleware('auth')->name('logout');
+
+// Authenticated routes
+Route::middleware('auth')->group(function () {
+
+    // Home landing page — redirects into the Finance dashboard
+    Route::get('home', fn() => redirect()->route('finance.dashboard'))->name('home');
+
+    // Session management
+    Route::post('session/check',     [LoginController::class, 'checkSession'])->name('session.check');
+    Route::post('session/heartbeat', [LoginController::class, 'heartbeat'])->name('session.heartbeat');
+
+    // Draft management
+    Route::prefix('draft')->name('draft.')->group(function () {
+        Route::post('/',       [LoginController::class, 'saveDraft'])->name('save');
+        Route::get('{key}',    [LoginController::class, 'getDraft'])->name('get');
+        Route::delete('{key}', [LoginController::class, 'deleteDraft'])->name('delete');
+    });
+});
+
+
+/*
+|--------------------------------------------------------------------------
+| Loans (Loan Book)
+|--------------------------------------------------------------------------
+*/
+
+Route::prefix('loans/loan-book')
+    ->name('loans.loan-book.')
+    ->middleware(['auth'])
+    ->group(function () {
+        Route::get('/', [LoanBookController::class, 'index'])->name('index');
+
+        Route::post('/upload-pms', [LoanBookController::class, 'uploadPms'])->name('upload-pms');
+        Route::post('/upload-loan-details', [LoanBookController::class, 'uploadLoanDetails'])->name('upload-loan-details');
+        Route::post('/process', [LoanBookController::class, 'process'])->name('process');
+
+        Route::get('/{run}/download', [LoanBookController::class, 'download'])->name('download');
+        Route::get('/{run}', [LoanBookController::class, 'show'])->name('show');
+    });
 
 
 /*
