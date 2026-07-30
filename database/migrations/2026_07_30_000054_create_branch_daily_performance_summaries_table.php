@@ -48,15 +48,15 @@ return new class extends Migration {
             $table->date('mtd_reference_date')->nullable();
             $table->date('ytd_reference_date')->nullable();
 
-            $table->unsignedInteger('total_cifs')->default(0)->after('ytd_reference_date');
-            $table->unsignedInteger('total_accounts')->default(0)->after('total_cifs');
-            $table->unsignedInteger('dormant_accounts')->default(0)->after('total_accounts');
-            $table->decimal('dormancy_rate', 8, 2)->default(0)->after('dormant_accounts');
+            $table->unsignedInteger('total_cifs')->default(0);
+            $table->unsignedInteger('total_accounts')->default(0);
+            $table->unsignedInteger('dormant_accounts')->default(0);
+            $table->decimal('dormancy_rate', 8, 2)->default(0);
 
-            $table->decimal('mtd_loan_movement', 20, 2)->nullable()->after('dormancy_rate');
-            $table->decimal('ytd_loan_movement', 20, 2)->nullable()->after('mtd_loan_movement');
-            $table->date('mtd_loan_reference_date')->nullable()->after('ytd_loan_movement');
-            $table->date('ytd_loan_reference_date')->nullable()->after('mtd_loan_reference_date');
+            $table->decimal('mtd_loan_movement', 20, 2)->nullable();
+            $table->decimal('ytd_loan_movement', 20, 2)->nullable();
+            $table->date('mtd_loan_reference_date')->nullable();
+            $table->date('ytd_loan_reference_date')->nullable();
 
             $table->timestamp('last_built_at')->nullable();
 

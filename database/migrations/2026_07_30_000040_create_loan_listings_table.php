@@ -16,8 +16,8 @@ return new class extends Migration {
             $table->string('cif')->nullable();
             $table->string('name')->nullable();
             $table->string('branch', 100)->nullable();
-            $table->string('source_type', 50)->nullable()->after('branch');
-            $table->string('branch_name', 150)->nullable()->after('source_type');
+            $table->string('source_type', 50)->nullable();
+            $table->string('branch_name', 150)->nullable();
 
             $table->string('currency', 10)->default('KES');
             $table->string('currency_type', 3)->default('LCY'); // LCY|FCY

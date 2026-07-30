@@ -12,7 +12,7 @@ return new class extends Migration {
 
             $table->string('filename');
             $table->string('original_name');
-            $table->string('ytd_label')->nullable()->after('original_name');
+            $table->string('ytd_label')->nullable();
 
             $table->timestamps();
         });

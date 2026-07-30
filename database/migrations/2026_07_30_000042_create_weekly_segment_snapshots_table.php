@@ -18,10 +18,10 @@ return new class extends Migration {
             $table->string('segment_code', 10)->index(); // CB | CM | CS | OT | ALL
             $table->string('sub_segment_name', 255)->default('');
 
-            $table->decimal('bank_weekly_mv', 24, 2)->default(0)->after('sub_segment_name');
-            $table->decimal('bank_mtd_mv', 24, 2)->default(0)->after('bank_weekly_mv');
-            $table->decimal('bank_ytd_mv', 24, 2)->default(0)->after('bank_mtd_mv');
-            $table->decimal('bank_total_deposits', 24, 2)->default(0)->after('bank_ytd_mv');
+            $table->decimal('bank_weekly_mv', 24, 2)->default(0);
+            $table->decimal('bank_mtd_mv', 24, 2)->default(0);
+            $table->decimal('bank_ytd_mv', 24, 2)->default(0);
+            $table->decimal('bank_total_deposits', 24, 2)->default(0);
 
             $table->decimal('lcy_weekly_mv', 24, 2)->default(0);
             $table->decimal('lcy_mtd_mv', 24, 2)->default(0);

@@ -13,7 +13,7 @@ return new class extends Migration {
             $table->date('start_date');
             $table->date('end_date');
             $table->string('currency_type')->default('LCY');
-            $table->string('scope', 20)->default('cif_currency')->after('currency_type');
+            $table->string('scope', 20)->default('cif_currency');
 
             $table->foreignId('business_unit_id')->nullable()
                 ->constrained('business_units')->nullOnDelete();
@@ -24,7 +24,7 @@ return new class extends Migration {
             // varchar(30) indexed — the later, more specific of two conflicting
             // definitions in the source monolith's migration history.
             $table->string('cif', 30)->nullable();
-            $table->string('customer_name', 255)->nullable()->after('cif');
+            $table->string('customer_name', 255)->nullable();
             $table->string('name')->nullable();
             $table->string('business')->nullable();
 

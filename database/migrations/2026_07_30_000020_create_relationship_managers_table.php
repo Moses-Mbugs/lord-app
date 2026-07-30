@@ -13,8 +13,8 @@ return new class extends Migration {
             $table->string('staff_number', 20)->unique();
             $table->string('rm_code', 10)->unique();
             $table->string('name');
-            $table->string('segment', 50)->nullable()->after('name')->index();
-            $table->string('subsegment', 50)->nullable()->after('segment')->index();
+            $table->string('segment', 50)->nullable()->index();
+            $table->string('subsegment', 50)->nullable()->index();
 
             $table->timestamps();
         });

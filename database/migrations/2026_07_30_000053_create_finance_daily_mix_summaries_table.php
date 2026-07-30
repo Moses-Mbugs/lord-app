@@ -11,9 +11,9 @@ return new class extends Migration {
             $table->id();
 
             $table->date('balance_date');
-            $table->string('summary_scope', 20)->default('OVERALL')->after('balance_date');
-            $table->string('segment_code', 10)->default('ALL')->after('summary_scope');
-            $table->string('segment_name', 100)->default('Overall')->after('segment_code');
+            $table->string('summary_scope', 20)->default('OVERALL');
+            $table->string('segment_code', 10)->default('ALL');
+            $table->string('segment_name', 100)->default('Overall');
 
             $table->decimal('lcy_amount', 20, 2)->default(0);
             $table->decimal('fcy_amount', 20, 2)->default(0);
