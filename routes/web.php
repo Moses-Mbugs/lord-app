@@ -4,6 +4,8 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Loans\LoanBookController;
+use App\Http\Controllers\HomeController;
+use App\Http\Controllers\Admin\RoleManagementController;
 use Illuminate\Support\Facades\Auth;
 
 // Root: redirect based on auth state
@@ -34,8 +36,8 @@ Route::post('logout', [LoginController::class, 'logout'])->middleware('auth')->n
 // Authenticated routes
 Route::middleware('auth')->group(function () {
 
-    // Home landing page — redirects into the Finance dashboard
-    Route::get('home', fn() => redirect()->route('finance.dashboard'))->name('home');
+    // Home landing page — module picker (Finance / Loans)
+    Route::get('home', [HomeController::class, 'index'])->name('home');
 
     // Session management
     Route::post('session/check',     [LoginController::class, 'checkSession'])->name('session.check');
@@ -46,6 +48,16 @@ Route::middleware('auth')->group(function () {
         Route::post('/',       [LoginController::class, 'saveDraft'])->name('save');
         Route::get('{key}',    [LoginController::class, 'getDraft'])->name('get');
         Route::delete('{key}', [LoginController::class, 'deleteDraft'])->name('delete');
+    });
+
+    // Users & Roles management — admin only
+    Route::prefix('admin')->name('admin.')->middleware('role:admin')->group(function () {
+        Route::prefix('roles')->name('roles.')->group(function () {
+            Route::get('/', [RoleManagementController::class, 'index'])->name('index');
+            Route::post('/', [RoleManagementController::class, 'storeRole'])->name('store');
+            Route::delete('{role}', [RoleManagementController::class, 'destroyRole'])->name('destroy');
+            Route::post('{user}/sync', [RoleManagementController::class, 'syncRoles'])->name('sync');
+        });
     });
 });
 
