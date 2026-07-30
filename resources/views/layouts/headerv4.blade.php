@@ -65,7 +65,12 @@
 
         <li class="nav-item dropdown has-arrow main-drop">
             <a href="#" class="dropdown-toggle nav-link" data-toggle="dropdown">
-                <span class="user-img"><img @if(empty(Auth::user()->photo_bio)) src="{{asset('images/default.gif')}}" @else src="{{asset('files/USER-'.Auth::id().'.jpg')}}"  @endif alt="">
+                <span class="user-img">
+                    @if(!empty(Auth::user()->photo_bio))
+                        <img src="{{asset('files/USER-'.Auth::id().'.jpg')}}" alt="">
+                    @else
+                        <span style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;background:#0082BB;color:#fff;font-weight:700;font-size:13px;">{{ strtoupper(substr(Auth::user()->name ?? 'U', 0, 1)) }}</span>
+                    @endif
                 <span class="status online"></span></span>
                 <span>@auth {{Auth::user()->name}} @else uplifted @endif</span>
             </a>
