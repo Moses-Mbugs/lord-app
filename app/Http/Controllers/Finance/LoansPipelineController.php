@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Finance;
 
 use App\Http\Controllers\Controller;
-use App\Services\Reports\LoanDashboardService;
 use App\Services\Reports\LoanImportService;
 use App\Services\Reports\LoanMovementService;
 use App\Mail\LoanMovementReportMail;
@@ -15,16 +14,13 @@ use Illuminate\Support\Facades\Mail;
 
 class LoansPipelineController extends Controller
 {
-    public function index(LoanDashboardService $dashboard)
+    public function index()
     {
-        $asOfDate = $dashboard->latestDate();
-
         return view('finance.loans.pipeline', [
             'defaultDate' => now()->timezone('Africa/Nairobi')->toDateString(),
             'logLines'    => $this->readLastLogLines(200),
             'configTo'    => (array) config('reports.loans.to', []),
             'configCc'    => (array) config('reports.loans.cc', []),
-            'dashboard'   => $asOfDate ? $dashboard->buildDashboardPayload($asOfDate) : $dashboard->emptyPayload(),
         ]);
     }
 

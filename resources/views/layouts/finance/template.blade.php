@@ -44,9 +44,8 @@
     <link rel="stylesheet" href="{{ asset('assets/css/ecobank-theme.css') }}">
     <link rel="stylesheet" href="{{ asset('assets/css/style1.css') }}">
 
-    {{-- DataTables --}}
-    <link rel="stylesheet" href="{{ asset('assets/css/datatables/jquery.dataTables.min.css') }}">
-    <link rel="stylesheet" href="{{ asset('assets/css/datatables/buttons.dataTables.min.css') }}">
+    {{-- DataTables (only pulled in by pages that @push('datatables-styles')) --}}
+    @stack('datatables-styles')
 
     {{-- Toastr --}}
     <link rel="stylesheet" href="{{ asset('css/toastr.min.css') }}">
@@ -1157,17 +1156,10 @@
 
     {{-- Utilities --}}
     <script src="{{ asset('assets/js/feather.min.js') }}"></script>
-    <script src="{{ asset('assets/js/moment.js') }}"></script>
 
-    {{-- DataTables --}}
-    <script src="{{ asset('assets/js/datatables/jquery.dataTables.min.js') }}"></script>
-    <script src="{{ asset('assets/js/datatables/dataTables.buttons.min.js') }}"></script>
-    <script src="{{ asset('assets/js/datatables/jszip.min.js') }}"></script>
-    <script src="{{ asset('assets/js/datatables/pdfmake.min.js') }}"></script>
-    <script src="{{ asset('assets/js/datatables/vfs_fonts.js') }}"></script>
-    <script src="{{ asset('assets/js/datatables/buttons.html5.min.js') }}"></script>
-    <script src="{{ asset('assets/js/datatables/buttons.print.min.js') }}"></script>
-    <script src="{{ asset('vendor/datatables/buttons.server-side.js') }}"></script>
+    {{-- DataTables + moment (only pulled in by pages that @push('datatables-scripts') —
+         pdfmake/vfs_fonts alone are ~2MB and only 2 of ~23 Finance pages use DataTables at all) --}}
+    @stack('datatables-scripts')
 
     {{-- Toastr --}}
     <script src="{{ asset('js/toastr.min.js') }}"></script>

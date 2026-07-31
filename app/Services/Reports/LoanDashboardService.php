@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Reports;
 
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -65,6 +66,18 @@ class LoanDashboardService
     }
 
     public function buildDashboardPayload(string $asOfDate): array
+    {
+        // This scans 15 months of loan_listings on every call — as that
+        // table grows from daily imports, this gets slow enough to trip
+        // nginx's gateway timeout on every single page load. Cache it.
+        return Cache::remember(
+            "loan_dashboard_payload:{$asOfDate}",
+            now()->addMinutes(15),
+            fn () => $this->buildDashboardPayloadUncached($asOfDate)
+        );
+    }
+
+    private function buildDashboardPayloadUncached(string $asOfDate): array
     {
         $historyStart = Carbon::parse($asOfDate)->subMonths(15)->startOfMonth()->toDateString();
 

@@ -1067,6 +1067,22 @@
     </div>
 @endsection
 
+@push('datatables-styles')
+    <link rel="stylesheet" href="{{ asset('assets/css/datatables/jquery.dataTables.min.css') }}">
+    <link rel="stylesheet" href="{{ asset('assets/css/datatables/buttons.dataTables.min.css') }}">
+@endpush
+
+@push('datatables-scripts')
+    <script src="{{ asset('assets/js/datatables/jquery.dataTables.min.js') }}"></script>
+    <script src="{{ asset('assets/js/datatables/dataTables.buttons.min.js') }}"></script>
+    <script src="{{ asset('assets/js/datatables/jszip.min.js') }}"></script>
+    <script src="{{ asset('assets/js/datatables/pdfmake.min.js') }}"></script>
+    <script src="{{ asset('assets/js/datatables/vfs_fonts.js') }}"></script>
+    <script src="{{ asset('assets/js/datatables/buttons.html5.min.js') }}"></script>
+    <script src="{{ asset('assets/js/datatables/buttons.print.min.js') }}"></script>
+    <script src="{{ asset('vendor/datatables/buttons.server-side.js') }}"></script>
+@endpush
+
 @push('scripts')
     <script src="{{ asset('js/easter-egg.js') }}"></script>
 
