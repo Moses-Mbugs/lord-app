@@ -1,0 +1,251 @@
+/* Ecobank Theme CSS - extracted from the inline styles for reusability */
+
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap');
+
+:root {
+    /* Ecobank Colors */
+    --ecobank-light-blue: #0082BB;
+    --ecobank-dark-blue: #005B82;
+    --ecobank-light-green: #BED600;
+    --ecobank-dark-green: #669438;
+    --ecobank-gray: #464646;
+    --ecobank-light-gray: #EDEDED;
+    --ecobank-mid-gray: #979797;
+
+    /* Shadow Variables */
+    --card-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    --hover-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* Button Styles */
+.ecobank-btn {
+    padding: 8px 18px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+    display: inline-block;
+}
+
+.ecobank-btn-primary {
+    background-color: var(--ecobank-light-blue);
+    color: white;
+    border: 1px solid var(--ecobank-light-blue);
+}
+
+.ecobank-btn-primary:hover {
+    background-color: var(--ecobank-dark-blue);
+    border-color: var(--ecobank-dark-blue);
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: var(--card-shadow);
+}
+
+.ecobank-btn-secondary {
+    background-color: white;
+    color: var(--ecobank-light-blue);
+    border: 1px solid var(--ecobank-light-blue);
+}
+
+.ecobank-btn-secondary:hover {
+    background-color: #f0f9ff;
+    transform: translateY(-2px);
+    box-shadow: var(--card-shadow);
+}
+
+.ecobank-btn-success {
+    background-color: var(--ecobank-light-green);
+    color: var(--ecobank-dark-blue);
+    border: 1px solid var(--ecobank-light-green);
+}
+
+.ecobank-btn-success:hover {
+    background-color: var(--ecobank-dark-green);
+    border-color: var(--ecobank-dark-green);
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: var(--card-shadow);
+}
+
+/* Form Elements */
+.ecobank-form-control {
+    border: 1px solid var(--ecobank-light-gray);
+    border-radius: 6px;
+    padding: 10px 15px;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+}
+
+.ecobank-form-control:focus {
+    border-color: var(--ecobank-light-blue);
+    box-shadow: 0 0 0 0.15rem rgba(0, 130, 187, 0.2);
+}
+
+.ecobank-label {
+    font-weight: 600;
+    color: var(--ecobank-dark-blue);
+    margin-bottom: 8px;
+    display: block;
+}
+
+/* Tables */
+.ecobank-table {
+    width: 100%;
+    margin-bottom: 1rem;
+    border-collapse: collapse;
+}
+
+.ecobank-table th {
+    background-color: #f5f9fd;
+    color: var(--ecobank-dark-blue);
+    font-weight: 600;
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 2px solid var(--ecobank-light-blue);
+}
+
+.ecobank-table td {
+    padding: 12px 15px;
+    border-bottom: 1px solid var(--ecobank-light-gray);
+}
+
+.ecobank-table tr:hover {
+    background-color: #f9fbfd;
+}
+
+.ecobank-table tr:last-child td {
+    border-bottom: none;
+}
+
+/* Cards and Containers */
+.ecobank-card {
+    background: white;
+    border-radius: 12px;
+    box-shadow: var(--card-shadow);
+    padding: 20px;
+    margin-bottom: 20px;
+    border-top: 3px solid var(--ecobank-light-green);
+    transition: all 0.3s ease;
+}
+
+.ecobank-card:hover {
+    box-shadow: var(--hover-shadow);
+}
+
+.ecobank-card-header {
+    border-bottom: 1px solid var(--ecobank-light-gray);
+    padding-bottom: 15px;
+    margin-bottom: 15px;
+}
+
+.ecobank-card-title {
+    color: var(--ecobank-dark-blue);
+    font-weight: 600;
+    margin-bottom: 5px;
+}
+
+.ecobank-card-subtitle {
+    color: var(--ecobank-gray);
+    font-size: 0.9rem;
+}
+
+/* Badges and Tags */
+.ecobank-badge {
+    display: inline-block;
+    padding: 5px 10px;
+    border-radius: 50px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.ecobank-badge-primary {
+    background-color: rgba(0, 130, 187, 0.15);
+    color: var(--ecobank-light-blue);
+}
+
+.ecobank-badge-success {
+    background-color: rgba(190, 214, 0, 0.15);
+    color: var(--ecobank-dark-green);
+}
+
+.ecobank-badge-warning {
+    background-color: rgba(255, 193, 7, 0.15);
+    color: #997404;
+}
+
+.ecobank-badge-danger {
+    background-color: rgba(220, 53, 69, 0.15);
+    color: #842029;
+}
+
+/* Pagination */
+.ecobank-pagination {
+    display: flex;
+    list-style: none;
+    padding: 0;
+    margin: 20px 0;
+    justify-content: center;
+}
+
+.ecobank-pagination li {
+    margin: 0 5px;
+}
+
+.ecobank-pagination a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 35px;
+    height: 35px;
+    border-radius: 50%;
+    background-color: white;
+    color: var(--ecobank-gray);
+    text-decoration: none;
+    transition: all 0.2s;
+    border: 1px solid var(--ecobank-light-gray);
+}
+
+.ecobank-pagination a:hover {
+    background-color: #f0f9ff;
+    color: var(--ecobank-light-blue);
+}
+
+.ecobank-pagination a.active {
+    background-color: var(--ecobank-light-blue);
+    color: white;
+    border-color: var(--ecobank-light-blue);
+}
+
+/* Utility classes */
+.text-ecobank-primary {
+    color: var(--ecobank-light-blue) !important;
+}
+
+.text-ecobank-success {
+    color: var(--ecobank-light-green) !important;
+}
+
+.bg-ecobank-primary {
+    background-color: var(--ecobank-light-blue) !important;
+    color: white !important;
+}
+
+.bg-ecobank-secondary {
+    background-color: var(--ecobank-dark-blue) !important;
+    color: white !important;
+}
+
+.bg-ecobank-success {
+    background-color: var(--ecobank-light-green) !important;
+    color: var(--ecobank-dark-blue) !important;
+}
+
+.border-ecobank-primary {
+    border-color: var(--ecobank-light-blue) !important;
+}
+
+.border-ecobank-success {
+    border-color: var(--ecobank-light-green) !important;
+}
+

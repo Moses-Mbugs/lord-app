@@ -109,7 +109,7 @@ return [
 
     'from' => [
         'address' => env('MAIL_FROM_ADDRESS', 'noreplyeke@ecobank.com'),
-        'name' => env('MAIL_FROM_NAME', 'EKE FInance system'),
+        'name' => env('MAIL_FROM_NAME', 'EKE Finance System'),
     ],
 
     /*
