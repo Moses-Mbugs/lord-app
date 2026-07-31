@@ -52,7 +52,17 @@ class LoanImportService
         // Replace existing data for this date
         DB::table('loan_listings')->whereDate('as_at_date', $date)->delete();
 
-        $spreadsheet = IOFactory::load($realPath);
+        // maatwebsite/excel reconfigures PhpSpreadsheet's cell cache backend
+        // globally on boot, which affects this raw PhpSpreadsheet usage too.
+        // readDataOnly skips styles we never use; the raised limit is scoped
+        // to this request only.
+        if (function_exists('ini_set')) {
+            @ini_set('memory_limit', '512M');
+        }
+
+        $reader      = IOFactory::createReaderForFile($realPath);
+        $reader->setReadDataOnly(true);
+        $spreadsheet = $reader->load($realPath);
         $ws          = $spreadsheet->getSheetByName(self::SHEET_NAME);
 
         if (!$ws) {

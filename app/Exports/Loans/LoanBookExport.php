@@ -13,6 +13,14 @@ class LoanBookExport
 {
     public function generate(LoanBookRun $run, string $fileName): string
     {
+        // maatwebsite/excel reconfigures PhpSpreadsheet's cell cache backend
+        // globally on boot, which affects this raw Spreadsheet usage too even
+        // though it never calls the Maatwebsite facade directly. Scoped bump,
+        // not a server-wide config change.
+        if (function_exists('ini_set')) {
+            @ini_set('memory_limit', '512M');
+        }
+
         $spreadsheet = new Spreadsheet();
 
         $summarySheet = $spreadsheet->getActiveSheet();
