@@ -11,13 +11,22 @@ class ExcelParserService
     {
         $path = $this->getFilePath($file);
 
-$spreadsheet = IOFactory::load($path);
-$sheet = $spreadsheet->getActiveSheet();
+        // Loading large workbooks pulls the whole cell model into memory;
+        // readDataOnly skips styles/formatting we never use here, and the
+        // raised limit is scoped to this request only (not a server-wide change).
+        if (function_exists('ini_set')) {
+            @ini_set('memory_limit', '512M');
+        }
 
-$rows = $sheet->toArray(null, true, true, false);
+        $reader = IOFactory::createReaderForFile($path);
+        $reader->setReadDataOnly(true);
+        $spreadsheet = $reader->load($path);
+        $sheet = $spreadsheet->getActiveSheet();
 
-$spreadsheet->disconnectWorksheets();
-unset($spreadsheet);
+        $rows = $sheet->toArray(null, true, true, false);
+
+        $spreadsheet->disconnectWorksheets();
+        unset($spreadsheet);
 
         if (empty($rows)) {
             throw new Exception('The uploaded Excel file appears to be empty.');
