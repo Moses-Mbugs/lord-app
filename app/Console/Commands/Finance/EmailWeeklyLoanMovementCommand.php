@@ -89,7 +89,8 @@ class EmailWeeklyLoanMovementCommand extends Command
             10
         );
 
-        $monthlyMovement = $service->buildMonthlyMovement($data['periods']['week_end']);
+        $monthlyMovement  = $service->buildMonthlyMovement($data['periods']['week_end']);
+        $monthlyDrilldown = $service->buildMonthlyDrilldown($data['periods']['week_end']);
 
         Mail::to($to)
             ->cc($cc)
@@ -101,7 +102,8 @@ class EmailWeeklyLoanMovementCommand extends Command
                 $cc,
                 $weekTopMovers,
                 $mtdTopMovers,
-                $monthlyMovement
+                $monthlyMovement,
+                $monthlyDrilldown
             ));
 
         $this->info('Weekly loan movement email sent.');

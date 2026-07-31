@@ -389,26 +389,7 @@ class WeeklyLoanReportService
      */
     public function buildMonthlyMovement(string $asOfDate, int $months = 6): array
     {
-        $asOfDate = Carbon::parse($asOfDate)->toDateString();
-
-        $anchorDates  = [];
-        $anchorLabels = [];
-
-        for ($i = $months; $i >= 1; $i--) {
-            $monthEnd = Carbon::parse($asOfDate)->subMonthsNoOverflow($i)->endOfMonth()->toDateString();
-            $date     = $this->latestAvailableOnOrBefore($monthEnd);
-
-            if ($date !== null && !in_array($date, $anchorDates, true)) {
-                $anchorDates[]  = $date;
-                $anchorLabels[] = Carbon::parse($date)->format('M Y');
-            }
-        }
-
-        if (empty($anchorDates) || end($anchorDates) !== $asOfDate) {
-            $isMonthEnd     = $asOfDate === Carbon::parse($asOfDate)->endOfMonth()->toDateString();
-            $anchorDates[]  = $asOfDate;
-            $anchorLabels[] = Carbon::parse($asOfDate)->format('M Y') . ($isMonthEnd ? '' : ' (MTD)');
-        }
+        ['dates' => $anchorDates, 'labels' => $anchorLabels] = $this->resolveMonthlyAnchors($asOfDate, $months);
 
         if (count($anchorDates) < 2) {
             return ['monthLabels' => [], 'segments' => []];
@@ -494,6 +475,65 @@ class WeeklyLoanReportService
             'monthLabels' => $monthLabels,
             'segments'    => array_values($segments),
         ];
+    }
+
+    /**
+     * Per-month CIF drilldown to accompany buildMonthlyMovement() — same
+     * gainers/losers-per-sub-segment shape as drilldown(), just run once per
+     * consecutive pair of monthly anchor dates instead of a single period.
+     *
+     * @return array<string, array<string, array{gainers: Collection, losers: Collection}>>
+     *         keyed by month label (matching buildMonthlyMovement()'s monthLabels), in order
+     */
+    public function buildMonthlyDrilldown(string $asOfDate, int $months = 6, int $limit = 20): array
+    {
+        ['dates' => $anchorDates, 'labels' => $anchorLabels] = $this->resolveMonthlyAnchors($asOfDate, $months);
+
+        if (count($anchorDates) < 2) {
+            return [];
+        }
+
+        $result = [];
+
+        for ($i = 1; $i < count($anchorDates); $i++) {
+            $result[$anchorLabels[$i]] = $this->drilldown($anchorDates[$i - 1], $anchorDates[$i], $limit);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Resolves the anchor dates/labels shared by buildMonthlyMovement() and
+     * buildMonthlyDrilldown() — latest available as_at_date on/before the end
+     * of each of the trailing $months calendar months, plus $asOfDate itself
+     * as the final point.
+     *
+     * @return array{dates: string[], labels: string[]}
+     */
+    private function resolveMonthlyAnchors(string $asOfDate, int $months): array
+    {
+        $asOfDate = Carbon::parse($asOfDate)->toDateString();
+
+        $anchorDates  = [];
+        $anchorLabels = [];
+
+        for ($i = $months; $i >= 1; $i--) {
+            $monthEnd = Carbon::parse($asOfDate)->subMonthsNoOverflow($i)->endOfMonth()->toDateString();
+            $date     = $this->latestAvailableOnOrBefore($monthEnd);
+
+            if ($date !== null && !in_array($date, $anchorDates, true)) {
+                $anchorDates[]  = $date;
+                $anchorLabels[] = Carbon::parse($date)->format('M Y');
+            }
+        }
+
+        if (empty($anchorDates) || end($anchorDates) !== $asOfDate) {
+            $isMonthEnd     = $asOfDate === Carbon::parse($asOfDate)->endOfMonth()->toDateString();
+            $anchorDates[]  = $asOfDate;
+            $anchorLabels[] = Carbon::parse($asOfDate)->format('M Y') . ($isMonthEnd ? '' : ' (MTD)');
+        }
+
+        return ['dates' => $anchorDates, 'labels' => $anchorLabels];
     }
 
     /** Latest as_at_date on/before $date, or null if none exists. */

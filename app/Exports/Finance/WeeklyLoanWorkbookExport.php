@@ -23,7 +23,8 @@ class WeeklyLoanWorkbookExport implements WithMultipleSheets
         private readonly array $drilldown,
         private readonly array $weekTopMovers = ['gainers' => [], 'losers' => []],
         private readonly array $mtdTopMovers = ['gainers' => [], 'losers' => []],
-        private readonly array $monthlyMovement = ['monthLabels' => [], 'segments' => []]
+        private readonly array $monthlyMovement = ['monthLabels' => [], 'segments' => []],
+        private readonly array $monthlyDrilldown = []
     ) {}
 
     public function sheets(): array
@@ -38,7 +39,207 @@ class WeeklyLoanWorkbookExport implements WithMultipleSheets
             $sheets[] = new WeeklyLoanMonthlyMovementSheet($this->monthlyMovement);
         }
 
+        if (!empty($this->monthlyDrilldown)) {
+            $sheets[] = new WeeklyLoanMonthlyDrilldownSheet($this->monthlyDrilldown);
+        }
+
         return $sheets;
+    }
+}
+
+// =============================================================================
+// SHEET — Monthly CIF Drilldown (movers per sub-segment, sectioned by month)
+// =============================================================================
+
+class WeeklyLoanMonthlyDrilldownSheet implements FromArray, WithTitle, WithColumnWidths, WithEvents
+{
+    private array $mergeRows    = [];
+    private array $monthHdrRows = [];
+    private array $subHdrRows   = [];
+    private array $gainHdrRows  = [];
+    private array $lossHdrRows  = [];
+    private array $gainDataRows = [];
+    private array $lossDataRows = [];
+
+    /** @param array<string, array<string, array{gainers: \Illuminate\Support\Collection, losers: \Illuminate\Support\Collection}>> $monthlyDrilldown */
+    public function __construct(private readonly array $monthlyDrilldown) {}
+
+    public function title(): string { return 'Monthly CIF Drilldown'; }
+
+    public function columnWidths(): array
+    {
+        return ['A' => 6, 'B' => 16, 'C' => 34, 'D' => 10, 'E' => 10, 'F' => 18, 'G' => 18, 'H' => 20];
+    }
+
+    public function array(): array
+    {
+        $rows   = [];
+        $rowNum = 0;
+
+        $rows[] = ['MONTHLY PERFORMING LOAN CIF MOVERS BY SUB-SEGMENT  (LCY+FCY combined)', '', '', '', '', '', '', ''];
+        $this->mergeRows[] = ++$rowNum;
+
+        $rows[] = ['', '', '', '', '', '', '', ''];
+        $rowNum++;
+
+        foreach ($this->monthlyDrilldown as $monthLabel => $subSegments) {
+            $hasAny = false;
+            foreach ($subSegments as $buckets) {
+                if (($buckets['gainers'] ?? collect())->isNotEmpty() || ($buckets['losers'] ?? collect())->isNotEmpty()) {
+                    $hasAny = true;
+                    break;
+                }
+            }
+            if (!$hasAny) continue;
+
+            $rows[] = [strtoupper((string) $monthLabel), '', '', '', '', '', '', ''];
+            $this->mergeRows[]    = ++$rowNum;
+            $this->monthHdrRows[] = $rowNum;
+
+            foreach ($subSegments as $subSegName => $buckets) {
+                $gainers = $buckets['gainers'] ?? collect();
+                $losers  = $buckets['losers']  ?? collect();
+
+                if ($gainers->isEmpty() && $losers->isEmpty()) continue;
+
+                $rows[] = ['   ' . strtoupper((string) $subSegName), '', '', '', '', '', '', ''];
+                $this->mergeRows[]  = ++$rowNum;
+                $this->subHdrRows[] = $rowNum;
+
+                if ($gainers->isNotEmpty()) {
+                    $rows[] = ['▲  GAINERS', '', '', '', '', '', '', ''];
+                    $this->mergeRows[]   = ++$rowNum;
+                    $this->gainHdrRows[] = $rowNum;
+
+                    $rows[] = ['#', 'CIF', 'Customer Name', 'Branch', '', 'Start Balance', 'End Balance', 'Monthly Mv'];
+                    $this->gainHdrRows[] = ++$rowNum;
+
+                    foreach ($gainers as $i => $r) {
+                        $rows[] = [
+                            $i + 1,
+                            (string) ($r->cif           ?? ''),
+                            (string) ($r->customer_name ?? ''),
+                            (string) ($r->branch_code   ?? ''),
+                            '',
+                            (float)  ($r->start_balance ?? 0),
+                            (float)  ($r->end_balance   ?? 0),
+                            (float)  ($r->movement      ?? 0),
+                        ];
+                        $this->gainDataRows[] = ++$rowNum;
+                    }
+                }
+
+                if ($losers->isNotEmpty()) {
+                    $rows[] = ['▼  LOSERS', '', '', '', '', '', '', ''];
+                    $this->mergeRows[]   = ++$rowNum;
+                    $this->lossHdrRows[] = $rowNum;
+
+                    $rows[] = ['#', 'CIF', 'Customer Name', 'Branch', '', 'Start Balance', 'End Balance', 'Monthly Mv'];
+                    $this->lossHdrRows[] = ++$rowNum;
+
+                    foreach ($losers as $i => $r) {
+                        $rows[] = [
+                            $i + 1,
+                            (string) ($r->cif           ?? ''),
+                            (string) ($r->customer_name ?? ''),
+                            (string) ($r->branch_code   ?? ''),
+                            '',
+                            (float)  ($r->start_balance ?? 0),
+                            (float)  ($r->end_balance   ?? 0),
+                            (float)  ($r->movement      ?? 0),
+                        ];
+                        $this->lossDataRows[] = ++$rowNum;
+                    }
+                }
+
+                $rows[] = ['', '', '', '', '', '', '', ''];
+                $this->mergeRows[] = ++$rowNum;
+            }
+        }
+
+        return $rows;
+    }
+
+    public function registerEvents(): array
+    {
+        return [
+            AfterSheet::class => function (AfterSheet $event): void {
+                /** @var Worksheet $sheet */
+                $sheet = $event->sheet->getDelegate();
+
+                foreach ($this->mergeRows as $r) {
+                    $sheet->mergeCells("A{$r}:H{$r}");
+                }
+
+                $sheet->getStyle('A1:H1')->applyFromArray([
+                    'font'      => ['bold' => true, 'size' => 13, 'color' => ['rgb' => 'FFFFFF']],
+                    'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1F3A5F']],
+                    'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT, 'vertical' => Alignment::VERTICAL_CENTER],
+                ]);
+                $sheet->getRowDimension(1)->setRowHeight(24);
+
+                foreach ($this->monthHdrRows as $r) {
+                    $sheet->getStyle("A{$r}:H{$r}")->applyFromArray([
+                        'font'      => ['bold' => true, 'size' => 12, 'color' => ['rgb' => 'FFFFFF']],
+                        'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '0F2744']],
+                        'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT, 'vertical' => Alignment::VERTICAL_CENTER],
+                    ]);
+                    $sheet->getRowDimension($r)->setRowHeight(22);
+                }
+
+                foreach ($this->subHdrRows as $r) {
+                    $sheet->getStyle("A{$r}:H{$r}")->applyFromArray([
+                        'font'      => ['bold' => true, 'size' => 11, 'color' => ['rgb' => 'FFFFFF']],
+                        'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '334155']],
+                        'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT, 'vertical' => Alignment::VERTICAL_CENTER],
+                    ]);
+                    $sheet->getRowDimension($r)->setRowHeight(18);
+                }
+
+                foreach ($this->gainHdrRows as $r) {
+                    $sheet->getStyle("A{$r}:H{$r}")->applyFromArray([
+                        'font'      => ['bold' => true, 'size' => 10, 'color' => ['rgb' => 'FFFFFF']],
+                        'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '166534']],
+                        'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
+                    ]);
+                    $sheet->getStyle("A{$r}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+                }
+
+                foreach ($this->lossHdrRows as $r) {
+                    $sheet->getStyle("A{$r}:H{$r}")->applyFromArray([
+                        'font'      => ['bold' => true, 'size' => 10, 'color' => ['rgb' => 'FFFFFF']],
+                        'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '991B1B']],
+                        'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
+                    ]);
+                    $sheet->getStyle("A{$r}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+                }
+
+                foreach ($this->gainDataRows as $r) {
+                    $sheet->getStyle("A{$r}:H{$r}")->applyFromArray([
+                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F0FDF4']],
+                    ]);
+                    $this->styleDataRow($sheet, $r, true);
+                }
+
+                foreach ($this->lossDataRows as $r) {
+                    $sheet->getStyle("A{$r}:H{$r}")->applyFromArray([
+                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FFF1F2']],
+                    ]);
+                    $this->styleDataRow($sheet, $r, false);
+                }
+
+                $sheet->freezePane('A3');
+            },
+        ];
+    }
+
+    private function styleDataRow(Worksheet $sheet, int $r, bool $isGain): void
+    {
+        $sheet->getStyle("F{$r}:H{$r}")->getNumberFormat()->setFormatCode('#,##0');
+        $sheet->getStyle("F{$r}:H{$r}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+        $sheet->getStyle("H{$r}")->getFont()->getColor()->setRGB($isGain ? '166534' : '991B1B');
+        $sheet->getStyle("A{$r}:H{$r}")->getBorders()->getBottom()
+            ->setBorderStyle(Border::BORDER_HAIR)->getColor()->setRGB('E2E8F0');
     }
 }
 
