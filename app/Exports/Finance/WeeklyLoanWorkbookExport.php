@@ -10,6 +10,7 @@ use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 use Maatwebsite\Excel\Concerns\WithTitle;
 use Maatwebsite\Excel\Events\AfterSheet;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
@@ -21,15 +22,215 @@ class WeeklyLoanWorkbookExport implements WithMultipleSheets
         private readonly array $data,
         private readonly array $drilldown,
         private readonly array $weekTopMovers = ['gainers' => [], 'losers' => []],
-        private readonly array $mtdTopMovers = ['gainers' => [], 'losers' => []]
+        private readonly array $mtdTopMovers = ['gainers' => [], 'losers' => []],
+        private readonly array $monthlyMovement = ['monthLabels' => [], 'segments' => []]
     ) {}
 
     public function sheets(): array
     {
-        return [
+        $sheets = [
             new WeeklyLoanSummarySheet($this->data),
             new WeeklyLoanTopMoversSheet($this->weekTopMovers, $this->mtdTopMovers, $this->data['periods'] ?? []),
             new WeeklyLoanDrilldownSheet($this->drilldown, $this->data['periods'] ?? []),
+        ];
+
+        if (!empty($this->monthlyMovement['monthLabels'])) {
+            $sheets[] = new WeeklyLoanMonthlyMovementSheet($this->monthlyMovement);
+        }
+
+        return $sheets;
+    }
+}
+
+// =============================================================================
+// SHEET — Monthly Movement trend (trailing months, combined KES-equivalent)
+// =============================================================================
+
+class WeeklyLoanMonthlyMovementSheet implements FromArray, WithTitle, WithColumnWidths, WithEvents
+{
+    private array $segRowCodes = [];
+    private array $subRowCodes = [];
+    private array $totalRows   = [];
+    private int   $headerRow   = 0;
+    private int   $titleRow    = 0;
+    private int   $lastCol     = 0;
+
+    private const SEG_FILL = [
+        'CORPORATE BANKING'  => ['row' => 'DBEAFE', 'sub' => 'EFF6FF'],
+        'COMMERCIAL BANKING' => ['row' => 'EDE9FE', 'sub' => 'F5F3FF'],
+        'CONSUMER BANKING'   => ['row' => 'FEF3C7', 'sub' => 'FFFBEB'],
+        'UNMAPPED'           => ['row' => 'F1F5F9', 'sub' => 'F8FAFC'],
+        'ALL'                => ['row' => 'E2E8F0', 'sub' => 'E2E8F0'],
+    ];
+
+    public function __construct(private readonly array $monthly) {}
+
+    public function title(): string { return 'Monthly Movement'; }
+
+    public function columnWidths(): array
+    {
+        $widths = ['A' => 40];
+        $monthCols = count($this->monthly['monthLabels'] ?? []);
+
+        for ($i = 0; $i < $monthCols; $i++) {
+            $widths[Coordinate::stringFromColumnIndex(2 + $i)] = 16;
+        }
+        $widths[Coordinate::stringFromColumnIndex(2 + $monthCols)] = 24;
+
+        return $widths;
+    }
+
+    public function array(): array
+    {
+        $monthLabels = $this->monthly['monthLabels'] ?? [];
+        $numCols     = count($monthLabels) + 2; // name + N months + closing
+        $this->lastCol = $numCols;
+
+        $rows   = [];
+        $rowNum = 0;
+
+        $this->titleRow = ++$rowNum;
+        $rows[] = array_pad(['MONTHLY PERFORMING LOAN MOVEMENT TREND'], $numCols, '');
+
+        $rows[] = array_pad([], $numCols, '');
+        $rowNum++;
+
+        $rows[] = array_pad(['Generated', now()->timezone(config('app.timezone', 'Africa/Nairobi'))->format('d M Y  H:i')], $numCols, '');
+        $rowNum++;
+
+        $rows[] = array_pad([], $numCols, '');
+        $rowNum++;
+
+        $this->headerRow = ++$rowNum;
+        $rows[] = array_pad(['Segment / Sub-Segment'], $numCols, '');
+        foreach ($monthLabels as $i => $label) {
+            $rows[$rowNum - 1][1 + $i] = $label;
+        }
+        $rows[$rowNum - 1][$numCols - 1] = 'Total Performing Loans (closing)';
+
+        foreach ($this->monthly['segments'] ?? [] as $seg) {
+            $code    = $seg['code'] ?? 'UNMAPPED';
+            $isTotal = ($code === 'ALL');
+            $rowNo   = ++$rowNum;
+
+            $row = array_pad([$seg['name'] ?? $code], $numCols, '');
+            foreach ($seg['monthly'] ?? [] as $i => $mv) {
+                $row[1 + $i] = (float) $mv;
+            }
+            $row[$numCols - 1] = (float) ($seg['closing'] ?? 0);
+            $rows[] = $row;
+
+            if ($isTotal) {
+                $this->totalRows[] = $rowNo;
+            } else {
+                $this->segRowCodes[$rowNo] = $code;
+            }
+
+            foreach ($seg['sub_segments'] ?? [] as $sub) {
+                $subNo = ++$rowNum;
+                $subRow = array_pad(['      ' . ($sub['name'] ?? '')], $numCols, '');
+                foreach ($sub['monthly'] ?? [] as $i => $mv) {
+                    $subRow[1 + $i] = (float) $mv;
+                }
+                $subRow[$numCols - 1] = (float) ($sub['closing'] ?? 0);
+                $rows[] = $subRow;
+                $this->subRowCodes[$subNo] = $code;
+            }
+        }
+
+        return $rows;
+    }
+
+    public function registerEvents(): array
+    {
+        return [
+            AfterSheet::class => function (AfterSheet $event): void {
+                /** @var Worksheet $sheet */
+                $sheet     = $event->sheet->getDelegate();
+                $lastRow   = $sheet->getHighestRow();
+                $hdr       = $this->headerRow;
+                $lastColL  = Coordinate::stringFromColumnIndex($this->lastCol);
+
+                $sheet->mergeCells("A{$this->titleRow}:{$lastColL}{$this->titleRow}");
+                $sheet->getStyle("A{$this->titleRow}:{$lastColL}{$this->titleRow}")->applyFromArray([
+                    'font'      => ['bold' => true, 'size' => 16, 'color' => ['rgb' => 'FFFFFF']],
+                    'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1F3A5F']],
+                    'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT, 'vertical' => Alignment::VERTICAL_CENTER],
+                ]);
+                $sheet->getRowDimension($this->titleRow)->setRowHeight(32);
+
+                for ($r = $this->titleRow + 2; $r <= $hdr - 2; $r++) {
+                    $sheet->getStyle("A{$r}:{$lastColL}{$r}")->applyFromArray([
+                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F8FAFC']],
+                    ]);
+                    $sheet->getStyle("A{$r}")->applyFromArray(['font' => ['bold' => true, 'color' => ['rgb' => '1F3A5F']]]);
+                }
+
+                $sheet->getStyle("A{$hdr}:{$lastColL}{$hdr}")->applyFromArray([
+                    'font'      => ['bold' => true, 'size' => 11, 'color' => ['rgb' => 'FFFFFF']],
+                    'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1F3A5F']],
+                    'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
+                    'borders'   => ['bottom' => ['borderStyle' => Border::BORDER_MEDIUM, 'color' => ['rgb' => '0F2744']]],
+                ]);
+                $sheet->getStyle("A{$hdr}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+                $sheet->getRowDimension($hdr)->setRowHeight(20);
+                $sheet->freezePane('B' . ($hdr + 1));
+
+                foreach ($this->segRowCodes as $r => $code) {
+                    $fill = self::SEG_FILL[$code] ?? self::SEG_FILL['UNMAPPED'];
+                    $sheet->getStyle("A{$r}:{$lastColL}{$r}")->applyFromArray([
+                        'font'    => ['bold' => true, 'size' => 11, 'color' => ['rgb' => '0F172A']],
+                        'fill'    => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $fill['row']]],
+                        'borders' => ['top' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'CBD5E1']]],
+                    ]);
+                    $sheet->getRowDimension($r)->setRowHeight(18);
+                }
+
+                foreach ($this->subRowCodes as $r => $code) {
+                    $fill = self::SEG_FILL[$code] ?? self::SEG_FILL['UNMAPPED'];
+                    $sheet->getStyle("A{$r}:{$lastColL}{$r}")->applyFromArray([
+                        'font'    => ['bold' => false, 'size' => 10, 'color' => ['rgb' => '475569']],
+                        'fill'    => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $fill['sub']]],
+                        'borders' => ['bottom' => ['borderStyle' => Border::BORDER_HAIR, 'color' => ['rgb' => 'E2E8F0']]],
+                    ]);
+                }
+
+                foreach ($this->totalRows as $r) {
+                    $sheet->getStyle("A{$r}:{$lastColL}{$r}")->applyFromArray([
+                        'font'    => ['bold' => true, 'size' => 11, 'color' => ['rgb' => '1E3A5F']],
+                        'fill'    => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'E2E8F0']],
+                        'borders' => [
+                            'top'    => ['borderStyle' => Border::BORDER_MEDIUM, 'color' => ['rgb' => '94A3B8']],
+                            'bottom' => ['borderStyle' => Border::BORDER_MEDIUM, 'color' => ['rgb' => '94A3B8']],
+                        ],
+                    ]);
+                    $sheet->getRowDimension($r)->setRowHeight(18);
+                }
+
+                $allDataRows = array_merge(array_keys($this->segRowCodes), array_keys($this->subRowCodes), $this->totalRows);
+
+                foreach ($allDataRows as $r) {
+                    $sheet->getStyle("B{$r}:{$lastColL}{$r}")->getNumberFormat()->setFormatCode('#,##0');
+                    $sheet->getStyle("B{$r}:{$lastColL}{$r}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+
+                    for ($c = 2; $c <= $this->lastCol - 1; $c++) {
+                        $colL = Coordinate::stringFromColumnIndex($c);
+                        $val  = $sheet->getCell("{$colL}{$r}")->getValue();
+                        if (!is_numeric($val)) continue;
+                        $v = (float) $val;
+                        if ($v > 0)      $sheet->getStyle("{$colL}{$r}")->getFont()->getColor()->setRGB('166534');
+                        elseif ($v < 0)  $sheet->getStyle("{$colL}{$r}")->getFont()->getColor()->setRGB('991B1B');
+                    }
+
+                    $sheet->getStyle("{$lastColL}{$r}")->getFont()->getColor()->setRGB('0F172A');
+                }
+
+                if ($lastRow > $hdr) {
+                    $sheet->getStyle("A{$hdr}:{$lastColL}{$lastRow}")->applyFromArray([
+                        'borders' => ['outline' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'CBD5E1']]],
+                    ]);
+                }
+            },
         ];
     }
 }

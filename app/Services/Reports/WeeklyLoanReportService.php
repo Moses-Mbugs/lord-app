@@ -377,6 +377,161 @@ class WeeklyLoanReportService
             ->groupBy('cai.f12_cif');
     }
 
+    /**
+     * Trailing monthly movement per segment/sub-segment, combined KES-equivalent
+     * (LCY+FCY) via loan_book_outstanding — same performing-loan filter as the
+     * weekly report. Anchors on the latest available as_at_date on/before the
+     * end of each of the trailing $months calendar months, plus $asOfDate
+     * itself as the final point (so the most recent column is the current,
+     * possibly still-open month rather than always a completed one).
+     *
+     * @return array{monthLabels: string[], segments: array}
+     */
+    public function buildMonthlyMovement(string $asOfDate, int $months = 6): array
+    {
+        $asOfDate = Carbon::parse($asOfDate)->toDateString();
+
+        $anchorDates  = [];
+        $anchorLabels = [];
+
+        for ($i = $months; $i >= 1; $i--) {
+            $monthEnd = Carbon::parse($asOfDate)->subMonthsNoOverflow($i)->endOfMonth()->toDateString();
+            $date     = $this->latestAvailableOnOrBefore($monthEnd);
+
+            if ($date !== null && !in_array($date, $anchorDates, true)) {
+                $anchorDates[]  = $date;
+                $anchorLabels[] = Carbon::parse($date)->format('M Y');
+            }
+        }
+
+        if (empty($anchorDates) || end($anchorDates) !== $asOfDate) {
+            $isMonthEnd     = $asOfDate === Carbon::parse($asOfDate)->endOfMonth()->toDateString();
+            $anchorDates[]  = $asOfDate;
+            $anchorLabels[] = Carbon::parse($asOfDate)->format('M Y') . ($isMonthEnd ? '' : ' (MTD)');
+        }
+
+        if (count($anchorDates) < 2) {
+            return ['monthLabels' => [], 'segments' => []];
+        }
+
+        $rows      = $this->querySegmentSubTotalsForDates($anchorDates);
+        $bySegment = collect($rows)->groupBy('business_segment');
+        $pointCount = count($anchorDates);
+
+        $monthLabels = array_slice($anchorLabels, 1);
+
+        $segments       = [];
+        $totalsClosings = array_fill(0, $pointCount, 0.0);
+
+        $allSegments = array_unique(array_merge(array_keys(self::SEGMENT_ORDER), $bySegment->keys()->all()));
+
+        foreach ($allSegments as $code) {
+            $subRows = $bySegment->get($code);
+            if (!$subRows) continue;
+
+            $subSegments = [];
+            $segClosings = array_fill(0, $pointCount, 0.0);
+
+            foreach ($subRows as $row) {
+                $subName = trim((string) ($row->sub_segment_name ?? 'Unmapped')) ?: 'Unmapped';
+
+                $closings = [];
+                for ($idx = 0; $idx < $pointCount; $idx++) {
+                    $closings[$idx] = (float) ($row->{"closing_{$idx}"} ?? 0);
+                    $segClosings[$idx] += $closings[$idx];
+                }
+
+                $movements = [];
+                for ($idx = 1; $idx < $pointCount; $idx++) {
+                    $movements[] = $closings[$idx] - $closings[$idx - 1];
+                }
+
+                $subSegments[] = [
+                    'name'    => $subName,
+                    'closing' => end($closings),
+                    'monthly' => $movements,
+                ];
+            }
+
+            usort($subSegments, fn($a, $b) => $a['name'] <=> $b['name']);
+
+            for ($idx = 0; $idx < $pointCount; $idx++) {
+                $totalsClosings[$idx] += $segClosings[$idx];
+            }
+
+            $segMovements = [];
+            for ($idx = 1; $idx < $pointCount; $idx++) {
+                $segMovements[] = $segClosings[$idx] - $segClosings[$idx - 1];
+            }
+
+            $segments[$code] = [
+                'code'         => $code,
+                'name'         => self::SEGMENT_MAP[$code] ?? $code,
+                'closing'      => end($segClosings),
+                'monthly'      => $segMovements,
+                'sub_segments' => $subSegments,
+            ];
+        }
+
+        uasort($segments, fn($a, $b) =>
+            (self::SEGMENT_ORDER[$a['code']] ?? 50) <=> (self::SEGMENT_ORDER[$b['code']] ?? 50)
+        );
+
+        $totalsMovements = [];
+        for ($idx = 1; $idx < $pointCount; $idx++) {
+            $totalsMovements[] = $totalsClosings[$idx] - $totalsClosings[$idx - 1];
+        }
+
+        $segments['ALL'] = [
+            'code'         => 'ALL',
+            'name'         => 'Totals',
+            'closing'      => end($totalsClosings),
+            'monthly'      => $totalsMovements,
+            'sub_segments' => [],
+        ];
+
+        return [
+            'monthLabels' => $monthLabels,
+            'segments'    => array_values($segments),
+        ];
+    }
+
+    /** Latest as_at_date on/before $date, or null if none exists. */
+    private function latestAvailableOnOrBefore(string $date): ?string
+    {
+        $d = DB::table('loan_listings')->where('as_at_date', '<=', $date)->max('as_at_date');
+        return $d ? Carbon::parse((string) $d)->toDateString() : null;
+    }
+
+    /**
+     * Segment + sub-segment closing totals at an arbitrary list of dates —
+     * generalised version of querySegmentSubTotals() for the monthly trend.
+     */
+    private function querySegmentSubTotalsForDates(array $dates): \Illuminate\Support\Collection
+    {
+        $cifBiz = $this->loans->cifBusinessSubquery();
+        $cifSub = $this->cifSubSegmentSubquery();
+
+        $query = DB::table('loan_listings')
+            ->leftJoinSub($cifBiz, 'csm', fn($j) => $j->on('csm.cif', '=', 'loan_listings.cif'))
+            ->leftJoinSub($cifSub, 'css', fn($j) => $j->on('css.cif', '=', 'loan_listings.cif'))
+            ->selectRaw($this->loans->segmentExpr() . ' AS business_segment')
+            ->selectRaw("COALESCE(NULLIF(TRIM(css.sub_segment_name), ''), 'Unmapped') AS sub_segment_name");
+
+        foreach (array_values($dates) as $idx => $date) {
+            $query->selectRaw(
+                "SUM(CASE WHEN loan_listings.as_at_date = ? THEN loan_book_outstanding ELSE 0 END) as closing_{$idx}",
+                [$date]
+            );
+        }
+
+        return $query
+            ->whereIn('loan_listings.as_at_date', array_values(array_unique($dates)))
+            ->whereRaw(self::LOAN_STATUS_FILTER)
+            ->groupBy(DB::raw($this->loans->segmentExpr()), DB::raw("COALESCE(NULLIF(TRIM(css.sub_segment_name), ''), 'Unmapped')"))
+            ->get();
+    }
+
     // -------------------------------------------------------------------------
     // Date helpers (mirrors WeeklySegmentReportService, sourced from loan_listings.as_at_date)
     // -------------------------------------------------------------------------

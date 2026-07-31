@@ -22,7 +22,8 @@ class WeeklyLoanMovementMail extends Mailable
         public array  $toList,
         public array  $ccList = [],
         public array  $weekTopMovers = ['gainers' => [], 'losers' => []],
-        public array  $mtdTopMovers = ['gainers' => [], 'losers' => []]
+        public array  $mtdTopMovers = ['gainers' => [], 'losers' => []],
+        public array  $monthlyMovement = ['monthLabels' => [], 'segments' => []]
     ) {}
 
     public function build(): static
@@ -34,7 +35,8 @@ class WeeklyLoanMovementMail extends Mailable
                 $this->data,
                 $this->drilldown,
                 $this->weekTopMovers,
-                $this->mtdTopMovers
+                $this->mtdTopMovers,
+                $this->monthlyMovement
             ),
             ExcelWriter::XLSX
         );
