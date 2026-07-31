@@ -41,12 +41,28 @@ return [
             'transport' => 'smtp',
             'scheme' => env('MAIL_SCHEME'),
             'url' => env('MAIL_URL'),
-            'host' => env('MAIL_HOST', '127.0.0.1'),
-            'port' => env('MAIL_PORT', 2525),
+            'host' => env('MAIL_HOST', '10.8.104.52'),
+            'port' => env('MAIL_PORT', 25),
+            'encryption' => env('MAIL_ENCRYPTION', 'tls'),
             'username' => env('MAIL_USERNAME'),
             'password' => env('MAIL_PASSWORD'),
-            'timeout' => null,
+            'timeout' => env('MAIL_TIMEOUT', 120),
+            'auth_mode' => null,
+            'verify_peer' => false,
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
+        ],
+
+        'smtp2' => [
+            'transport' => 'smtp',
+            'host' => env('MAIL_HOST2', '192.168.48.27'),
+            'port' => env('MAIL_PORT', 25),
+            'encryption' => env('MAIL_ENCRYPTION2', null),
+            'username' => env('MAIL_USERNAME'),
+            'password' => env('MAIL_PASSWORD'),
+            'timeout' => env('MAIL_TIMEOUT', 10),
+            'auth_mode' => null,
+            'verify_peer' => false,
+            'local_domain' => env('MAIL_EHLO_DOMAIN'),
         ],
 
         'ses' => [
@@ -83,6 +99,7 @@ return [
             'transport' => 'failover',
             'mailers' => [
                 'smtp',
+                'smtp2',
                 'log',
             ],
             'retry_after' => 60,
@@ -111,8 +128,8 @@ return [
     */
 
     'from' => [
-        'address' => env('MAIL_FROM_ADDRESS', 'hello@example.com'),
-        'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
+        'address' => env('MAIL_FROM_ADDRESS', 'noreplyeke@ecobank.com'),
+        'name' => env('MAIL_FROM_NAME', 'EKE-ICT SYSTEM NOTIFICATION'),
     ],
 
 ];
