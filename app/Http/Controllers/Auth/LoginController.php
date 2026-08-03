@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Cache;
@@ -43,37 +44,157 @@ class LoginController extends Controller
     public function login(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'email' => 'required|string|max:255',
-            'password' => 'required|string|min:3',
+            'email' => ['required', 'string', 'max:255'],
+            'password' => ['required', 'string', 'min:3'],
         ]);
 
         if ($validator->fails()) {
-            return $this->sendFailedLoginResponse($request, 'Invalid input provided.');
+            Log::warning('Login validation failed', [
+                'identifier' => $request->input('email'),
+                'errors' => $validator->errors()->toArray(),
+                'ip' => $request->ip(),
+            ]);
+
+            return $this->sendFailedLoginResponse(
+                $request,
+                'Please enter a valid username and password.'
+            );
         }
 
-        $credentials = $this->parseCredentials($request);
+        $identifier = strtolower(trim($request->input('email')));
+        $username = str_contains($identifier, '@')
+            ? explode('@', $identifier, 2)[0]
+            : $identifier;
 
-        try {
-            $user = $this->authService->authenticate($credentials);
+        Log::info('Login attempt started', [
+            'identifier' => $identifier,
+            'normalized_username' => $username,
+            'ip' => $request->ip(),
+        ]);
 
-            if ($user) {
-                Auth::login($user, $request->filled('remember'));
+        /*
+        |--------------------------------------------------------------------------
+        | 1. Local authentication
+        |--------------------------------------------------------------------------
+        */
 
-                // Initialize session tracking
+        $user = User::query()
+            ->where(function ($query) use ($identifier, $username) {
+                $query
+                    ->whereRaw('LOWER(TRIM(email)) = ?', [$identifier])
+                    ->orWhereRaw('LOWER(TRIM(email)) = ?', [$username])
+                    ->orWhereRaw(
+                        "LOWER(SUBSTRING_INDEX(TRIM(email), '@', 1)) = ?",
+                        [$username]
+                    );
+            })
+            ->first();
+
+        if ($user) {
+            Log::info('Local user record found', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'has_local_password' => !empty($user->password),
+                'ip' => $request->ip(),
+            ]);
+
+            if (
+                !empty($user->password) &&
+                Hash::check($request->input('password'), $user->password)
+            ) {
+                Auth::login($user, $request->boolean('remember'));
+
+                try {
+                    $user->updateLastLogin();
+                } catch (\Throwable $e) {
+                    Log::warning('Unable to update last login', [
+                        'user_id' => $user->id,
+                        'exception' => get_class($e),
+                        'message' => $e->getMessage(),
+                    ]);
+                }
+
                 $this->initializeSession($request);
+
+                Log::info('Local authentication successful', [
+                    'user_id' => $user->id,
+                    'email' => $user->email,
+                    'ip' => $request->ip(),
+                ]);
 
                 return $this->sendLoginResponse($request);
             }
 
-            return $this->sendFailedLoginResponse($request, 'Login unsuccessful. Please check your details and try again.');
+            Log::warning('Local password verification failed', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'ip' => $request->ip(),
+            ]);
+        } else {
+            Log::info('No matching local user found', [
+                'identifier' => $identifier,
+                'normalized_username' => $username,
+                'ip' => $request->ip(),
+            ]);
+        }
 
-        } catch (\Exception $e) {
-            Log::error('Login error: ' . $e->getMessage(), [
-                'email' => $credentials['email'],
+        /*
+        |--------------------------------------------------------------------------
+        | 2. External authentication
+        |--------------------------------------------------------------------------
+        */
+
+        $credentials = [
+            'email' => $username,
+            'password' => $request->input('password'),
+        ];
+
+        try {
+            Log::info('External authentication started', [
+                'username' => $username,
                 'ip' => $request->ip(),
             ]);
 
-            return $this->sendFailedLoginResponse($request, 'Authentication service unavailable.');
+            $user = $this->authService->authenticate($credentials);
+
+            if (!$user) {
+                Log::warning('External authentication returned no user', [
+                    'username' => $username,
+                    'ip' => $request->ip(),
+                ]);
+
+                return $this->sendFailedLoginResponse(
+                    $request,
+                    'Login unsuccessful. Please check your username and password.'
+                );
+            }
+
+            Auth::login($user, $request->boolean('remember'));
+
+            $this->initializeSession($request);
+
+            Log::info('External authentication successful', [
+                'user_id' => $user->id,
+                'email' => $user->email ?? null,
+                'ip' => $request->ip(),
+            ]);
+
+            return $this->sendLoginResponse($request);
+
+        } catch (\Throwable $e) {
+            Log::error('External authentication exception', [
+                'username' => $username,
+                'exception' => get_class($e),
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'ip' => $request->ip(),
+            ]);
+
+            return $this->sendFailedLoginResponse(
+                $request,
+                'Authentication service is currently unavailable.'
+            );
         }
     }
 
@@ -326,25 +447,6 @@ class LoginController extends Controller
             'success' => true,
             'message' => 'Draft deleted successfully'
         ]);
-    }
-
-    /**
-     * Parse and normalize credentials
-     */
-    protected function parseCredentials(Request $request): array
-    {
-        $email = trim($request->input('email'));
-
-        if (strpos($email, '@') !== false) {
-            $email = strtolower(explode('@', $email)[0]);
-        } else {
-            $email = strtolower($email);
-        }
-
-        return [
-            'email' => $email,
-            'password' => $request->input('password')
-        ];
     }
 
     /**
