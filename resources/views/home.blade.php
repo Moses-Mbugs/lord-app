@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
+
 <head>
     <meta charset="UTF-8">
 
@@ -11,23 +12,29 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 
-    <link
-        href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap"
-        rel="stylesheet"
-    >
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet">
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css"
+        integrity="sha512-Evv84Mr4kqVGRNSgIGL/F/aIDqQb7xQ2vcrdIwxfjThSH8CSR7PBEakCr51Ck+w+/U6swU2Im1vVX0SVk9ABhg=="
+        crossorigin="anonymous" referrerpolicy="no-referrer">
 
     @php
-        $visibleModules = collect($modules ?? [])->where('visible', true)->values();
+        $visibleModules = collect($modules ?? [])
+            ->where('visible', true)
+            ->values();
+
         $moduleCount = $visibleModules->count();
 
         $fullName = trim($user->name ?? 'User');
         $firstName = explode(' ', $fullName)[0] ?: 'User';
 
         $nameParts = preg_split('/\s+/', $fullName);
+
         $initials = collect($nameParts)
             ->filter()
             ->take(2)
-            ->map(fn ($name) => strtoupper(substr($name, 0, 1)))
+            ->map(fn($name) => strtoupper(substr($name, 0, 1)))
             ->implode('');
 
         $initials = $initials ?: 'U';
@@ -39,26 +46,78 @@
             $currentHour < 17 => 'Good afternoon',
             default => 'Good evening',
         };
-    @endphp
 
-    <script>
         /*
-         * Apply the stored theme before rendering the page.
-         * This prevents a light-theme flash when dark mode is enabled.
+         * Automatically select a professional icon based on the
+         * module name and description.
          */
-        (function () {
-            try {
-                const storedTheme = localStorage.getItem('finance-platform-theme');
-                const preferredTheme = window.matchMedia('(prefers-color-scheme: dark)').matches
-                    ? 'dark'
-                    : 'light';
+        $getModuleIcon = function (array $module): string {
+            $searchText = strtolower(trim(($module['name'] ?? '') . ' ' . ($module['description'] ?? '')));
 
-                document.documentElement.dataset.theme = storedTheme || preferredTheme;
-            } catch (error) {
-                document.documentElement.dataset.theme = 'light';
-            }
-        })();
-    </script>
+            return match (true) {
+                str_contains($searchText, 'dashboard') => 'fa-solid fa-chart-pie',
+
+                str_contains($searchText, 'analytics') || str_contains($searchText, 'intelligence')
+                    => 'fa-solid fa-chart-line',
+
+                str_contains($searchText, 'reconciliation') || str_contains($searchText, 'recon')
+                    => 'fa-solid fa-scale-balanced',
+
+                str_contains($searchText, 'payment') => 'fa-solid fa-money-check-dollar',
+
+                str_contains($searchText, 'invoice') => 'fa-solid fa-file-invoice-dollar',
+
+                str_contains($searchText, 'procurement') => 'fa-solid fa-cart-shopping',
+
+                str_contains($searchText, 'vendor') => 'fa-solid fa-handshake',
+
+                str_contains($searchText, 'budget') => 'fa-solid fa-wallet',
+
+                str_contains($searchText, 'risk') => 'fa-solid fa-shield-halved',
+
+                str_contains($searchText, 'issue') || str_contains($searchText, 'incident')
+                    => 'fa-solid fa-triangle-exclamation',
+
+                str_contains($searchText, 'tax') => 'fa-solid fa-receipt',
+
+                str_contains($searchText, 'contract') ||
+                    str_contains($searchText, 'legal') ||
+                    str_contains($searchText, 'agreement')
+                    => 'fa-solid fa-file-signature',
+
+                str_contains($searchText, 'report') => 'fa-solid fa-chart-column',
+
+                str_contains($searchText, 'statement') || str_contains($searchText, 'bank')
+                    => 'fa-solid fa-building-columns',
+
+                str_contains($searchText, 'account') ||
+                    str_contains($searchText, 'ledger') ||
+                    str_contains($searchText, 'gl ')
+                    => 'fa-solid fa-book-open',
+
+                str_contains($searchText, 'customer') || str_contains($searchText, 'client') => 'fa-solid fa-users',
+
+                str_contains($searchText, 'notification') || str_contains($searchText, 'alert') => 'fa-solid fa-bell',
+
+                str_contains($searchText, 'document') || str_contains($searchText, 'file') => 'fa-solid fa-folder-open',
+
+                str_contains($searchText, 'approval') || str_contains($searchText, 'workflow')
+                    => 'fa-solid fa-list-check',
+
+                str_contains($searchText, 'operation') => 'fa-solid fa-gears',
+
+                str_contains($searchText, 'admin') ||
+                    str_contains($searchText, 'user') ||
+                    str_contains($searchText, 'role')
+                    => 'fa-solid fa-users-gear',
+
+                str_contains($searchText, 'security') || str_contains($searchText, 'access')
+                    => 'fa-solid fa-user-shield',
+
+                default => 'fa-solid fa-layer-group',
+            };
+        };
+    @endphp
 
     <style>
         * {
@@ -71,41 +130,33 @@
             --font-family: 'Montserrat', sans-serif;
 
             --brand-blue: #0082bb;
-            --brand-blue-dark: #004f75;
+            --brand-blue-dark: #005b82;
             --brand-blue-deep: #073e5b;
-            --brand-blue-soft: #e4f4fb;
+            --brand-blue-soft: #e8f6fc;
 
             --brand-green: #bed600;
-            --brand-green-dark: #6f942e;
-            --brand-green-soft: #f2f8d6;
-
-            --purple: #7659d6;
-            --orange: #f49d37;
-            --pink: #dc5c99;
-            --cyan: #25aebe;
+            --brand-green-dark: #73942f;
+            --brand-green-soft: #f4f8dc;
 
             --page-bg: #eef4f8;
-            --page-bg-secondary: #e4edf3;
+            --page-bg-secondary: #e5eef4;
 
-            --surface: rgba(255, 255, 255, 0.9);
+            --surface: rgba(255, 255, 255, 0.92);
             --surface-solid: #ffffff;
-            --surface-muted: #f6f9fb;
-            --surface-hover: #f1f7fa;
+            --surface-muted: #f5f8fa;
+            --surface-hover: #f0f7fa;
 
             --text-primary: #173247;
-            --text-secondary: #687d8d;
-            --text-muted: #8da0ae;
+            --text-secondary: #637989;
+            --text-muted: #8b9eab;
 
-            --border: rgba(66, 98, 119, 0.14);
-            --border-strong: rgba(66, 98, 119, 0.22);
+            --border: rgba(55, 91, 113, 0.13);
+            --border-strong: rgba(55, 91, 113, 0.22);
 
             --shadow-xs: 0 2px 8px rgba(18, 52, 73, 0.05);
-            --shadow-sm: 0 10px 30px rgba(18, 52, 73, 0.08);
-            --shadow-md: 0 20px 55px rgba(18, 52, 73, 0.12);
+            --shadow-sm: 0 12px 32px rgba(18, 52, 73, 0.08);
+            --shadow-md: 0 22px 55px rgba(18, 52, 73, 0.13);
             --shadow-lg: 0 32px 80px rgba(18, 52, 73, 0.18);
-
-            --header-bg: rgba(255, 255, 255, 0.82);
-            --header-border: rgba(45, 83, 107, 0.12);
 
             --radius-sm: 12px;
             --radius-md: 18px;
@@ -113,34 +164,6 @@
             --radius-xl: 34px;
 
             --transition: 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
-        }
-
-        html[data-theme="dark"] {
-            --page-bg: #071722;
-            --page-bg-secondary: #0b2230;
-
-            --surface: rgba(13, 35, 49, 0.86);
-            --surface-solid: #0e2635;
-            --surface-muted: #112d3e;
-            --surface-hover: #15384b;
-
-            --text-primary: #eef8fc;
-            --text-secondary: #adc2cf;
-            --text-muted: #7893a3;
-
-            --border: rgba(182, 220, 239, 0.12);
-            --border-strong: rgba(182, 220, 239, 0.2);
-
-            --shadow-xs: 0 2px 10px rgba(0, 0, 0, 0.15);
-            --shadow-sm: 0 14px 35px rgba(0, 0, 0, 0.22);
-            --shadow-md: 0 24px 60px rgba(0, 0, 0, 0.3);
-            --shadow-lg: 0 35px 90px rgba(0, 0, 0, 0.38);
-
-            --header-bg: rgba(7, 23, 34, 0.83);
-            --header-border: rgba(182, 220, 239, 0.1);
-
-            --brand-blue-soft: rgba(0, 130, 187, 0.15);
-            --brand-green-soft: rgba(190, 214, 0, 0.12);
         }
 
         html {
@@ -153,48 +176,40 @@
             font-family: var(--font-family);
             color: var(--text-primary);
             background:
-                radial-gradient(
-                    circle at 0% 0%,
-                    rgba(0, 130, 187, 0.16),
-                    transparent 32%
-                ),
-                radial-gradient(
-                    circle at 100% 10%,
-                    rgba(190, 214, 0, 0.13),
-                    transparent 27%
-                ),
-                linear-gradient(
-                    145deg,
+                radial-gradient(circle at 0% 0%,
+                    rgba(0, 130, 187, 0.15),
+                    transparent 31%),
+                radial-gradient(circle at 100% 10%,
+                    rgba(190, 214, 0, 0.12),
+                    transparent 25%),
+                linear-gradient(145deg,
                     var(--page-bg),
-                    var(--page-bg-secondary)
-                );
-            transition:
-                background-color var(--transition),
-                color var(--transition);
+                    var(--page-bg-secondary));
         }
 
         body::before,
         body::after {
             position: fixed;
             z-index: -1;
-            width: 340px;
-            height: 340px;
             border-radius: 50%;
             content: '';
             pointer-events: none;
-            filter: blur(2px);
         }
 
         body::before {
-            top: 14%;
+            top: 16%;
             left: -190px;
-            background: rgba(0, 130, 187, 0.12);
+            width: 340px;
+            height: 340px;
+            background: rgba(0, 130, 187, 0.1);
         }
 
         body::after {
             right: -170px;
             bottom: 8%;
-            background: rgba(190, 214, 0, 0.12);
+            width: 340px;
+            height: 340px;
+            background: rgba(190, 214, 0, 0.1);
         }
 
         button,
@@ -210,7 +225,7 @@
         button:focus-visible,
         a:focus-visible,
         input:focus-visible {
-            outline: 3px solid rgba(0, 130, 187, 0.3);
+            outline: 3px solid rgba(0, 130, 187, 0.28);
             outline-offset: 3px;
         }
 
@@ -220,16 +235,14 @@
             flex-direction: column;
         }
 
-        /* =========================================================
-           HEADER
-        ========================================================= */
+        /* Header */
 
         .topbar {
             position: sticky;
             top: 0;
             z-index: 100;
-            border-bottom: 1px solid var(--header-border);
-            background: var(--header-bg);
+            border-bottom: 1px solid rgba(45, 83, 107, 0.11);
+            background: rgba(255, 255, 255, 0.87);
             box-shadow: var(--shadow-xs);
             backdrop-filter: blur(22px);
             -webkit-backdrop-filter: blur(22px);
@@ -250,6 +263,7 @@
             display: flex;
             align-items: center;
             gap: 14px;
+            color: inherit;
             text-decoration: none;
         }
 
@@ -304,50 +318,6 @@
             gap: 10px;
         }
 
-        .icon-button {
-            width: 42px;
-            height: 42px;
-            display: grid;
-            place-items: center;
-            flex: 0 0 auto;
-            border: 1px solid var(--border);
-            border-radius: 14px;
-            color: var(--text-secondary);
-            background: var(--surface);
-            box-shadow: var(--shadow-xs);
-            cursor: pointer;
-            transition:
-                transform var(--transition),
-                color var(--transition),
-                background var(--transition),
-                border-color var(--transition);
-        }
-
-        .icon-button:hover {
-            color: var(--brand-blue);
-            border-color: rgba(0, 130, 187, 0.24);
-            background: var(--surface-hover);
-            transform: translateY(-2px);
-        }
-
-        .icon-button svg {
-            width: 19px;
-            height: 19px;
-        }
-
-        .theme-icon-sun,
-        .theme-icon-moon {
-            display: none;
-        }
-
-        html[data-theme="light"] .theme-icon-moon {
-            display: block;
-        }
-
-        html[data-theme="dark"] .theme-icon-sun {
-            display: block;
-        }
-
         .user-panel {
             min-width: 0;
             display: flex;
@@ -356,7 +326,7 @@
             padding: 6px 13px 6px 7px;
             border: 1px solid var(--border);
             border-radius: 17px;
-            background: var(--surface);
+            background: rgba(255, 255, 255, 0.92);
             box-shadow: var(--shadow-xs);
         }
 
@@ -369,11 +339,9 @@
             border-radius: 13px;
             color: #ffffff;
             background:
-                linear-gradient(
-                    135deg,
+                linear-gradient(135deg,
                     var(--brand-blue),
-                    var(--brand-blue-dark)
-                );
+                    var(--brand-blue-dark));
             box-shadow: 0 8px 20px rgba(0, 91, 130, 0.2);
             font-size: 12px;
             font-weight: 800;
@@ -417,7 +385,7 @@
             justify-content: center;
             gap: 8px;
             padding: 0 16px;
-            border: 1px solid rgba(0, 130, 187, 0.17);
+            border: 1px solid rgba(0, 130, 187, 0.18);
             border-radius: 14px;
             color: var(--brand-blue-dark);
             background: var(--brand-blue-soft);
@@ -431,10 +399,6 @@
                 border-color var(--transition);
         }
 
-        html[data-theme="dark"] .logout-button {
-            color: #70d4ff;
-        }
-
         .logout-button:hover {
             color: #ffffff;
             border-color: var(--brand-blue);
@@ -442,14 +406,11 @@
             transform: translateY(-2px);
         }
 
-        .logout-button svg {
-            width: 16px;
-            height: 16px;
+        .logout-button i {
+            font-size: 14px;
         }
 
-        /* =========================================================
-           MAIN CONTENT
-        ========================================================= */
+        /* Main content */
 
         .main-content {
             width: min(1280px, calc(100% - 48px));
@@ -458,9 +419,7 @@
             flex: 1;
         }
 
-        /* =========================================================
-           HERO
-        ========================================================= */
+        /* Hero */
 
         .hero {
             position: relative;
@@ -476,12 +435,10 @@
             border-radius: var(--radius-xl);
             color: #ffffff;
             background:
-                linear-gradient(
-                    125deg,
+                linear-gradient(125deg,
                     #043c59 0%,
                     #006e9f 50%,
-                    #0082bb 100%
-                );
+                    #0082bb 100%);
             box-shadow: var(--shadow-lg);
         }
 
@@ -495,11 +452,9 @@
             border-radius: 50%;
             content: '';
             background:
-                radial-gradient(
-                    circle,
+                radial-gradient(circle,
                     rgba(190, 214, 0, 0.28),
-                    transparent 68%
-                );
+                    transparent 68%);
         }
 
         .hero::after {
@@ -512,7 +467,6 @@
             border-radius: 50%;
             content: '';
             background: rgba(255, 255, 255, 0.07);
-            filter: blur(2px);
             transform: rotate(-12deg);
         }
 
@@ -545,12 +499,9 @@
             text-transform: uppercase;
         }
 
-        .eyebrow-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: var(--brand-green);
-            box-shadow: 0 0 0 6px rgba(190, 214, 0, 0.12);
+        .eyebrow i {
+            color: var(--brand-green);
+            font-size: 10px;
         }
 
         .hero h1 {
@@ -569,7 +520,7 @@
         .hero-description {
             max-width: 680px;
             margin-top: 17px;
-            color: rgba(255, 255, 255, 0.72);
+            color: rgba(255, 255, 255, 0.74);
             font-size: 14px;
             font-weight: 500;
             line-height: 1.8;
@@ -589,16 +540,17 @@
             padding: 10px 13px;
             border: 1px solid rgba(255, 255, 255, 0.15);
             border-radius: 13px;
-            color: rgba(255, 255, 255, 0.85);
+            color: rgba(255, 255, 255, 0.87);
             background: rgba(255, 255, 255, 0.08);
             font-size: 10px;
             font-weight: 700;
         }
 
-        .meta-pill svg {
+        .meta-pill i {
             width: 15px;
-            height: 15px;
             color: var(--brand-green);
+            font-size: 14px;
+            text-align: center;
         }
 
         .hero-overview {
@@ -612,11 +564,9 @@
             border: 1px solid rgba(255, 255, 255, 0.16);
             border-radius: 26px;
             background:
-                linear-gradient(
-                    145deg,
+                linear-gradient(145deg,
                     rgba(255, 255, 255, 0.16),
-                    rgba(255, 255, 255, 0.08)
-                );
+                    rgba(255, 255, 255, 0.08));
             box-shadow:
                 inset 0 1px 0 rgba(255, 255, 255, 0.12),
                 0 18px 45px rgba(0, 43, 64, 0.18);
@@ -625,7 +575,7 @@
         }
 
         .overview-label {
-            color: rgba(255, 255, 255, 0.58);
+            color: rgba(255, 255, 255, 0.6);
             font-size: 10px;
             font-weight: 800;
             letter-spacing: 1.1px;
@@ -643,7 +593,7 @@
 
         .overview-number span {
             margin-left: 4px;
-            color: rgba(255, 255, 255, 0.52);
+            color: rgba(255, 255, 255, 0.54);
             font-size: 14px;
             font-weight: 700;
             letter-spacing: 0;
@@ -651,7 +601,7 @@
 
         .overview-description {
             margin-top: 12px;
-            color: rgba(255, 255, 255, 0.66);
+            color: rgba(255, 255, 255, 0.68);
             font-size: 11px;
             font-weight: 500;
             line-height: 1.65;
@@ -661,11 +611,9 @@
             height: 1px;
             margin: 22px 0;
             background:
-                linear-gradient(
-                    to right,
+                linear-gradient(to right,
                     rgba(255, 255, 255, 0.22),
-                    transparent
-                );
+                    transparent);
         }
 
         .overview-status {
@@ -689,7 +637,7 @@
         .status-content span {
             display: block;
             margin-top: 4px;
-            color: rgba(255, 255, 255, 0.55);
+            color: rgba(255, 255, 255, 0.57);
             font-size: 9px;
             font-weight: 600;
         }
@@ -703,16 +651,10 @@
             border-radius: 15px;
             color: var(--brand-green);
             background: rgba(190, 214, 0, 0.13);
+            font-size: 19px;
         }
 
-        .security-icon svg {
-            width: 21px;
-            height: 21px;
-        }
-
-        /* =========================================================
-           MODULE TOOLBAR
-        ========================================================= */
+        /* Module section */
 
         .modules-section {
             margin-top: 39px;
@@ -761,14 +703,13 @@
             flex: 0 0 auto;
         }
 
-        .module-search svg {
+        .module-search>i {
             position: absolute;
             top: 50%;
-            left: 16px;
-            width: 18px;
-            height: 18px;
+            left: 17px;
             color: var(--text-muted);
             pointer-events: none;
+            font-size: 14px;
             transform: translateY(-50%);
         }
 
@@ -780,7 +721,7 @@
             border-radius: 16px;
             outline: none;
             color: var(--text-primary);
-            background: var(--surface);
+            background: rgba(255, 255, 255, 0.92);
             box-shadow: var(--shadow-xs);
             font-size: 11px;
             font-weight: 600;
@@ -816,9 +757,7 @@
             transform: translateY(-50%);
         }
 
-        /* =========================================================
-           MODULE CARDS
-        ========================================================= */
+        /* Module cards */
 
         .module-grid {
             display: grid;
@@ -827,9 +766,9 @@
         }
 
         .module-card {
-            --card-accent: var(--brand-blue);
-            --card-accent-dark: var(--brand-blue-dark);
-            --card-soft: rgba(0, 130, 187, 0.11);
+            --card-accent: #0082bb;
+            --card-accent-dark: #005b82;
+            --card-soft: rgba(0, 130, 187, 0.1);
 
             position: relative;
             isolation: isolate;
@@ -854,37 +793,37 @@
         .module-card:nth-child(6n + 1) {
             --card-accent: #0082bb;
             --card-accent-dark: #005b82;
-            --card-soft: rgba(0, 130, 187, 0.11);
+            --card-soft: rgba(0, 130, 187, 0.1);
         }
 
         .module-card:nth-child(6n + 2) {
-            --card-accent: #779f2e;
+            --card-accent: #739b2e;
             --card-accent-dark: #52731e;
-            --card-soft: rgba(119, 159, 46, 0.12);
+            --card-soft: rgba(115, 155, 46, 0.11);
         }
 
         .module-card:nth-child(6n + 3) {
             --card-accent: #7659d6;
             --card-accent-dark: #5638b6;
-            --card-soft: rgba(118, 89, 214, 0.11);
+            --card-soft: rgba(118, 89, 214, 0.1);
         }
 
         .module-card:nth-child(6n + 4) {
             --card-accent: #e3892f;
             --card-accent-dark: #b96513;
-            --card-soft: rgba(227, 137, 47, 0.12);
+            --card-soft: rgba(227, 137, 47, 0.11);
         }
 
         .module-card:nth-child(6n + 5) {
             --card-accent: #cf528d;
             --card-accent-dark: #a8326a;
-            --card-soft: rgba(207, 82, 141, 0.11);
+            --card-soft: rgba(207, 82, 141, 0.1);
         }
 
         .module-card:nth-child(6n + 6) {
             --card-accent: #1d9fae;
             --card-accent-dark: #107583;
-            --card-soft: rgba(29, 159, 174, 0.11);
+            --card-soft: rgba(29, 159, 174, 0.1);
         }
 
         .module-card::before {
@@ -912,11 +851,9 @@
             content: '';
             opacity: 0;
             background:
-                linear-gradient(
-                    90deg,
+                linear-gradient(90deg,
                     var(--card-accent),
-                    var(--card-accent-dark)
-                );
+                    var(--card-accent-dark));
             transform: scaleX(0.45);
             transform-origin: center;
             transition:
@@ -925,18 +862,14 @@
         }
 
         .module-card:hover {
-            border-color: color-mix(
-                in srgb,
-                var(--card-accent) 30%,
-                transparent
-            );
+            border-color: rgba(0, 130, 187, 0.2);
             background: var(--surface-solid);
             box-shadow: var(--shadow-md);
             transform: translateY(-7px);
         }
 
         .module-card:hover::before {
-            opacity: 0.92;
+            opacity: 0.95;
             transform: scale(1.18);
         }
 
@@ -962,38 +895,24 @@
             display: grid;
             place-items: center;
             flex: 0 0 auto;
-            border: 1px solid color-mix(
-                in srgb,
-                var(--card-accent) 14%,
-                transparent
-            );
             border-radius: 18px;
             color: #ffffff;
             background:
-                linear-gradient(
-                    135deg,
+                linear-gradient(135deg,
                     var(--card-accent),
-                    var(--card-accent-dark)
-                );
-            box-shadow:
-                0 13px 26px color-mix(
-                    in srgb,
-                    var(--card-accent) 24%,
-                    transparent
-                );
-            font-size: 25px;
+                    var(--card-accent-dark));
+            box-shadow: 0 13px 26px rgba(0, 91, 130, 0.18);
             transition:
                 transform var(--transition),
                 box-shadow var(--transition);
         }
 
+        .module-icon i {
+            font-size: 23px;
+        }
+
         .module-card:hover .module-icon {
-            box-shadow:
-                0 17px 32px color-mix(
-                    in srgb,
-                    var(--card-accent) 30%,
-                    transparent
-                );
+            box-shadow: 0 17px 32px rgba(0, 91, 130, 0.22);
             transform: rotate(-4deg) scale(1.05);
         }
 
@@ -1046,12 +965,9 @@
             font-weight: 700;
         }
 
-        .module-status-dot {
-            width: 7px;
-            height: 7px;
-            border-radius: 50%;
-            background: var(--brand-green);
-            box-shadow: 0 0 0 4px rgba(190, 214, 0, 0.12);
+        .module-status i {
+            color: var(--brand-green-dark);
+            font-size: 7px;
         }
 
         .module-open {
@@ -1064,23 +980,20 @@
             transition: gap var(--transition);
         }
 
+        .module-open i {
+            font-size: 12px;
+            transition: transform var(--transition);
+        }
+
         .module-card:hover .module-open {
             gap: 12px;
         }
 
-        .module-open svg {
-            width: 17px;
-            height: 17px;
-            transition: transform var(--transition);
-        }
-
-        .module-card:hover .module-open svg {
+        .module-card:hover .module-open i {
             transform: translateX(2px);
         }
 
-        /* =========================================================
-           EMPTY STATES
-        ========================================================= */
+        /* Empty states */
 
         .empty-state,
         .search-empty-state {
@@ -1116,11 +1029,7 @@
             border-radius: 18px;
             color: var(--brand-blue);
             background: var(--brand-blue-soft);
-        }
-
-        .empty-icon svg {
-            width: 25px;
-            height: 25px;
+            font-size: 23px;
         }
 
         .empty-state h3,
@@ -1138,9 +1047,7 @@
             line-height: 1.7;
         }
 
-        /* =========================================================
-           FOOTER
-        ========================================================= */
+        /* Footer */
 
         .footer {
             width: min(1280px, calc(100% - 48px));
@@ -1166,16 +1073,9 @@
             font-weight: 700;
         }
 
-        .footer-brand-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background:
-                linear-gradient(
-                    135deg,
-                    var(--brand-blue),
-                    var(--brand-green)
-                );
+        .footer-brand i {
+            color: var(--brand-blue);
+            font-size: 9px;
         }
 
         .footer-meta {
@@ -1184,9 +1084,7 @@
             font-weight: 600;
         }
 
-        /* =========================================================
-           RESPONSIVE DESIGN
-        ========================================================= */
+        /* Responsive */
 
         @media (max-width: 1050px) {
             .hero {
@@ -1200,6 +1098,7 @@
         }
 
         @media (max-width: 820px) {
+
             .topbar-inner,
             .main-content,
             .footer {
@@ -1271,6 +1170,7 @@
         }
 
         @media (max-width: 620px) {
+
             .topbar-inner,
             .main-content,
             .footer {
@@ -1367,7 +1267,7 @@
 
         @media (max-width: 390px) {
             .brand-title {
-                max-width: 110px;
+                max-width: 115px;
             }
 
             .hero h1 {
@@ -1384,6 +1284,7 @@
         }
 
         @media (prefers-reduced-motion: reduce) {
+
             *,
             *::before,
             *::after {
@@ -1399,104 +1300,46 @@
 <body>
     <div class="app-shell">
 
-        {{-- =====================================================
-             TOP NAVIGATION
-        ====================================================== --}}
         <header class="topbar">
             <div class="topbar-inner">
                 <a href="{{ url('/') }}" class="brand" aria-label="Finance platform home">
                     <span class="brand-logo">
-                        <img
-                            src="{{ asset('assets/img/Ecobank_Logo.png') }}"
-                            alt="Ecobank"
-                        >
+                        <img src="{{ asset('assets/img/Ecobank_Logo.png') }}" alt="Ecobank">
                     </span>
 
                     <span class="brand-copy">
-                        <span class="brand-title">Finance Intelligence Platform</span>
-                        <span class="brand-subtitle">Ecobank Finance Workspace</span>
+                        <span class="brand-title">
+                            Finance Intelligence Platform
+                        </span>
+
+                        <span class="brand-subtitle">
+                            Ecobank Finance Workspace
+                        </span>
                     </span>
                 </a>
 
                 <div class="topbar-actions">
-                    <button
-                        type="button"
-                        class="icon-button"
-                        id="themeToggle"
-                        aria-label="Change colour theme"
-                        title="Change colour theme"
-                    >
-                        <svg
-                            class="theme-icon-moon"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.8"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            aria-hidden="true"
-                        >
-                            <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>
-                        </svg>
-
-                        <svg
-                            class="theme-icon-sun"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.8"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            aria-hidden="true"
-                        >
-                            <circle cx="12" cy="12" r="4"/>
-                            <path d="M12 2v2"/>
-                            <path d="M12 20v2"/>
-                            <path d="m4.93 4.93 1.42 1.42"/>
-                            <path d="m17.66 17.66 1.41 1.41"/>
-                            <path d="M2 12h2"/>
-                            <path d="M20 12h2"/>
-                            <path d="m6.34 17.66-1.41 1.41"/>
-                            <path d="m19.07 4.93-1.41 1.41"/>
-                        </svg>
-                    </button>
-
                     <div class="user-panel">
                         <div class="user-avatar" aria-hidden="true">
                             {{ $initials }}
                         </div>
 
                         <div class="user-details">
-                            <span class="user-name">{{ $fullName }}</span>
-                            <span class="user-role">Authorized user</span>
+                            <span class="user-name">
+                                {{ $fullName }}
+                            </span>
+
+                            <span class="user-role">
+                                Authorized user
+                            </span>
                         </div>
                     </div>
 
-                    <form
-                        action="{{ route('logout') }}"
-                        method="POST"
-                        class="logout-form"
-                    >
+                    <form action="{{ route('logout') }}" method="POST" class="logout-form">
                         @csrf
 
-                        <button
-                            type="submit"
-                            class="logout-button"
-                            aria-label="Sign out"
-                        >
-                            <svg
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="1.8"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                aria-hidden="true"
-                            >
-                                <path d="M10 17l5-5-5-5"/>
-                                <path d="M15 12H3"/>
-                                <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
-                            </svg>
+                        <button type="submit" class="logout-button" aria-label="Sign out">
+                            <i class="fa-solid fa-arrow-right-from-bracket" aria-hidden="true"></i>
 
                             <span>Sign out</span>
                         </button>
@@ -1505,16 +1348,13 @@
             </div>
         </header>
 
-        {{-- =====================================================
-             MAIN CONTENT
-        ====================================================== --}}
         <main class="main-content">
 
-            {{-- Hero --}}
             <section class="hero" aria-labelledby="welcomeHeading">
                 <div class="hero-content">
                     <div class="eyebrow">
-                        <span class="eyebrow-dot"></span>
+                        <i class="fa-solid fa-circle" aria-hidden="true"></i>
+
                         Finance operations workspace
                     </div>
 
@@ -1525,42 +1365,19 @@
 
                     <p class="hero-description">
                         Access your authorized finance modules, monitor critical
-                        operations and move work forward from one intelligent workspace.
+                        operations and move work forward from one intelligent
+                        workspace.
                     </p>
 
                     <div class="hero-meta">
                         <span class="meta-pill">
-                            <svg
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="1.8"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                aria-hidden="true"
-                            >
-                                <rect x="3" y="4" width="18" height="18" rx="3"/>
-                                <path d="M16 2v4"/>
-                                <path d="M8 2v4"/>
-                                <path d="M3 10h18"/>
-                            </svg>
+                            <i class="fa-regular fa-calendar" aria-hidden="true"></i>
 
                             {{ now()->format('l, d F Y') }}
                         </span>
 
                         <span class="meta-pill">
-                            <svg
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="1.8"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                aria-hidden="true"
-                            >
-                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/>
-                                <path d="m9 12 2 2 4-4"/>
-                            </svg>
+                            <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
 
                             Secure authenticated session
                         </span>
@@ -1569,16 +1386,19 @@
 
                 <aside class="hero-overview" aria-label="Workspace overview">
                     <div>
-                        <span class="overview-label">Available modules</span>
+                        <span class="overview-label">
+                            Available modules
+                        </span>
 
                         <div class="overview-number">
                             {{ str_pad($moduleCount, 2, '0', STR_PAD_LEFT) }}
+
                             <span>modules</span>
                         </div>
 
                         <p class="overview-description">
-                            Modules are displayed according to your assigned access
-                            permissions.
+                            Modules are displayed according to your assigned
+                            access permissions.
                         </p>
                     </div>
 
@@ -1591,28 +1411,18 @@
                         </div>
 
                         <div class="security-icon" aria-hidden="true">
-                            <svg
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="1.8"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                            >
-                                <rect x="4" y="10" width="16" height="11" rx="3"/>
-                                <path d="M8 10V7a4 4 0 0 1 8 0v3"/>
-                                <path d="M12 14v3"/>
-                            </svg>
+                            <i class="fa-solid fa-lock"></i>
                         </div>
                     </div>
                 </aside>
             </section>
 
-            {{-- Modules --}}
             <section class="modules-section" aria-labelledby="modulesHeading">
                 <div class="section-toolbar">
                     <div class="section-title-group">
-                        <span class="section-kicker">Your workspace</span>
+                        <span class="section-kicker">
+                            Your workspace
+                        </span>
 
                         <h2 class="section-title" id="modulesHeading">
                             Finance modules
@@ -1625,28 +1435,14 @@
 
                     @if ($moduleCount > 0)
                         <div class="module-search">
-                            <svg
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="1.8"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                aria-hidden="true"
-                            >
-                                <circle cx="11" cy="11" r="7"/>
-                                <path d="m20 20-3.5-3.5"/>
-                            </svg>
+                            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
 
-                            <input
-                                type="search"
-                                id="moduleSearch"
-                                placeholder="Search your modules..."
-                                aria-label="Search modules"
-                                autocomplete="off"
-                            >
+                            <input type="search" id="moduleSearch" placeholder="Search your modules..."
+                                aria-label="Search modules" autocomplete="off">
 
-                            <span class="search-shortcut" aria-hidden="true">/</span>
+                            <span class="search-shortcut" aria-hidden="true">
+                                /
+                            </span>
                         </div>
                     @endif
                 </div>
@@ -1655,23 +1451,17 @@
                     @forelse ($visibleModules as $module)
                         @php
                             $searchableText = strtolower(
-                                trim(
-                                    ($module['name'] ?? '') . ' ' .
-                                    ($module['description'] ?? '')
-                                )
+                                trim(($module['name'] ?? '') . ' ' . ($module['description'] ?? '')),
                             );
+
+                            $moduleIcon = $getModuleIcon($module);
                         @endphp
 
-                        <a
-                            href="{{ route($module['route']) }}"
-                            class="module-card"
-                            data-module-card
-                            data-module-search="{{ $searchableText }}"
-                            aria-label="Open {{ $module['name'] }}"
-                        >
+                        <a href="{{ route($module['route']) }}" class="module-card" data-module-card
+                            data-module-search="{{ $searchableText }}" aria-label="Open {{ $module['name'] }}">
                             <div class="module-card-header">
                                 <div class="module-icon" aria-hidden="true">
-                                    {{ $module['icon'] }}
+                                    <i class="{{ $moduleIcon }}"></i>
                                 </div>
 
                                 <span class="module-index">
@@ -1681,83 +1471,46 @@
 
                             <div class="module-card-body">
                                 <h3>{{ $module['name'] }}</h3>
-                                <p>{{ $module['description'] }}</p>
+
+                                <p>
+                                    {{ $module['description'] }}
+                                </p>
                             </div>
 
                             <div class="module-card-footer">
                                 <span class="module-status">
-                                    <span class="module-status-dot"></span>
+                                    <i class="fa-solid fa-circle" aria-hidden="true"></i>
+
                                     Available
                                 </span>
 
                                 <span class="module-open">
                                     Open module
 
-                                    <svg
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        stroke-width="1.8"
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                        aria-hidden="true"
-                                    >
-                                        <path d="M5 12h14"/>
-                                        <path d="m13 6 6 6-6 6"/>
-                                    </svg>
+                                    <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
                                 </span>
                             </div>
                         </a>
                     @empty
                         <div class="empty-state">
                             <div class="empty-icon">
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="1.8"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                    aria-hidden="true"
-                                >
-                                    <rect x="3" y="3" width="7" height="7" rx="2"/>
-                                    <rect x="14" y="3" width="7" height="7" rx="2"/>
-                                    <rect x="3" y="14" width="7" height="7" rx="2"/>
-                                    <rect x="14" y="14" width="7" height="7" rx="2"/>
-                                </svg>
+                                <i class="fa-solid fa-layer-group" aria-hidden="true"></i>
                             </div>
 
                             <h3>No modules assigned</h3>
 
                             <p>
-                                You currently do not have access to any finance modules.
-                                Contact the system administrator if you believe this is
-                                incorrect.
+                                You currently do not have access to any finance
+                                modules. Contact the system administrator if you
+                                believe this is incorrect.
                             </p>
                         </div>
                     @endforelse
                 </div>
 
-                <div
-                    class="search-empty-state"
-                    id="searchEmptyState"
-                    aria-live="polite"
-                >
+                <div class="search-empty-state" id="searchEmptyState" aria-live="polite">
                     <div class="empty-icon">
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.8"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            aria-hidden="true"
-                        >
-                            <circle cx="11" cy="11" r="7"/>
-                            <path d="m20 20-3.5-3.5"/>
-                            <path d="M8.5 8.5l5 5"/>
-                            <path d="M13.5 8.5l-5 5"/>
-                        </svg>
+                        <i class="fa-solid fa-magnifying-glass-minus" aria-hidden="true"></i>
                     </div>
 
                     <h3>No matching modules</h3>
@@ -1769,13 +1522,11 @@
             </section>
         </main>
 
-        {{-- =====================================================
-             FOOTER
-        ====================================================== --}}
         <footer class="footer">
             <div class="footer-inner">
                 <div class="footer-brand">
-                    <span class="footer-brand-dot"></span>
+                    <i class="fa-solid fa-circle" aria-hidden="true"></i>
+
                     Ecobank Finance Intelligence Platform
                 </div>
 
@@ -1787,37 +1538,16 @@
     </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            const root = document.documentElement;
-            const themeToggle = document.getElementById('themeToggle');
-
-            /*
-             * Theme switching
-             */
-            themeToggle?.addEventListener('click', function () {
-                const currentTheme = root.dataset.theme || 'light';
-                const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
-
-                root.dataset.theme = nextTheme;
-
-                try {
-                    localStorage.setItem(
-                        'finance-platform-theme',
-                        nextTheme
-                    );
-                } catch (error) {
-                    // The interface still works when local storage is unavailable.
-                }
-            });
-
-            /*
-             * Module searching
-             */
+        document.addEventListener('DOMContentLoaded', function() {
             const searchInput = document.getElementById('moduleSearch');
+
             const moduleCards = Array.from(
                 document.querySelectorAll('[data-module-card]')
             );
-            const searchEmptyState = document.getElementById('searchEmptyState');
+
+            const searchEmptyState = document.getElementById(
+                'searchEmptyState'
+            );
 
             function filterModules() {
                 if (!searchInput) {
@@ -1830,12 +1560,13 @@
 
                 let visibleCount = 0;
 
-                moduleCards.forEach(function (card) {
+                moduleCards.forEach(function(card) {
                     const searchableText =
                         card.dataset.moduleSearch?.toLowerCase() || '';
 
                     const matches =
-                        query === '' || searchableText.includes(query);
+                        query === '' ||
+                        searchableText.includes(query);
 
                     card.hidden = !matches;
 
@@ -1852,19 +1583,17 @@
 
             searchInput?.addEventListener('input', filterModules);
 
-            /*
-             * Press "/" anywhere outside an input to focus the module search.
-             */
-            document.addEventListener('keydown', function (event) {
+            document.addEventListener('keydown', function(event) {
                 const activeElement = document.activeElement;
-                const isTyping =
+
+                const userIsTyping =
                     activeElement instanceof HTMLInputElement ||
                     activeElement instanceof HTMLTextAreaElement ||
                     activeElement?.isContentEditable;
 
                 if (
                     event.key === '/' &&
-                    !isTyping &&
+                    !userIsTyping &&
                     searchInput
                 ) {
                     event.preventDefault();
@@ -1883,4 +1612,5 @@
         });
     </script>
 </body>
+
 </html>
