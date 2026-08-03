@@ -138,7 +138,7 @@ class BranchDailyPerformanceSummaryService
         // Actual loans per branch for all three reference dates in a single pass over
         // loan_listings (one query instead of three) — the branch-derivation expression
         // it filters on has no supporting index, so each separate call was a full scan.
-        $loanBuckets = $this->fetchBranchLoansForDates($branchCodes, array_filter([
+        $loanBuckets = $this->fetchBranchLoansForDates(array_filter([
             'main' => $loanAsOfDate,
             'mtd'  => $mtdLoanDate,
             'ytd'  => $ytdLoanDate,
