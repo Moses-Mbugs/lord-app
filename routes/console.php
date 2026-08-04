@@ -14,18 +14,13 @@ Artisan::command('inspire', function () {
     // Watches for the daily balances zip from 07:30, retrying up to 4 times (30 min apart)
     // until ~09:00. On success it imports and triggers the balances + top movers report
     // pipeline itself (replaces the old fixed 9:30 weekday run-balances job below).
-    // Schedule::command('finance:import-daily-balances')
-    // ->weekdays()
-    // ->timezone('Africa/Nairobi')
-    // ->at('7:30')
-    // ->withoutOverlapping(180)           // prevent double-runs (lock for up to 3h)
-    // ->runInBackground()
-    // ->onFailure(function () {
-    //     // Optional: send a Slack/email alert here
-    //     // E.g: Notification::route('mail', config('reports.balances.ops_alert_email'))
-    //     //          ->notify(new BalancesPipelineFailedNotification());
-    // })
-    // ->appendOutputTo(storage_path('logs/balances-pipeline.log'));
+    Schedule::command('finance:import-daily-balances')
+        ->weekdays()
+        ->timezone('Africa/Nairobi')
+        ->at('7:30')
+        ->withoutOverlapping(180)           // prevent double-runs (lock for up to 3h)
+        ->runInBackground()
+        ->appendOutputTo(storage_path('logs/balances-pipeline.log'));
 
     // Prune customer_balances daily detail down to month-end snapshots overnight,
     // well clear of the 07:15 weekday balances import above.
