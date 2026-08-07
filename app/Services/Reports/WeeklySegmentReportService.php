@@ -257,7 +257,7 @@ class WeeklySegmentReportService
                 m.cif,
                 m.customer_name,
                 m.branch_code,
-                COALESCE(sm.business_segment_name, 'Unmapped') AS sub_segment_name,
+                COALESCE(css.sub_segment_name, 'Unmapped') AS sub_segment_name,
                 m.period_start  AS start_balance,
                 m.period_end    AS end_balance,
                 (m.period_end - m.period_start) AS movement
@@ -280,12 +280,17 @@ class WeeklySegmentReportService
                   )
                 GROUP BY cb.cif
             ) m
-            LEFT JOIN customer_accounts_imports cai
-                ON cai.f12_cif = m.cif
-               AND cai.etibiseg2 IS NOT NULL
-               AND TRIM(cai.etibiseg2) <> ''
-            LEFT JOIN sub_segment_mappings sm
-                ON sm.mis_code = TRIM(cai.etibiseg2)
+            LEFT JOIN (
+                SELECT
+                    cai.f12_cif AS cif,
+                    MAX(sm.business_segment_name) AS sub_segment_name
+                FROM customer_accounts_imports cai
+                LEFT JOIN sub_segment_mappings sm
+                    ON sm.mis_code = TRIM(cai.etibiseg2)
+                WHERE cai.etibiseg2 IS NOT NULL
+                  AND TRIM(cai.etibiseg2) <> ''
+                GROUP BY cai.f12_cif
+            ) css ON css.cif = m.cif
             HAVING (m.period_end - m.period_start) <> 0
         ", array_merge(
             [$start, $end, $start, $end],

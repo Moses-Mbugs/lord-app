@@ -111,28 +111,39 @@ class CustomerTrendService
     {
         $cif = trim($cif);
 
-        $query = DB::table('customer_balances')
-            ->where('cif', $cif)
-            ->whereNotNull('balance_date')
-            ->select('balance_date', DB::raw('SUM(GREATEST(COALESCE(lcy_balance, balance, 0), 0)) AS lcy_balance'))
-            ->groupBy('balance_date')
-            ->orderBy('balance_date');
+        $balances = $this->dateSeries('customer_balances', 'cif', 'balance_date', 'GREATEST(COALESCE(lcy_balance, balance, 0), 0)', $cif, $from, $to);
+        $loans    = $this->dateSeries('loan_listings', 'cif', 'as_at_date', 'outstanding_amount_lcy', $cif, $from, $to);
+
+        $dates = $balances->keys()->merge($loans->keys())->unique()->sort()->values();
+
+        return [
+            'labels'   => $dates->map(fn($d) => Carbon::parse($d)->format('d M Y'))->all(),
+            'dates'    => $dates->all(),
+            'balances' => $dates->map(fn($d) => $balances->has($d) ? round($balances[$d], 2) : null)->all(),
+            'loans'    => $dates->map(fn($d) => $loans->has($d) ? round($loans[$d], 2) : null)->all(),
+        ];
+    }
+
+    private function dateSeries(string $table, string $cifColumn, string $dateColumn, string $sumExpr, string $cif, ?string $from, ?string $to)
+    {
+        $query = DB::table($table)
+            ->where($cifColumn, $cif)
+            ->whereNotNull($dateColumn)
+            ->select($dateColumn, DB::raw("SUM({$sumExpr}) AS total"))
+            ->groupBy($dateColumn)
+            ->orderBy($dateColumn);
 
         if ($from) {
-            $query->whereDate('balance_date', '>=', Carbon::parse($from)->toDateString());
+            $query->whereDate($dateColumn, '>=', Carbon::parse($from)->toDateString());
         }
 
         if ($to) {
-            $query->whereDate('balance_date', '<=', Carbon::parse($to)->toDateString());
+            $query->whereDate($dateColumn, '<=', Carbon::parse($to)->toDateString());
         }
 
-        $rows = $query->get();
-
-        return [
-            'labels'   => $rows->pluck('balance_date')->map(fn($d) => Carbon::parse($d)->format('d M Y'))->all(),
-            'dates'    => $rows->pluck('balance_date')->all(),
-            'balances' => $rows->pluck('lcy_balance')->map(fn($v) => round((float) $v, 2))->all(),
-        ];
+        return $query->get()
+            ->keyBy(fn($r) => Carbon::parse($r->{$dateColumn})->toDateString())
+            ->map(fn($r) => (float) $r->total);
     }
 
     public function summary(string $cif): array

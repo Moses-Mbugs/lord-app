@@ -199,7 +199,7 @@ Route::prefix('finance')->name('finance.')->middleware(['auth'])->group(function
         });
     });
 
-    Route::prefix('customer-trend')->name('customer-trend.')->middleware('role:finance-admin')->group(function () {
+    Route::prefix('customer-trend')->name('customer-trend.')->group(function () {
         Route::get('/', [CustomerTrendController::class, 'index'])->name('index');
         Route::get('profile', [CustomerTrendController::class, 'profile'])->name('profile');
         Route::get('trend', [CustomerTrendController::class, 'trend'])->name('trend');

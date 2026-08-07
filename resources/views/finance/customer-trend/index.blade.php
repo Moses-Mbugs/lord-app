@@ -38,7 +38,7 @@
         }
 
         .ct-page {
-            padding: 18px 20px 32px;
+            padding: 14px 20px 24px;
             max-width: 1500px;
             margin: 0 auto;
         }
@@ -49,7 +49,7 @@
             justify-content: space-between;
             align-items: flex-start;
             gap: 18px;
-            margin-bottom: 14px;
+            margin-bottom: 10px;
         }
 
         .ct-kicker {
@@ -101,8 +101,8 @@
             border: 1px solid var(--eco-border);
             box-shadow: var(--shadow-soft);
             border-radius: var(--radius-lg);
-            padding: 14px;
-            margin-bottom: 16px;
+            padding: 12px;
+            margin-bottom: 12px;
         }
 
         .search-grid {
@@ -281,7 +281,7 @@
             background: var(--eco-card);
             border: 1px dashed #C9D6E2;
             border-radius: var(--radius-lg);
-            padding: 46px 18px;
+            padding: 32px 18px;
             text-align: center;
             color: var(--eco-muted);
             box-shadow: var(--shadow-light);
@@ -382,15 +382,21 @@
         /* Result layout */
         .result-layout {
             display: grid;
-            grid-template-columns: minmax(280px, 360px) 1fr;
-            gap: 14px;
+            grid-template-columns: minmax(280px, 340px) 1fr;
+            gap: 12px;
             align-items: start;
         }
 
         .side-stack,
         .main-stack {
             display: grid;
-            gap: 14px;
+            gap: 12px;
+        }
+
+        .kpi-pair {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
         }
 
         .panel {
@@ -402,8 +408,8 @@
         }
 
         .panel-header {
-            min-height: 52px;
-            padding: 12px 15px;
+            min-height: 44px;
+            padding: 10px 14px;
             border-bottom: 1px solid var(--eco-border);
             display: flex;
             align-items: center;
@@ -429,19 +435,19 @@
         }
 
         .panel-body {
-            padding: 15px;
+            padding: 13px;
         }
 
         /* Profile */
         .profile-card {
-            padding: 16px;
+            padding: 14px;
         }
 
         .avatar-row {
             display: flex;
             gap: 12px;
             align-items: center;
-            margin-bottom: 14px;
+            margin-bottom: 12px;
         }
 
         .profile-avatar {
@@ -475,8 +481,8 @@
 
         .profile-list {
             display: grid;
-            gap: 9px;
-            margin-top: 10px;
+            gap: 7px;
+            margin-top: 8px;
         }
 
         .profile-item {
@@ -484,7 +490,7 @@
             justify-content: space-between;
             gap: 12px;
             border-top: 1px solid #EEF3F7;
-            padding-top: 9px;
+            padding-top: 7px;
             font-size: .83rem;
         }
 
@@ -523,8 +529,8 @@
             border: 1px solid var(--eco-border);
             border-radius: var(--radius-lg);
             box-shadow: var(--shadow-light);
-            padding: 14px;
-            min-height: 112px;
+            padding: 12px;
+            min-height: 92px;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
@@ -564,7 +570,7 @@
 
         .kpi-card.primary .kpi-value {
             color: #FFFFFF;
-            font-size: 1.6rem;
+            font-size: 1.35rem;
         }
 
         .kpi-value.pos {
@@ -597,7 +603,7 @@
 
         .kpi-card.loan .kpi-value {
             color: #FFFFFF;
-            font-size: 1.6rem;
+            font-size: 1.35rem;
         }
 
         .kpi-card.loan .kpi-sub {
@@ -631,7 +637,7 @@
 
         /* Charts */
         .chart-wrap {
-            height: 310px;
+            height: 270px;
             position: relative;
         }
 
@@ -692,14 +698,14 @@
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             gap: 10px;
-            margin-bottom: 12px;
+            margin-bottom: 10px;
         }
 
         .chart-stat {
             background: #F8FAFC;
             border: 1px solid #EDF2F7;
             border-radius: 13px;
-            padding: 9px 10px;
+            padding: 8px 10px;
         }
 
         .chart-stat span {
@@ -719,7 +725,7 @@
         }
 
         .chart-empty {
-            min-height: 280px;
+            min-height: 230px;
             display: none;
             align-items: center;
             justify-content: center;
@@ -758,7 +764,7 @@
             justify-content: space-between;
             align-items: center;
             gap: 10px;
-            margin-bottom: 12px;
+            margin-bottom: 10px;
         }
 
         .account-filter {
@@ -792,7 +798,7 @@
         .acc-table th {
             background: #F5F8FB;
             color: var(--eco-blue-dark);
-            padding: 10px 12px;
+            padding: 8px 10px;
             text-align: left;
             font-size: .7rem;
             text-transform: uppercase;
@@ -803,7 +809,7 @@
         }
 
         .acc-table td {
-            padding: 10px 12px;
+            padding: 8px 10px;
             border-bottom: 1px solid #EEF3F7;
             color: var(--eco-text);
             vertical-align: middle;
@@ -920,6 +926,7 @@
 
             .search-grid,
             .kpi-grid,
+            .kpi-pair,
             .chart-stat-row,
             .skeleton-grid {
                 grid-template-columns: 1fr;
@@ -1078,26 +1085,28 @@
                         </div>
                     </div>
 
-                    <div class="kpi-card primary">
-                        <div>
-                            <div class="kpi-label">
-                                <span>Current Balance</span>
-                                <i class="fa-solid fa-wallet"></i>
+                    <div class="kpi-pair">
+                        <div class="kpi-card primary">
+                            <div>
+                                <div class="kpi-label">
+                                    <span>Current Balance</span>
+                                    <i class="fa-solid fa-wallet"></i>
+                                </div>
+                                <div class="kpi-value" id="kpi-balance">—</div>
                             </div>
-                            <div class="kpi-value" id="kpi-balance">—</div>
+                            <div class="kpi-sub" id="kpi-as-of">As of —</div>
                         </div>
-                        <div class="kpi-sub" id="kpi-as-of">As of —</div>
-                    </div>
 
-                    <div class="kpi-card loan">
-                        <div>
-                            <div class="kpi-label">
-                                <span>Loan Balance</span>
-                                <i class="fa-solid fa-hand-holding-dollar"></i>
+                        <div class="kpi-card loan">
+                            <div>
+                                <div class="kpi-label">
+                                    <span>Loan Balance</span>
+                                    <i class="fa-solid fa-hand-holding-dollar"></i>
+                                </div>
+                                <div class="kpi-value" id="kpi-loan-balance">—</div>
                             </div>
-                            <div class="kpi-value" id="kpi-loan-balance">—</div>
+                            <div class="kpi-sub" id="kpi-loan-as-of">As of —</div>
                         </div>
-                        <div class="kpi-sub" id="kpi-loan-as-of">As of —</div>
                     </div>
                 </aside>
 
@@ -1604,7 +1613,8 @@
             return {
                 labels: Array.isArray(trend.labels) ? trend.labels : [],
                 dates: Array.isArray(trend.dates) ? trend.dates : [],
-                balances: Array.isArray(trend.balances) ? trend.balances.map(v => Number(v || 0)) : []
+                balances: Array.isArray(trend.balances) ? trend.balances.map(v => v === null || v === undefined ? null : Number(v)) : [],
+                loans: Array.isArray(trend.loans) ? trend.loans.map(v => v === null || v === undefined ? null : Number(v)) : []
             };
         }
 
@@ -1612,10 +1622,33 @@
             const safeTrend = normalizeTrend(trend);
             currentFilteredTrend = safeTrend;
 
-            updateTrendStats(safeTrend);
+            const balanceOnly = extractBalanceOnly(safeTrend);
+
+            updateTrendStats(balanceOnly);
             renderTrendChart(safeTrend);
-            renderMovementChart(safeTrend);
+            renderMovementChart(balanceOnly);
             updateTrendPeriodLabel();
+        }
+
+        function extractBalanceOnly(trend) {
+            const labels = [],
+                dates = [],
+                balances = [];
+
+            trend.dates.forEach((date, index) => {
+                if (trend.balances[index] !== null && trend.balances[index] !== undefined) {
+                    labels.push(trend.labels[index]);
+                    dates.push(date);
+                    balances.push(trend.balances[index]);
+                }
+            });
+
+            return {
+                labels,
+                dates,
+                balances,
+                loans: []
+            };
         }
 
         function updateTrendStats(trend) {
@@ -1638,7 +1671,7 @@
         }
 
         function renderTrendChart(trend) {
-            const hasData = trend.labels.length && trend.balances.length;
+            const hasData = trend.labels.length && (trend.balances.length || trend.loans.length);
 
             $('trend-empty').classList.toggle('show', !hasData);
             $('trend-chart-wrap').style.display = hasData ? 'block' : 'none';
@@ -1646,23 +1679,46 @@
             if (trendChart) trendChart.destroy();
             if (!hasData) return;
 
+            const hasLoanData = (trend.loans || []).some(v => v !== null && v !== undefined);
+
+            const datasets = [{
+                label: 'Balance',
+                data: trend.balances,
+                borderColor: '#005B82',
+                backgroundColor: 'rgba(0, 130, 187, .08)',
+                borderWidth: 2.5,
+                pointRadius: trend.labels.length <= 45 ? 3 : 0,
+                pointHoverRadius: 6,
+                fill: true,
+                tension: .32,
+                spanGaps: true,
+                yAxisID: 'y'
+            }];
+
+            if (hasLoanData) {
+                datasets.push({
+                    label: 'Loan Balance',
+                    data: trend.loans,
+                    borderColor: '#B7791F',
+                    backgroundColor: 'rgba(183, 121, 31, .08)',
+                    borderWidth: 2.5,
+                    borderDash: [5, 3],
+                    pointRadius: trend.labels.length <= 45 ? 3 : 0,
+                    pointHoverRadius: 6,
+                    fill: false,
+                    tension: .32,
+                    spanGaps: true,
+                    yAxisID: hasLoanData ? 'y1' : 'y'
+                });
+            }
+
             const ctx = $('trend-chart').getContext('2d');
 
             trendChart = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: trend.labels,
-                    datasets: [{
-                        label: 'Balance',
-                        data: trend.balances,
-                        borderColor: '#005B82',
-                        backgroundColor: 'rgba(0, 130, 187, .08)',
-                        borderWidth: 2.5,
-                        pointRadius: trend.labels.length <= 45 ? 3 : 0,
-                        pointHoverRadius: 6,
-                        fill: true,
-                        tension: .32
-                    }]
+                    datasets
                 },
                 options: {
                     responsive: true,
@@ -1673,12 +1729,21 @@
                     },
                     plugins: {
                         legend: {
-                            display: false
+                            display: hasLoanData,
+                            position: 'top',
+                            align: 'end',
+                            labels: {
+                                boxWidth: 10,
+                                font: {
+                                    size: 11
+                                }
+                            }
                         },
                         tooltip: {
+                            filter: item => item.raw !== null && item.raw !== undefined,
                             callbacks: {
                                 title: items => items?.[0]?.label || '',
-                                label: item => 'Balance: ' + fmtFull(item.raw)
+                                label: item => `${item.dataset.label}: ${fmtFull(item.raw)}`
                             }
                         }
                     },
@@ -1697,6 +1762,22 @@
                         y: {
                             border: {
                                 display: false
+                            },
+                            ticks: {
+                                font: {
+                                    size: 10
+                                },
+                                callback: value => fmt(value)
+                            }
+                        },
+                        y1: {
+                            display: hasLoanData,
+                            position: 'right',
+                            border: {
+                                display: false
+                            },
+                            grid: {
+                                drawOnChartArea: false
                             },
                             ticks: {
                                 font: {
@@ -1801,7 +1882,8 @@
             const filtered = {
                 labels: [],
                 dates: [],
-                balances: []
+                balances: [],
+                loans: []
             };
 
             trend.dates.forEach((date, index) => {
@@ -1809,6 +1891,7 @@
                     filtered.labels.push(trend.labels[index]);
                     filtered.dates.push(date);
                     filtered.balances.push(trend.balances[index]);
+                    filtered.loans.push(trend.loans[index] ?? null);
                 }
             });
 
@@ -1962,14 +2045,15 @@
             }
 
             const rows = [
-                ['Date', 'Label', 'Balance']
+                ['Date', 'Label', 'Balance', 'Loan Balance']
             ];
 
             currentFilteredTrend.labels.forEach((label, index) => {
                 rows.push([
                     currentFilteredTrend.dates[index] || '',
                     label || '',
-                    currentFilteredTrend.balances[index] ?? ''
+                    currentFilteredTrend.balances[index] ?? '',
+                    currentFilteredTrend.loans?.[index] ?? ''
                 ]);
             });
 
