@@ -586,6 +586,24 @@
             color: rgba(255, 255, 255, .75);
         }
 
+        .kpi-card.loan {
+            background: linear-gradient(135deg, #92400E, var(--eco-warning));
+            color: #FFFFFF;
+        }
+
+        .kpi-card.loan .kpi-label {
+            color: rgba(255, 255, 255, .78);
+        }
+
+        .kpi-card.loan .kpi-value {
+            color: #FFFFFF;
+            font-size: 1.6rem;
+        }
+
+        .kpi-card.loan .kpi-sub {
+            color: rgba(255, 255, 255, .75);
+        }
+
         .trend-pill {
             display: inline-flex;
             align-items: center;
@@ -1070,6 +1088,17 @@
                         </div>
                         <div class="kpi-sub" id="kpi-as-of">As of —</div>
                     </div>
+
+                    <div class="kpi-card loan">
+                        <div>
+                            <div class="kpi-label">
+                                <span>Loan Balance</span>
+                                <i class="fa-solid fa-hand-holding-dollar"></i>
+                            </div>
+                            <div class="kpi-value" id="kpi-loan-balance">—</div>
+                        </div>
+                        <div class="kpi-sub" id="kpi-loan-as-of">As of —</div>
+                    </div>
                 </aside>
 
                 <main class="main-stack">
@@ -1480,6 +1509,9 @@
             renderAccounts(accounts);
             renderLoanBadge(!!p.has_loan);
             renderLoans(Array.isArray(p.loans) ? p.loans : []);
+
+            $('kpi-loan-balance').textContent = fmt(p.loan_balance || 0);
+            $('kpi-loan-as-of').textContent = p.loan_as_of_date ? 'As of ' + fmtDate(p.loan_as_of_date) : 'No loans on record';
         }
 
         function renderLoanBadge(hasLoan) {

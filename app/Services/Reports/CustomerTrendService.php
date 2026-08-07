@@ -64,6 +64,8 @@ class CustomerTrendService
             ])->values()->all(),
             'has_loan'             => ! empty($loans),
             'loans'                => $loans,
+            'loan_balance'         => round(array_sum(array_column($loans, 'outstanding_lcy')), 2),
+            'loan_as_of_date'      => $loans[0]['as_at_date'] ?? null,
         ];
     }
 
