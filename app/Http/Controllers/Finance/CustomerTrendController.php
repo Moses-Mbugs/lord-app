@@ -25,7 +25,7 @@ class CustomerTrendController extends Controller
 
         $profile = $service->profile($data['cif']);
 
-        if (empty($profile['accounts']) && $profile['customer_name'] === null) {
+        if (empty($profile['accounts']) && empty($profile['loans']) && $profile['customer_name'] === null) {
             return response()->json([
                 'found'   => false,
                 'message' => 'No data found for CIF ' . $data['cif'],

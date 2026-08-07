@@ -855,6 +855,16 @@
             color: var(--eco-muted);
         }
 
+        .status-badge.loan-yes {
+            background: var(--eco-warning-soft);
+            color: var(--eco-warning);
+        }
+
+        .status-badge.loan-no {
+            background: #EEF3F7;
+            color: var(--eco-muted);
+        }
+
         @media (max-width: 1180px) {
             .result-layout {
                 grid-template-columns: 1fr;
@@ -1043,6 +1053,10 @@
                                 <span>Linked Accounts</span>
                                 <span id="p-account-count">—</span>
                             </div>
+                            <div class="profile-item">
+                                <span>Loan Customer</span>
+                                <span><span class="status-badge loan-no" id="p-has-loan">—</span></span>
+                            </div>
                         </div>
                     </div>
 
@@ -1197,6 +1211,36 @@
                                         <tr>
                                             <td colspan="6" style="text-align:center;color:#999;padding:20px;">No
                                                 account records loaded.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h3 class="panel-title"><i class="fa-solid fa-hand-holding-dollar"></i> Loan Accounts</h3>
+                            <span id="loan-count" class="panel-subtle">—</span>
+                        </div>
+                        <div class="panel-body">
+                            <div class="table-wrap">
+                                <table class="acc-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Loan Account</th>
+                                            <th>Product</th>
+                                            <th>Status</th>
+                                            <th>Outstanding (LCY)</th>
+                                            <th>Currency</th>
+                                            <th>Branch</th>
+                                            <th>As At</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="loan-tbody">
+                                        <tr>
+                                            <td colspan="7" style="text-align:center;color:#999;padding:20px;">No
+                                                loan records loaded.</td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -1434,6 +1478,37 @@
             $('acct-count').textContent = accounts.length + ' account' + (accounts.length === 1 ? '' : 's');
 
             renderAccounts(accounts);
+            renderLoanBadge(!!p.has_loan);
+            renderLoans(Array.isArray(p.loans) ? p.loans : []);
+        }
+
+        function renderLoanBadge(hasLoan) {
+            const el = $('p-has-loan');
+            el.className = 'status-badge ' + (hasLoan ? 'loan-yes' : 'loan-no');
+            el.textContent = hasLoan ? 'Yes' : 'No';
+        }
+
+        function renderLoans(loans) {
+            const tbody = $('loan-tbody');
+            $('loan-count').textContent = loans.length + ' loan' + (loans.length === 1 ? '' : 's');
+
+            if (!loans.length) {
+                tbody.innerHTML =
+                    '<tr><td colspan="7" style="text-align:center;color:#999;padding:18px;">No loan records found for this customer.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = loans.map(loan => `
+            <tr>
+                <td><span class="badge-mono">${escapeHtml(loan.account || '—')}</span></td>
+                <td>${escapeHtml(loan.product_code || '—')}</td>
+                <td><span class="status-badge unknown">${escapeHtml(loan.status_bucket || loan.loan_status || '—')}</span></td>
+                <td>${fmt(loan.outstanding_lcy)}</td>
+                <td>${escapeHtml(loan.currency || '—')}</td>
+                <td>${escapeHtml(loan.branch || '—')}</td>
+                <td>${loan.as_at_date ? escapeHtml(fmtDate(loan.as_at_date)) : '—'}</td>
+            </tr>
+        `).join('');
         }
 
         function renderSummary(s) {

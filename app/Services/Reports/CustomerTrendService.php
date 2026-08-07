@@ -44,6 +44,8 @@ class CustomerTrendService
 
         $name = $customerName ?: ($latestBalance ? trim((string) $latestBalance) : null);
 
+        $loans = $this->loans($cif);
+
         return [
             'cif'                  => $cif,
             'customer_name'        => $name,
@@ -60,7 +62,47 @@ class CustomerTrendService
                 'open_date'      => $a->ac_open_date,
                 'status'         => $a->record_stat,
             ])->values()->all(),
+            'has_loan'             => ! empty($loans),
+            'loans'                => $loans,
         ];
+    }
+
+    private function loans(string $cif): array
+    {
+        $latestDate = DB::table('loan_listings')
+            ->where('cif', $cif)
+            ->max('as_at_date');
+
+        if (! $latestDate) {
+            return [];
+        }
+
+        return DB::table('loan_listings')
+            ->where('cif', $cif)
+            ->where('as_at_date', $latestDate)
+            ->orderBy('related_account')
+            ->get([
+                'related_account',
+                'product_code',
+                'loan_status',
+                'status_bucket',
+                'outstanding_amount_lcy',
+                'currency',
+                'branch',
+                'as_at_date',
+            ])
+            ->map(fn($l) => [
+                'account'         => $l->related_account,
+                'product_code'    => $l->product_code,
+                'loan_status'     => $l->loan_status,
+                'status_bucket'   => $l->status_bucket,
+                'outstanding_lcy' => round((float) $l->outstanding_amount_lcy, 2),
+                'currency'        => $l->currency,
+                'branch'          => $l->branch,
+                'as_at_date'      => $l->as_at_date,
+            ])
+            ->values()
+            ->all();
     }
 
     public function trend(string $cif, ?string $from = null, ?string $to = null): array
