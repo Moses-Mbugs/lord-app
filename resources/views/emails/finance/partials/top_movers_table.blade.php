@@ -7,13 +7,13 @@
     $font = 11.5;
 
     if ($showCurrency) {
-        $wCustomer = 27; $wBr = 8; $wCcy = 8; $wSub = 10;
-        $wStart = 16; $wEnd = 16; $wMove = 15;
-        $totalCols = 7;
-    } else {
-        $wCustomer = 34; $wBr = 9; $wSub = 11;
-        $wStart = 17; $wEnd = 17; $wMove = 12;
+        $wCustomer = 32; $wBr = 9; $wCcy = 9;
+        $wStart = 17; $wEnd = 17; $wMove = 16;
         $totalCols = 6;
+    } else {
+        $wCustomer = 40; $wBr = 10;
+        $wStart = 18; $wEnd = 18; $wMove = 14;
+        $totalCols = 5;
     }
 @endphp
 
@@ -43,8 +43,6 @@
                     <th style="padding:8px 10px; background:#F8FAFC; text-transform:uppercase; font-size:9px; letter-spacing:0.7px; font-weight:700; color:#64748B; border-bottom:1px solid #E2E8F0; text-align:center; width:{{ $wCcy }}%;">
                         CCY</th>
                 @endif
-                <th style="padding:8px 10px; background:#F8FAFC; text-transform:uppercase; font-size:9px; letter-spacing:0.7px; font-weight:700; color:#64748B; border-bottom:1px solid #E2E8F0; text-align:center; width:{{ $wSub }}%;">
-                    Sub Seg</th>
                 <th style="padding:8px 10px; background:#F8FAFC; text-transform:uppercase; font-size:9px; letter-spacing:0.7px; font-weight:700; color:#64748B; border-bottom:1px solid #E2E8F0; text-align:right; width:{{ $wStart }}%;">
                     {{ $start ? \Carbon\Carbon::parse($start)->format('d M') : 'Start' }}</th>
                 <th style="padding:8px 10px; background:#F8FAFC; text-transform:uppercase; font-size:9px; letter-spacing:0.7px; font-weight:700; color:#64748B; border-bottom:1px solid #E2E8F0; text-align:right; width:{{ $wEnd }}%;">
@@ -61,8 +59,6 @@
                     $branch   = $r->branch_code   ?? '—';
                     $custName = $r->customer_name ?? '—';
                     $ccy      = $r->currency      ?? '—';
-                    $subSeg   = $r->sub_segment   ?? null;
-                    $subSeg   = ($subSeg && $subSeg !== 'UNMAPPED') ? $subSeg : '—';
                     $rowBg    = $i % 2 === 0 ? '#ffffff' : '#FAFBFD';
                     $startTxt = number_format((int) round((float) ($r->start_balance ?? 0)));
                     $endTxt   = number_format((int) round((float) ($r->end_balance   ?? 0)));
@@ -84,10 +80,6 @@
                         </td>
                     @endif
 
-                    <td style="padding:8px 10px; border-bottom:1px solid #F1F5F9; text-align:center;">
-                        <span style="display:inline-block; padding:2px 7px; border-radius:999px; background:#F5F3FF; border:1px solid #DDD6FE; color:#5B21B6; font-weight:700; font-size:9px; letter-spacing:0.25px; text-transform:uppercase;">{{ $subSeg }}</span>
-                    </td>
-
                     <td style="padding:8px 10px; border-bottom:1px solid #F1F5F9; text-align:right; font-family:'Courier New',ui-monospace,monospace; font-size:{{ $font }}px; color:#475569; font-weight:600; white-space:nowrap;">{{ $startTxt }}</td>
 
                     <td style="padding:8px 10px; border-bottom:1px solid #F1F5F9; text-align:right; font-family:'Courier New',ui-monospace,monospace; font-size:{{ $font }}px; color:#475569; font-weight:600; white-space:nowrap;">{{ $endTxt }}</td>
@@ -106,7 +98,7 @@
             {{-- Subtotal row (requested: totals below the last shown row) --}}
             @php $totMoveTxt = number_format((int) round(abs($totalMove))); @endphp
             <tr style="background:#F1F5F9;">
-                <td colspan="{{ $showCurrency ? 4 : 3 }}" style="padding:8px 10px; border-top:2px solid #CBD5E1; font-size:10px; font-weight:800; color:#475569; text-transform:uppercase; letter-spacing:0.5px;">
+                <td colspan="{{ $showCurrency ? 2 : 2 }}" style="padding:8px 10px; border-top:2px solid #CBD5E1; font-size:10px; font-weight:800; color:#475569; text-transform:uppercase; letter-spacing:0.5px;">
                     Subtotal — {{ $rows->count() }} shown
                 </td>
                 <td style="padding:8px 10px; border-top:2px solid #CBD5E1; text-align:right; font-family:'Courier New',ui-monospace,monospace; font-size:11px; color:#334155; font-weight:700;">

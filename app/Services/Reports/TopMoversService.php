@@ -424,8 +424,6 @@ class TopMoversService
             ->whereNotNull('cb.cif')
             ->whereNotNull('cb.currency');
 
-        $this->joinSubSegment($q, 'cb');
-
         $this->applyCommonExclusions($q, 'cb');
 
         $q->groupBy('cb.cif', 'cb.currency')
@@ -471,7 +469,6 @@ class TopMoversService
                 'customer_name'  => (string) ($r->customer_name ?? ''),
                 'currency'       => (string) ($r->currency ?? ''),
                 'branch_code'    => (string) ($r->branch_code ?? ''),
-                'sub_segment'    => (string) ($r->sub_segment ?? 'UNMAPPED'),
                 'cust_ac_no'     => (string) ($r->cust_ac_no ?? ''),
                 'start_balance'  => (string) ($r->start_balance ?? '0'),
                 'end_balance'    => (string) ($r->end_balance ?? '0'),
@@ -510,8 +507,6 @@ class TopMoversService
             ->selectRaw("{$moveExpr} as movement", [$endDate, $startDate])
             ->whereIn('cb.balance_date', [$startDate, $endDate])
             ->whereNotNull('cb.cif');
-
-        $this->joinSubSegment($q, 'cb');
 
         $this->applyCommonExclusions($q, 'cb');
 
@@ -552,7 +547,6 @@ class TopMoversService
                 'customer_name'  => (string) ($r->customer_name ?? ''),
                 'currency'       => 'KES',
                 'branch_code'    => (string) ($r->branch_code ?? ''),
-                'sub_segment'    => (string) ($r->sub_segment ?? 'UNMAPPED'),
                 'cust_ac_no'     => null,
                 'start_balance'  => (string) ($r->start_balance ?? '0'),
                 'end_balance'    => (string) ($r->end_balance ?? '0'),
@@ -600,7 +594,6 @@ class TopMoversService
             $this->putIfExists($row, $cols, 'customer_name', $r['customer_name'] ?? null);
             $this->putIfExists($row, $cols, 'currency', $r['currency'] ?? null);
             $this->putIfExists($row, $cols, 'branch_code', $r['branch_code'] ?? null);
-            $this->putIfExists($row, $cols, 'sub_segment', $r['sub_segment'] ?? null);
             $this->putIfExists($row, $cols, 'cust_ac_no', $r['cust_ac_no'] ?? null);
 
             $this->putIfExists($row, $cols, 'start_balance', $r['start_balance'] ?? null);
@@ -624,45 +617,6 @@ class TopMoversService
         if (in_array($col, $cols, true)) {
             $row[$col] = $value;
         }
-    }
-
-    /**
-     * Left-join each CIF's sub-segment short code (business_seg_short from
-     * sub_segment_mappings, resolved via customer_accounts_imports.etibiseg2)
-     * onto an already-grouped movers query, adding a `sub_segment` column.
-     * A CIF's accounts can carry more than one mis_code, so this collapses
-     * to a single deterministic value per CIF (MAX), matching the pattern
-     * used elsewhere (CustomerTrendService) of picking one segment per CIF.
-     */
-    private function joinSubSegment($query, string $alias): void
-    {
-        if (!Schema::hasTable('customer_accounts_imports') || !Schema::hasTable('sub_segment_mappings')) {
-            $query->selectRaw("NULL as sub_segment");
-            return;
-        }
-
-        $query->leftJoinSub(
-            $this->subSegmentByCifSubquery(),
-            'ss',
-            fn($join) => $join->on('ss.cif', '=', "{$alias}.cif")
-        );
-
-        $query->selectRaw('MAX(ss.sub_segment) as sub_segment');
-    }
-
-    private function subSegmentByCifSubquery()
-    {
-        $cifMisSub = DB::table('customer_accounts_imports as cai')
-            ->selectRaw('cai.f12_cif as cif, MAX(TRIM(cai.etibiseg2)) as mis_code')
-            ->whereNotNull('cai.f12_cif')
-            ->whereNotNull('cai.etibiseg2')
-            ->whereRaw("TRIM(cai.etibiseg2) <> ''")
-            ->groupBy('cai.f12_cif');
-
-        return DB::query()
-            ->fromSub($cifMisSub, 'cm')
-            ->leftJoin('sub_segment_mappings as sm', 'sm.mis_code', '=', 'cm.mis_code')
-            ->selectRaw("cm.cif as cif, COALESCE(sm.business_seg_short, 'UNMAPPED') as sub_segment");
     }
 
     /**

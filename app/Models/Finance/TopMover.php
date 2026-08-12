@@ -17,7 +17,6 @@ class TopMover extends Model
         'customer_name',
         'currency',
         'branch_code',
-        'sub_segment',
         'cust_ac_no',
         'start_balance',
         'end_balance',
