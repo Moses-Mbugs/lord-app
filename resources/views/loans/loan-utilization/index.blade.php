@@ -250,22 +250,41 @@
 @endsection
 
 @if ($snapshot)
+    @php
+        $ragColorMap = ['green' => '#168A45', 'amber' => '#B7791F', 'red' => '#C0392B', 'none' => '#6B7C8F'];
+        $chartProducts = collect($dashboard['products']);
+
+        $jsProductNames = $chartProducts->pluck('product_name');
+        $jsPerforming = $chartProducts->pluck('performing');
+        $jsNonPerforming = $chartProducts->pluck('non_performing');
+        $jsTotals = $chartProducts->pluck('total');
+        $jsNplRatios = $chartProducts->pluck('npl_ratio')->map(function ($v) {
+            return round($v * 100, 1);
+        });
+        $jsRagColors = $chartProducts->pluck('rag_npl')->map(function ($v) use ($ragColorMap) {
+            return $ragColorMap[$v];
+        });
+        $jsYtd = $chartProducts->pluck('ytd');
+        $jsMtd = $chartProducts->pluck('mtd');
+        $jsWtd = $chartProducts->pluck('wtd');
+        $jsLastDay = $chartProducts->pluck('last_day');
+    @endphp
     @push('scripts')
         <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
         <script>
-            const products = @json(collect($dashboard['products'])->pluck('product_name'));
-            const performing = @json(collect($dashboard['products'])->pluck('performing'));
-            const nonPerforming = @json(collect($dashboard['products'])->pluck('non_performing'));
-            const totals = @json(collect($dashboard['products'])->pluck('total'));
-            const nplRatios = @json(collect($dashboard['products'])->pluck('npl_ratio')->map(fn($v) => round($v * 100, 1)));
-            const ragColors = @json(collect($dashboard['products'])->pluck('rag_npl')->map(fn($v) => ['green' => '#168A45', 'amber' => '#B7791F', 'red' => '#C0392B', 'none' => '#6B7C8F'][$v]));
-            const ytd = @json(collect($dashboard['products'])->pluck('ytd'));
-            const mtd = @json(collect($dashboard['products'])->pluck('mtd'));
-            const wtd = @json(collect($dashboard['products'])->pluck('wtd'));
-            const lastDay = @json(collect($dashboard['products'])->pluck('last_day'));
+            const products = @json($jsProductNames);
+            const performing = @json($jsPerforming);
+            const nonPerforming = @json($jsNonPerforming);
+            const totals = @json($jsTotals);
+            const nplRatios = @json($jsNplRatios);
+            const ragColors = @json($jsRagColors);
+            const ytd = @json($jsYtd);
+            const mtd = @json($jsMtd);
+            const wtd = @json($jsWtd);
+            const lastDay = @json($jsLastDay);
 
-            const totalPerforming = {{ $t['performing'] }};
-            const totalNonPerforming = {{ $t['non_performing'] }};
+            const totalPerforming = @json($t['performing']);
+            const totalNonPerforming = @json($t['non_performing']);
 
             new Chart(document.getElementById('chartPerformance'), {
                 type: 'doughnut',

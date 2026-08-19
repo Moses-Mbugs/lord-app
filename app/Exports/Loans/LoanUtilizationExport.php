@@ -22,23 +22,28 @@ class LoanUtilizationExport
             @ini_set('memory_limit', '512M');
         }
 
+        $t0 = microtime(true);
         $spreadsheet = new Spreadsheet();
 
         $acctSheet = $spreadsheet->getActiveSheet();
         $acctSheet->setTitle('ACCT_Portfolio');
         $this->writeEntries($acctSheet, $snapshot);
+        fwrite(STDERR, "writeEntries: " . round(microtime(true) - $t0, 2) . "s\n"); $t0 = microtime(true);
 
         $dashboardSheet = new Worksheet($spreadsheet, 'Dashboard');
         $spreadsheet->addSheet($dashboardSheet);
         $this->writeDashboard($dashboardSheet, $snapshot);
+        fwrite(STDERR, "writeDashboard: " . round(microtime(true) - $t0, 2) . "s\n"); $t0 = microtime(true);
 
         $mappingSheet = new Worksheet($spreadsheet, 'Product_Mapping');
         $spreadsheet->addSheet($mappingSheet);
         $this->writeProductMapping($mappingSheet, $snapshot);
+        fwrite(STDERR, "writeProductMapping: " . round(microtime(true) - $t0, 2) . "s\n"); $t0 = microtime(true);
 
         $notesSheet = new Worksheet($spreadsheet, 'Notes');
         $spreadsheet->addSheet($notesSheet);
         $this->writeNotes($notesSheet);
+        fwrite(STDERR, "writeNotes: " . round(microtime(true) - $t0, 2) . "s\n"); $t0 = microtime(true);
 
         foreach ($spreadsheet->getAllSheets() as $sheet) {
             if ($sheet->getTitle() === 'Notes') {
@@ -53,6 +58,7 @@ class LoanUtilizationExport
                 $sheet->getColumnDimension($columnLetter)->setAutoSize(true);
             }
         }
+        fwrite(STDERR, "autosize flag: " . round(microtime(true) - $t0, 2) . "s\n"); $t0 = microtime(true);
 
         $directory = storage_path('app/loan-utilization-exports');
         if (!is_dir($directory)) {
@@ -63,6 +69,7 @@ class LoanUtilizationExport
 
         $writer = new Xlsx($spreadsheet);
         $writer->save($filePath);
+        fwrite(STDERR, "writer save: " . round(microtime(true) - $t0, 2) . "s\n"); $t0 = microtime(true);
 
         $spreadsheet->disconnectWorksheets();
         unset($spreadsheet);
@@ -83,11 +90,11 @@ class LoanUtilizationExport
         $sheet->getStyle('A1:' . $sheet->getHighestColumn() . '1')->getFont()->setBold(true);
         $sheet->freezePane('A2');
 
-        $rowNumber = 2;
+        $rows = [];
 
-        $snapshot->entries()->orderBy('account_reference')->chunk(500, function ($entries) use ($sheet, &$rowNumber) {
+        $snapshot->entries()->orderBy('id')->chunk(1000, function ($entries) use (&$rows) {
             foreach ($entries as $e) {
-                $sheet->fromArray([[
+                $rows[] = [
                     $e->account_reference,
                     $e->customer_name,
                     $e->product_name,
@@ -100,10 +107,13 @@ class LoanUtilizationExport
                     $e->performance_status,
                     optional($e->value_date)->format('Y-m-d'),
                     $e->business,
-                ]], null, 'A' . $rowNumber);
-                $rowNumber++;
+                ];
             }
         });
+
+        if (!empty($rows)) {
+            $sheet->fromArray($rows, null, 'A2');
+        }
     }
 
     protected function writeDashboard(Worksheet $sheet, LoanUtilizationSnapshot $snapshot): void
