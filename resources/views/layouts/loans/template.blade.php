@@ -667,6 +667,12 @@
                 <span>Loan Book Runs</span>
             </a>
 
+            <a href="{{ route('loans.loan-utilization.index') }}"
+                class="loan-nav-link {{ request()->routeIs('loans.loan-utilization.*') ? 'active' : '' }}">
+                <span class="loan-nav-icon">📈</span>
+                <span>Loan Utilization</span>
+            </a>
+
             <div class="loan-nav-section-title">Controls</div>
 
             <div class="loan-nav-link" style="cursor: default;">

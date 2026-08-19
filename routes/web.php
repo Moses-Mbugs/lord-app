@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Loans\LoanBookController;
+use App\Http\Controllers\Loans\LoanUtilizationController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\Admin\RoleManagementController;
 use Illuminate\Support\Facades\Auth;
@@ -80,6 +81,23 @@ Route::prefix('loans/loan-book')
 
         Route::get('/{run}/download', [LoanBookController::class, 'download'])->name('download');
         Route::get('/{run}', [LoanBookController::class, 'show'])->name('show');
+    });
+
+
+/*
+|--------------------------------------------------------------------------
+| Loans (Loan Utilization)
+|--------------------------------------------------------------------------
+*/
+
+Route::prefix('loans/loan-utilization')
+    ->name('loans.loan-utilization.')
+    ->middleware(['auth'])
+    ->group(function () {
+        Route::get('/', [LoanUtilizationController::class, 'index'])->name('index');
+        Route::post('/upload', [LoanUtilizationController::class, 'upload'])->name('upload');
+        Route::post('/approved-limits', [LoanUtilizationController::class, 'updateApprovedLimits'])->name('approved-limits');
+        Route::get('/{snapshot}/download', [LoanUtilizationController::class, 'download'])->name('download');
     });
 
 

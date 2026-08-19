@@ -28,6 +28,14 @@ class HomeController extends Controller
                 'visible' => true,
             ],
             [
+                'key' => 'loan-utilization',
+                'name' => 'Loan Utilization',
+                'description' => 'Executive view of loan portfolio utilization, performance and NPL by product.',
+                'icon' => '📈',
+                'route' => 'loans.loan-utilization.index',
+                'visible' => true,
+            ],
+            [
                 'key' => 'admin-roles',
                 'name' => 'Users & Roles',
                 'description' => 'Assign or remove roles for any user, and manage the role list.',
