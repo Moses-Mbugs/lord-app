@@ -22,34 +22,32 @@ class LoanUtilizationExport
             @ini_set('memory_limit', '512M');
         }
 
-        $t0 = microtime(true);
         $spreadsheet = new Spreadsheet();
 
         $acctSheet = $spreadsheet->getActiveSheet();
         $acctSheet->setTitle('ACCT_Portfolio');
         $this->writeEntries($acctSheet, $snapshot);
-        fwrite(STDERR, "writeEntries: " . round(microtime(true) - $t0, 2) . "s\n"); $t0 = microtime(true);
 
         $dashboardSheet = new Worksheet($spreadsheet, 'Dashboard');
         $spreadsheet->addSheet($dashboardSheet);
         $this->writeDashboard($dashboardSheet, $snapshot);
-        fwrite(STDERR, "writeDashboard: " . round(microtime(true) - $t0, 2) . "s\n"); $t0 = microtime(true);
 
         $mappingSheet = new Worksheet($spreadsheet, 'Product_Mapping');
         $spreadsheet->addSheet($mappingSheet);
         $this->writeProductMapping($mappingSheet, $snapshot);
-        fwrite(STDERR, "writeProductMapping: " . round(microtime(true) - $t0, 2) . "s\n"); $t0 = microtime(true);
 
         $notesSheet = new Worksheet($spreadsheet, 'Notes');
         $spreadsheet->addSheet($notesSheet);
         $this->writeNotes($notesSheet);
-        fwrite(STDERR, "writeNotes: " . round(microtime(true) - $t0, 2) . "s\n"); $t0 = microtime(true);
 
-        foreach ($spreadsheet->getAllSheets() as $sheet) {
-            if ($sheet->getTitle() === 'Notes') {
-                continue;
-            }
+        // ACCT_Portfolio can run to several thousand rows — PhpSpreadsheet's autosize
+        // measures every cell's text width at save time, which is fine for the small
+        // summary sheets but far too slow there, so it gets fixed widths instead.
+        foreach (['A' => 20, 'B' => 32, 'C' => 44, 'D' => 22, 'E' => 12, 'F' => 14, 'G' => 16, 'H' => 26, 'I' => 10, 'J' => 16, 'K' => 14, 'L' => 14] as $col => $width) {
+            $acctSheet->getColumnDimension($col)->setWidth($width);
+        }
 
+        foreach ([$dashboardSheet, $mappingSheet] as $sheet) {
             $highestColumn = $sheet->getHighestColumn();
             $highestColumnIndex = Coordinate::columnIndexFromString($highestColumn);
 
@@ -58,7 +56,6 @@ class LoanUtilizationExport
                 $sheet->getColumnDimension($columnLetter)->setAutoSize(true);
             }
         }
-        fwrite(STDERR, "autosize flag: " . round(microtime(true) - $t0, 2) . "s\n"); $t0 = microtime(true);
 
         $directory = storage_path('app/loan-utilization-exports');
         if (!is_dir($directory)) {
@@ -69,7 +66,6 @@ class LoanUtilizationExport
 
         $writer = new Xlsx($spreadsheet);
         $writer->save($filePath);
-        fwrite(STDERR, "writer save: " . round(microtime(true) - $t0, 2) . "s\n"); $t0 = microtime(true);
 
         $spreadsheet->disconnectWorksheets();
         unset($spreadsheet);

@@ -30,7 +30,7 @@ class HomeController extends Controller
             [
                 'key' => 'loan-utilization',
                 'name' => 'Loan Utilization',
-                'description' => 'Executive view of loan portfolio utilization, performance and NPL by product.',
+                'description' => 'Executive dashboard for loan portfolio utilization, performance and NPL by product.',
                 'icon' => '📈',
                 'route' => 'loans.loan-utilization.index',
                 'visible' => true,
