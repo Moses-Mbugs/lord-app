@@ -45,9 +45,16 @@ Artisan::command('inspire', function () {
         ->withoutOverlapping(60)
         ->appendOutputTo(storage_path('logs/weekly-segment.log'));
 
-    // Weekly branch movers — build all three periods (Weekly/MTD/YTD) then email (every Friday at 12:10)
+    // Weekly loan movement — build snapshot then email, in one command (every Friday at 12:10)
+    Schedule::command('reports:run-weekly-loan --auto')
+        ->weeklyOn(5, '12:10')
+        ->timezone('Africa/Nairobi')
+        ->withoutOverlapping(60)
+        ->appendOutputTo(storage_path('logs/weekly-loan.log'));
+
+    // Weekly branch movers — build all three periods (Weekly/MTD/YTD) then email (every Friday at 12:15)
     // Schedule::command('reports:email-weekly-branch-movers --auto-build')
-    //     ->weeklyOn(5, '12:10')
+    //     ->weeklyOn(5, '12:15')
     //     ->timezone('Africa/Nairobi')
     //     ->withoutOverlapping(120)
     //     ->appendOutputTo(storage_path('logs/weekly-branch-movers.log'));
