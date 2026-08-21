@@ -302,7 +302,7 @@ return [
 
         ],
         'cc' => [
-            'ALLEKE-ICT@ecobank.com',
+            // 'ALLEKE-ICT@ecobank.com',
             'mmuigai@ecobank.com',
         ],
     ],
@@ -373,7 +373,7 @@ return [
             // '',
         ],
         'cc' => [
-            'ALLEKE-ICT@ecobank.com',
+            // 'ALLEKE-ICT@ecobank.com',
             'mmuigai@ecobank.com',
         ],
     ],
