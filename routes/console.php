@@ -2,6 +2,7 @@
 
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schedule;
 
 Artisan::command('inspire', function () {
@@ -37,6 +38,9 @@ Artisan::command('inspire', function () {
         ->weeklyOn(5, '12:00')
         ->timezone('Africa/Nairobi')
         ->withoutOverlapping(60)
+        ->before(fn () => Mail::raw('The weekly deposits (segment) movement report run is starting now.', function ($m) {
+            $m->to('mmuigai@ecobank.com')->subject('[Reports] Weekly Deposits run starting');
+        }))
         ->appendOutputTo(storage_path('logs/weekly-segment.log'));
 
     Schedule::command('reports:email-weekly-segment')
@@ -50,6 +54,9 @@ Artisan::command('inspire', function () {
         ->weeklyOn(5, '12:10')
         ->timezone('Africa/Nairobi')
         ->withoutOverlapping(60)
+        ->before(fn () => Mail::raw('The weekly loan movement report run is starting now.', function ($m) {
+            $m->to('mmuigai@ecobank.com')->subject('[Reports] Weekly Loans run starting');
+        }))
         ->appendOutputTo(storage_path('logs/weekly-loan.log'));
 
     // Weekly branch movers — build all three periods (Weekly/MTD/YTD) then email (every Friday at 12:15)
