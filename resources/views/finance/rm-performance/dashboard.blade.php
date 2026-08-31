@@ -147,6 +147,14 @@
 
         .rmp-toolbar-note { margin-left: auto; font-size: 0.72rem; color: var(--eco-muted); font-weight: 700; }
 
+        .rmp-legend { display: flex; align-items: center; gap: 10px; font-size: 0.7rem; color: var(--eco-muted); font-weight: 700; flex-wrap: wrap; }
+        .rmp-legend span { display: inline-flex; align-items: center; gap: 5px; }
+        .rmp-legend-label {
+            font-size: 0.66rem; font-weight: 900; text-transform: uppercase; letter-spacing: .06em;
+            color: var(--eco-dark-blue); padding-right: 4px; border-right: 1px solid var(--eco-border);
+        }
+        .rmp-legend-hint { font-style: italic; color: var(--eco-muted); }
+
         /* ── Table panel ──────────────────────────── */
         .rmp-panel {
             background: var(--eco-card); border-radius: 14px; box-shadow: var(--eco-shadow);
@@ -171,6 +179,17 @@
         .rmp-table tbody tr:hover td { background: #f5f9fc; }
         .rmp-table tr:last-child td { border-bottom: none; }
 
+        .rmp-table tbody tr.rmp-branch-row { cursor: default; }
+        .rmp-table tbody tr.rmp-branch-row td {
+            background: #eef4f8; padding: 8px 11px; text-align: left; white-space: normal;
+            border-bottom: 1px solid var(--eco-border); border-top: 1px solid var(--eco-border);
+        }
+        .rmp-table tbody tr.rmp-branch-row:hover td { background: #eef4f8; }
+        .rmp-table tbody tr.rmp-branch-row:first-child td { border-top: none; }
+        .rmp-branch-name { font-size: 0.78rem; font-weight: 900; color: var(--eco-dark-blue); }
+        .rmp-branch-name i { margin-right: 6px; color: var(--eco-blue); }
+        .rmp-branch-meta { margin-left: 12px; font-size: 0.72rem; font-weight: 700; color: var(--eco-muted); font-family: 'DM Mono', monospace; }
+
         .rmp-table tfoot td {
             position: sticky; bottom: 0; z-index: 1;
             background: #eef4f7; font-weight: 900; color: var(--eco-dark-blue);
@@ -194,6 +213,14 @@
         .rmp-move-up   { color: var(--success); font-weight: 900; }
         .rmp-move-down { color: var(--danger); font-weight: 900; }
         .rmp-move-flat { color: var(--eco-muted); }
+
+        .rmp-rank {
+            display: inline-block; margin-left: 5px; padding: 1px 6px; border-radius: 999px;
+            font-size: 0.62rem; font-weight: 800; font-family: 'DM Mono', monospace; white-space: nowrap;
+        }
+        .rmp-rank-top    { background: var(--success-soft); color: var(--success); }
+        .rmp-rank-mid    { background: rgba(100,116,139,0.12); color: var(--eco-muted); }
+        .rmp-rank-bottom { background: var(--danger-soft); color: var(--danger); }
 
         .empty-row td, .loading-row td { text-align: center; padding: 30px; white-space: normal; }
         .empty-icon { font-size: 1.4rem; color: rgba(0,91,130,0.22); margin-bottom: 6px; }
@@ -320,6 +347,14 @@
             <option value="">All Sub-segments</option>
         </select>
 
+        <div class="rmp-legend">
+            <span class="rmp-legend-label">Rank</span>
+            <span><span class="rmp-rank rmp-rank-top">#1/5</span> Top third</span>
+            <span><span class="rmp-rank rmp-rank-mid">#3/5</span> Middle</span>
+            <span><span class="rmp-rank rmp-rank-bottom">#5/5</span> Bottom third</span>
+            <span class="rmp-legend-hint">— within the RM's own branch</span>
+        </div>
+
         <div class="rmp-toolbar-note" id="toolbar-note">—</div>
     </div>
 
@@ -335,6 +370,7 @@
                         <th class="text-left">Sub-segment</th>
                         <th>Deposits — This Month</th>
                         <th>Deposits — YTD</th>
+                        <th title="Total deposit balance currently under this RM, as of the latest available snapshot — not a movement.">Deposits — Portfolio</th>
                         <th>Loans Disbursed — This Month</th>
                         <th>Loans Disbursed — YTD</th>
                         <th>NTB — This Month</th>
@@ -342,13 +378,14 @@
                     </tr>
                 </thead>
                 <tbody id="rmp-tbody">
-                    <tr class="loading-row"><td colspan="10"><span class="spinner"></span> Loading…</td></tr>
+                    <tr class="loading-row"><td colspan="11"><span class="spinner"></span> Loading…</td></tr>
                 </tbody>
                 <tfoot id="rmp-tfoot" style="display:none;">
                     <tr>
                         <td class="text-left" colspan="4">Total (RMs with data)</td>
                         <td>—</td>
                         <td id="foot-deposits-ytd"></td>
+                        <td id="foot-deposits-portfolio"></td>
                         <td>—</td>
                         <td id="foot-loans-ytd"></td>
                         <td>—</td>
@@ -421,6 +458,15 @@
         const n = Number(v);
         const cls = n > 0 ? 'rmp-move-up' : (n < 0 ? 'rmp-move-down' : 'rmp-move-flat');
         return `<span class="${cls}">${formatter(n)}</span>`;
+    }
+
+    /* ─── Rank badge — rank is within the RM's own branch, not bank-wide ─── */
+    function rankBadge(rank, total) {
+        if (!rank || !total || total <= 1) return '';
+        const topCut = Math.max(1, Math.ceil(total / 3));
+        const bottomCut = total - topCut + 1;
+        const cls = rank <= topCut ? 'rmp-rank-top' : (rank >= bottomCut ? 'rmp-rank-bottom' : 'rmp-rank-mid');
+        return `<span class="rmp-rank ${cls}" title="Ranked among ${total} RM(s) in this branch">#${rank}/${total}</span>`;
     }
 
     /* ─── Colourful, deterministic segment/sub-segment badge palette ─── */
@@ -535,7 +581,7 @@
         if (!filteredRows.length) {
             $('rmp-tbody').innerHTML = `
                 <tr class="empty-row">
-                    <td colspan="10">
+                    <td colspan="11">
                         <div class="empty-icon"><i class="fa-regular fa-folder-open"></i></div>
                         <div class="empty-title">No RMs match your filters</div>
                     </td>
@@ -544,7 +590,49 @@
             return;
         }
 
-        $('rmp-tbody').innerHTML = filteredRows.map((r, i) => `
+        // Group by branch (in filteredRows order, which is already ytd_deposit_movement desc
+        // from the server, so within-branch order lines up with the rank badges). Each row
+        // keeps its index into filteredRows so openDrawer(i) still resolves correctly.
+        const groups = new Map();
+        filteredRows.forEach((r, i) => {
+            const key = r.branch_name || '__unassigned__';
+            if (!groups.has(key)) groups.set(key, { name: r.branch_name || 'Unassigned', items: [] });
+            groups.get(key).items.push({ r, i });
+        });
+
+        const sortedGroups = [...groups.values()].sort((a, b) => {
+            if (a.name === 'Unassigned') return 1;
+            if (b.name === 'Unassigned') return -1;
+            return a.name.localeCompare(b.name);
+        });
+
+        const showHeaders = sortedGroups.length > 1;
+
+        $('rmp-tbody').innerHTML = sortedGroups.map(group => {
+            const rowsHtml = group.items.map(({ r, i }) => rmRowHtml(r, i)).join('');
+
+            if (!showHeaders) return rowsHtml;
+
+            const rmCount = group.items.length;
+            const portfolioTotal = group.items.reduce((sum, { r }) => sum + Number(r.deposit_portfolio || 0), 0);
+            const ytdTotal = group.items.reduce((sum, { r }) => sum + Number(r.ytd_deposit_movement || 0), 0);
+
+            const headerRow = `
+                <tr class="rmp-branch-row">
+                    <td colspan="11">
+                        <span class="rmp-branch-name"><i class="fa-solid fa-building-columns"></i> ${escHtml(group.name)}</span>
+                        <span class="rmp-branch-meta">${rmCount} RM${rmCount === 1 ? '' : 's'} · Portfolio ${fmtMoney(portfolioTotal)} · Deposits YTD ${fmtMoney(ytdTotal)}</span>
+                    </td>
+                </tr>`;
+
+            return headerRow + rowsHtml;
+        }).join('');
+
+        $('rmp-tfoot').style.display = '';
+    }
+
+    function rmRowHtml(r, i) {
+        return `
             <tr onclick="openDrawer(${i})">
                 <td class="text-left">
                     <span class="badge-code">${escHtml(r.rm_code)}</span>
@@ -554,23 +642,23 @@
                 <td class="text-left">${segmentBadge(r.segment)}</td>
                 <td class="text-left">${segmentBadge(r.subsegment, true)}</td>
                 <td>${moveCell(r.month_deposit_movement, fmtMoney)}</td>
-                <td>${moveCell(r.ytd_deposit_movement, fmtMoney)}</td>
+                <td>${moveCell(r.ytd_deposit_movement, fmtMoney)}${rankBadge(r.deposit_rank, r.deposit_rank_total)}</td>
+                <td>${r.has_data ? fmtMoney(r.deposit_portfolio) : '<span class="badge-none">No data</span>'}</td>
                 <td>${r.has_data ? fmtMoney(r.month_loan_disbursed) : '<span class="badge-none">No data</span>'}</td>
-                <td>${r.has_data ? fmtMoney(r.ytd_loan_disbursed) : '<span class="badge-none">No data</span>'}</td>
+                <td>${r.has_data ? fmtMoney(r.ytd_loan_disbursed) : '<span class="badge-none">No data</span>'}${rankBadge(r.loan_rank, r.loan_rank_total)}</td>
                 <td>${r.has_data ? fmtFull(r.month_ntb) : '<span class="badge-none">No data</span>'}</td>
-                <td>${r.has_data ? fmtFull(r.ytd_ntb) : '<span class="badge-none">No data</span>'}</td>
-            </tr>`).join('');
-
-        $('rmp-tfoot').style.display = '';
+                <td>${r.has_data ? fmtFull(r.ytd_ntb) : '<span class="badge-none">No data</span>'}${rankBadge(r.ntb_rank, r.ntb_rank_total)}</td>
+            </tr>`;
     }
 
     function renderKpis() {
         $('kpi-deposits').textContent = fmtMoney(totals.deposit_movement);
-        $('kpi-deposits-sub').textContent = `Net movement, Jan–${monthName(maxLatestMonth())} ${currentYear}`;
+        $('kpi-deposits-sub').textContent = `Net movement Jan–${monthName(maxLatestMonth())} · Portfolio ${fmtMoney(totals.deposit_portfolio)}`;
         $('kpi-loans').textContent = fmtMoney(totals.loan_disbursed);
         $('kpi-ntb').textContent = fmtFull(totals.ntb);
 
         $('foot-deposits-ytd').textContent = fmtMoney(totals.deposit_movement);
+        $('foot-deposits-portfolio').textContent = fmtMoney(totals.deposit_portfolio);
         $('foot-loans-ytd').textContent = fmtMoney(totals.loan_disbursed);
         $('foot-ntb-ytd').textContent = fmtFull(totals.ntb);
 
@@ -594,15 +682,17 @@
         if (!r) return;
 
         $('drawer-title').textContent = `${r.rm_code} — ${r.name}`;
-        $('drawer-sub').textContent = r.segment ? `${r.segment} · ${currentYear}` : `${currentYear}`;
+        const subParts = [r.segment, r.branch_name, String(currentYear)].filter(Boolean);
+        $('drawer-sub').textContent = subParts.join(' · ');
 
         $('drawer-stats').innerHTML = `
             <div class="rmp-drawer-stat"><span class="rmp-drawer-stat-label">Deposits — This Month</span><span class="rmp-drawer-stat-value">${moveCell(r.month_deposit_movement, fmtMoney)}</span></div>
-            <div class="rmp-drawer-stat"><span class="rmp-drawer-stat-label">Deposits — YTD</span><span class="rmp-drawer-stat-value">${moveCell(r.ytd_deposit_movement, fmtMoney)}</span></div>
+            <div class="rmp-drawer-stat"><span class="rmp-drawer-stat-label">Deposits — YTD</span><span class="rmp-drawer-stat-value">${moveCell(r.ytd_deposit_movement, fmtMoney)}${rankBadge(r.deposit_rank, r.deposit_rank_total)}</span></div>
+            <div class="rmp-drawer-stat"><span class="rmp-drawer-stat-label">Deposits — Portfolio</span><span class="rmp-drawer-stat-value">${fmtMoney(r.deposit_portfolio)}</span></div>
             <div class="rmp-drawer-stat"><span class="rmp-drawer-stat-label">Loans Disbursed — This Month</span><span class="rmp-drawer-stat-value">${fmtMoney(r.month_loan_disbursed)}</span></div>
-            <div class="rmp-drawer-stat"><span class="rmp-drawer-stat-label">Loans Disbursed — YTD</span><span class="rmp-drawer-stat-value">${fmtMoney(r.ytd_loan_disbursed)}</span></div>
+            <div class="rmp-drawer-stat"><span class="rmp-drawer-stat-label">Loans Disbursed — YTD</span><span class="rmp-drawer-stat-value">${fmtMoney(r.ytd_loan_disbursed)}${rankBadge(r.loan_rank, r.loan_rank_total)}</span></div>
             <div class="rmp-drawer-stat"><span class="rmp-drawer-stat-label">NTB — This Month</span><span class="rmp-drawer-stat-value">${fmtFull(r.month_ntb)}</span></div>
-            <div class="rmp-drawer-stat"><span class="rmp-drawer-stat-label">NTB — YTD</span><span class="rmp-drawer-stat-value">${fmtFull(r.ytd_ntb)}</span></div>
+            <div class="rmp-drawer-stat"><span class="rmp-drawer-stat-label">NTB — YTD</span><span class="rmp-drawer-stat-value">${fmtFull(r.ytd_ntb)}${rankBadge(r.ntb_rank, r.ntb_rank_total)}</span></div>
         `;
 
         $('drawer-overlay').classList.add('open');

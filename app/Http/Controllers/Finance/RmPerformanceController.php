@@ -43,6 +43,7 @@ class RmPerformanceController extends Controller
                     : null,
                 'latest_month'            => $p['latest_month'] ?? null,
                 'month_deposit_movement'  => $p['month_deposit_movement'] ?? null,
+                'deposit_portfolio'       => (float) ($p['deposit_portfolio'] ?? 0.0),
                 'month_loan_disbursed'    => (float) ($p['month_loan_disbursed'] ?? 0.0),
                 'month_ntb'               => (int) ($p['month_ntb'] ?? 0),
                 'ytd_deposit_movement'    => (float) ($p['ytd_deposit_movement'] ?? 0.0),
@@ -54,14 +55,17 @@ class RmPerformanceController extends Controller
             ];
         })->sortByDesc('ytd_deposit_movement')->values();
 
+        $rows = $this->applyBranchRanks($rows);
+
         $tracked = $rows->where('has_data', true);
 
         $latestMonth = $tracked->max('latest_month');
 
         $totals = [
-            'deposit_movement' => (float) $tracked->sum('ytd_deposit_movement'),
-            'loan_disbursed'   => (float) $tracked->sum('ytd_loan_disbursed'),
-            'ntb'              => (int) $tracked->sum('ytd_ntb'),
+            'deposit_movement'  => (float) $tracked->sum('ytd_deposit_movement'),
+            'deposit_portfolio' => (float) $tracked->sum('deposit_portfolio'),
+            'loan_disbursed'    => (float) $tracked->sum('ytd_loan_disbursed'),
+            'ntb'               => (int) $tracked->sum('ytd_ntb'),
         ];
 
         $latestSnapshotDates = [
@@ -78,6 +82,52 @@ class RmPerformanceController extends Controller
             'latestMonth'     => $latestMonth,
             'snapshotDates'   => $latestSnapshotDates,
         ]);
+    }
+
+    /**
+     * Ranks each RM against peers in the same branch (not bank-wide — a 3-person branch
+     * shouldn't be judged against Towers), separately for each of the three YTD metrics.
+     * Only RMs with data for the year are ranked; unassigned-branch RMs rank among each
+     * other rather than being dropped. Rank 1 = best (highest YTD figure) within the branch.
+     *
+     * @param  \Illuminate\Support\Collection<int, array<string, mixed>>  $rows
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function applyBranchRanks($rows)
+    {
+        $rankFields = [
+            'ytd_deposit_movement' => 'deposit',
+            'ytd_loan_disbursed'   => 'loan',
+            'ytd_ntb'              => 'ntb',
+        ];
+
+        $ranksByRmCode = [];
+
+        $rows->where('has_data', true)
+            ->groupBy(fn ($row) => $row['branch_code'] ?? '__unassigned__')
+            ->each(function ($branchRows) use ($rankFields, &$ranksByRmCode) {
+                $total = $branchRows->count();
+
+                foreach ($rankFields as $field => $prefix) {
+                    $branchRows->sortByDesc($field)->values()->each(function ($row, $index) use ($prefix, $total, &$ranksByRmCode) {
+                        $ranksByRmCode[$row['rm_code']]["{$prefix}_rank"]       = $index + 1;
+                        $ranksByRmCode[$row['rm_code']]["{$prefix}_rank_total"] = $total;
+                    });
+                }
+            });
+
+        return $rows->map(function ($row) use ($ranksByRmCode) {
+            $ranks = $ranksByRmCode[$row['rm_code']] ?? [];
+
+            return array_merge($row, [
+                'deposit_rank'       => $ranks['deposit_rank'] ?? null,
+                'deposit_rank_total' => $ranks['deposit_rank_total'] ?? null,
+                'loan_rank'          => $ranks['loan_rank'] ?? null,
+                'loan_rank_total'    => $ranks['loan_rank_total'] ?? null,
+                'ntb_rank'           => $ranks['ntb_rank'] ?? null,
+                'ntb_rank_total'     => $ranks['ntb_rank_total'] ?? null,
+            ]);
+        });
     }
 
     public function trend(Request $request): JsonResponse

@@ -92,6 +92,7 @@ class RmPerformanceService
      *     ytd_ntb: int,
      *     latest_month: ?int,
      *     month_deposit_movement: ?float,
+     *     deposit_portfolio: float,
      *     month_loan_disbursed: float,
      *     month_ntb: int,
      * }>
@@ -134,6 +135,7 @@ class RmPerformanceService
 
             $data['latest_month']            = $latest['month'] ?? null;
             $data['month_deposit_movement']  = $latest['deposit_movement'] ?? null;
+            $data['deposit_portfolio']       = $latest['deposit_closing_balance'] ?? 0.0;
             $data['month_loan_disbursed']    = $latest['loan_disbursed_proxy'] ?? 0.0;
             $data['month_ntb']               = $latest['ntb_count'] ?? 0;
             $data['balance_snapshot_date']   = $latest['balance_snapshot_date'] ?? null;
@@ -160,11 +162,12 @@ class RmPerformanceService
             ->sortBy(fn ($r) => $r->period_year * 100 + $r->period_month)
             ->values()
             ->map(fn ($r) => [
-                'year'                 => (int) $r->period_year,
-                'month'                => (int) $r->period_month,
-                'deposit_movement'     => $r->deposit_movement !== null ? (float) $r->deposit_movement : null,
-                'loan_disbursed_proxy' => (float) $r->loan_disbursed_proxy,
-                'ntb_count'            => (int) $r->ntb_count,
+                'year'                    => (int) $r->period_year,
+                'month'                   => (int) $r->period_month,
+                'deposit_movement'        => $r->deposit_movement !== null ? (float) $r->deposit_movement : null,
+                'deposit_closing_balance' => (float) $r->deposit_closing_balance,
+                'loan_disbursed_proxy'    => (float) $r->loan_disbursed_proxy,
+                'ntb_count'               => (int) $r->ntb_count,
             ])
             ->all();
     }
