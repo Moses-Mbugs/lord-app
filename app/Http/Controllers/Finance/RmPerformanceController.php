@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Finance;
 use App\Http\Controllers\Controller;
 use App\Models\Finance\RelationshipManager;
 use App\Services\Finance\RmPerformanceService;
+use App\Services\Reports\BranchDailyPerformanceSummaryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -23,17 +24,23 @@ class RmPerformanceController extends Controller
         $year = (int) $request->input('year', now()->year);
 
         $performance = $this->service->forYear($year);
+        $branchByRm  = $this->service->primaryBranchByRm();
         $rms         = RelationshipManager::query()->orderBy('rm_code')->get();
 
-        $rows = $rms->map(function (RelationshipManager $rm) use ($performance) {
-            $code = strtoupper(trim($rm->rm_code));
-            $p    = $performance[$code] ?? null;
+        $rows = $rms->map(function (RelationshipManager $rm) use ($performance, $branchByRm) {
+            $code       = strtoupper(trim($rm->rm_code));
+            $p          = $performance[$code] ?? null;
+            $branchCode = $branchByRm[$code] ?? null;
 
             return [
                 'rm_code'                 => $rm->rm_code,
                 'name'                    => $rm->name,
                 'segment'                 => $rm->segment,
                 'subsegment'              => $rm->subsegment,
+                'branch_code'             => $branchCode,
+                'branch_name'             => $branchCode
+                    ? (BranchDailyPerformanceSummaryService::TARGETS_2026[$branchCode]['name'] ?? $branchCode)
+                    : null,
                 'latest_month'            => $p['latest_month'] ?? null,
                 'month_deposit_movement'  => $p['month_deposit_movement'] ?? null,
                 'month_loan_disbursed'    => (float) ($p['month_loan_disbursed'] ?? 0.0),

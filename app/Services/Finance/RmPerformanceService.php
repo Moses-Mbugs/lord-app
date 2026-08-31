@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Finance;
 
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -166,6 +167,48 @@ class RmPerformanceService
                 'ntb_count'            => (int) $r->ntb_count,
             ])
             ->all();
+    }
+
+    /**
+     * Each RM's branch, derived automatically — not manually assigned. Every account in
+     * customer_accounts_imports already carries both the RM (acc_ofcr) and the branch
+     * (branch_code) it belongs to, so an RM's branch is just the branch_code that shows
+     * up most often among the accounts they manage. Cached hourly, keyed on the import's
+     * last update so a re-import invalidates it.
+     *
+     * @return array<string, string> rm_code => branch_code
+     */
+    public function primaryBranchByRm(): array
+    {
+        $lastImportUpdate = DB::table('customer_accounts_imports')->max('updated_at');
+        $cacheKey         = 'rm_primary_branch_' . ($lastImportUpdate ?? 'none');
+
+        return Cache::remember($cacheKey, now()->addHour(), function () {
+            $rows = DB::table('customer_accounts_imports')
+                ->whereNotNull('acc_ofcr')
+                ->whereRaw("TRIM(acc_ofcr) <> ''")
+                ->whereNotNull('branch_code')
+                ->whereRaw("TRIM(branch_code) <> ''")
+                ->selectRaw('
+                    UPPER(TRIM(acc_ofcr)) AS rm_code,
+                    UPPER(TRIM(branch_code)) AS branch_code,
+                    COUNT(*) AS cnt
+                ')
+                ->groupByRaw('UPPER(TRIM(acc_ofcr)), UPPER(TRIM(branch_code))')
+                ->get();
+
+            $best = [];
+
+            foreach ($rows as $r) {
+                $rmCode = $r->rm_code;
+
+                if (! isset($best[$rmCode]) || $r->cnt > $best[$rmCode]['cnt']) {
+                    $best[$rmCode] = ['branch_code' => $r->branch_code, 'cnt' => (int) $r->cnt];
+                }
+            }
+
+            return array_map(fn ($b) => $b['branch_code'], $best);
+        });
     }
 
     /**

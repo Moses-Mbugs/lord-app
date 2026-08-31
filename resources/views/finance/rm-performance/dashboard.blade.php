@@ -308,6 +308,10 @@
     <div class="rmp-toolbar">
         <input type="text" id="search-input" class="rmp-search" placeholder="Search by RM code or name…" oninput="applyFilters()">
 
+        <select id="branch-filter" class="rmp-filter-select" onchange="applyFilters()">
+            <option value="">All Branches</option>
+        </select>
+
         <select id="segment-filter" class="rmp-filter-select" onchange="onSegmentChange()">
             <option value="">All Segments</option>
         </select>
@@ -326,6 +330,7 @@
                 <thead>
                     <tr>
                         <th class="text-left">RM</th>
+                        <th class="text-left">Branch</th>
                         <th class="text-left">Segment</th>
                         <th class="text-left">Sub-segment</th>
                         <th>Deposits — This Month</th>
@@ -337,11 +342,11 @@
                     </tr>
                 </thead>
                 <tbody id="rmp-tbody">
-                    <tr class="loading-row"><td colspan="9"><span class="spinner"></span> Loading…</td></tr>
+                    <tr class="loading-row"><td colspan="10"><span class="spinner"></span> Loading…</td></tr>
                 </tbody>
                 <tfoot id="rmp-tfoot" style="display:none;">
                     <tr>
-                        <td class="text-left" colspan="3">Total (RMs with data)</td>
+                        <td class="text-left" colspan="4">Total (RMs with data)</td>
                         <td>—</td>
                         <td id="foot-deposits-ytd"></td>
                         <td>—</td>
@@ -461,6 +466,20 @@
         }
     }
 
+    function populateBranchFilter() {
+        const select = $('branch-filter');
+        const current = select.value;
+
+        const branches = [...new Map(
+            rows
+                .filter(r => r.branch_code)
+                .map(r => [r.branch_code, r.branch_name || r.branch_code])
+        ).entries()].sort((a, b) => a[1].localeCompare(b[1]));
+
+        select.innerHTML = '<option value="">All Branches</option>' +
+            branches.map(([code, name]) => `<option value="${escHtml(code)}" ${code === current ? 'selected' : ''}>${escHtml(name)}</option>`).join('');
+    }
+
     function populateSegmentFilter() {
         const select = $('segment-filter');
         const current = select.value;
@@ -496,10 +515,12 @@
 
     function applyFilters() {
         const search = ($('search-input').value || '').trim().toLowerCase();
+        const branch = $('branch-filter').value;
         const segment = $('segment-filter').value;
         const subsegment = $('subsegment-filter').value;
 
         filteredRows = rows.filter(r => {
+            if (branch && String(r.branch_code || '') !== branch) return false;
             if (segment && String(r.segment || '') !== segment) return false;
             if (subsegment && String(r.subsegment || '') !== subsegment) return false;
 
@@ -514,7 +535,7 @@
         if (!filteredRows.length) {
             $('rmp-tbody').innerHTML = `
                 <tr class="empty-row">
-                    <td colspan="9">
+                    <td colspan="10">
                         <div class="empty-icon"><i class="fa-regular fa-folder-open"></i></div>
                         <div class="empty-title">No RMs match your filters</div>
                     </td>
@@ -529,6 +550,7 @@
                     <span class="badge-code">${escHtml(r.rm_code)}</span>
                     <div class="rm-name-cell">${escHtml(r.name)}</div>
                 </td>
+                <td class="text-left">${r.branch_name ? escHtml(r.branch_name) : '<span class="badge-none">Unassigned</span>'}</td>
                 <td class="text-left">${segmentBadge(r.segment)}</td>
                 <td class="text-left">${segmentBadge(r.subsegment, true)}</td>
                 <td>${moveCell(r.month_deposit_movement, fmtMoney)}</td>
@@ -681,6 +703,7 @@
     /* ─── Init ─── */
     document.addEventListener('DOMContentLoaded', () => {
         initYearSelect();
+        populateBranchFilter();
         populateSegmentFilter();
         renderKpis();
         applyFilters();
