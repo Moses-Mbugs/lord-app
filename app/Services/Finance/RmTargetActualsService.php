@@ -73,15 +73,18 @@ class RmTargetActualsService
             }
 
             // ── NTB per RM — unique CIFs whose account opened during the given year ────
-            // ac_open_date is a real DATE column (see the customer_accounts_imports migration
-            // and the model's cast) — compare it directly, no STR_TO_DATE reparsing needed.
+            // ac_open_date is stored as free text in D-Mon-YY form (e.g. "9-Sep-99") despite
+            // the migration declaring a DATE column and the model casting it as one — confirmed
+            // against real data (MIN/MAX on it return literal D-Mon-YY strings, which a true
+            // DATE column could never produce). STR_TO_DATE is required to parse it.
             DB::table('customer_accounts_imports')
                 ->whereNotNull('acc_ofcr')
                 ->whereRaw("TRIM(acc_ofcr) <> ''")
                 ->whereNotNull('f12_cif')
                 ->whereNotNull('ac_open_date')
-                ->where('ac_open_date', '>=', "{$year}-01-01")
-                ->where('ac_open_date', '<', ($year + 1) . '-01-01')
+                ->whereRaw("TRIM(ac_open_date) <> ''")
+                ->whereRaw("STR_TO_DATE(ac_open_date, '%d-%b-%y') >= ?", ["{$year}-01-01"])
+                ->whereRaw("STR_TO_DATE(ac_open_date, '%d-%b-%y') < ?", [($year + 1) . '-01-01'])
                 ->selectRaw('UPPER(TRIM(acc_ofcr)) AS rm_code, COUNT(DISTINCT f12_cif) AS total')
                 ->groupByRaw('UPPER(TRIM(acc_ofcr))')
                 ->get()

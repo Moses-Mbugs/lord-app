@@ -340,7 +340,11 @@ class RmPerformanceService
 
     /**
      * NTB: unique CIFs whose account opened in a given calendar month, per RM.
-     * ac_open_date is a real DATE column — use it directly, no STR_TO_DATE reparsing.
+     * ac_open_date is stored as free text in D-Mon-YY form (e.g. "22-Oct-24"), confirmed
+     * against real data — despite the migration declaring a DATE column, STR_TO_DATE is
+     * required to parse it. Rows whose ac_open_date doesn't parse are excluded (their
+     * count would be worth surfacing the same way loan value_dt parse failures are, if
+     * this turns out to drop a meaningful number of rows in practice).
      *
      * @return array<string, array<string, array{total: int, year: int, month: int}>>
      */
@@ -351,13 +355,19 @@ class RmPerformanceService
             ->whereRaw("TRIM(acc_ofcr) <> ''")
             ->whereNotNull('f12_cif')
             ->whereNotNull('ac_open_date')
-            ->selectRaw('
+            ->whereRaw("TRIM(ac_open_date) <> ''")
+            ->whereRaw("STR_TO_DATE(ac_open_date, '%d-%b-%y') IS NOT NULL")
+            ->selectRaw("
                 UPPER(TRIM(acc_ofcr)) AS rm_code,
-                YEAR(ac_open_date) AS y,
-                MONTH(ac_open_date) AS m,
+                YEAR(STR_TO_DATE(ac_open_date, '%d-%b-%y')) AS y,
+                MONTH(STR_TO_DATE(ac_open_date, '%d-%b-%y')) AS m,
                 COUNT(DISTINCT f12_cif) AS total
-            ')
-            ->groupByRaw('UPPER(TRIM(acc_ofcr)), YEAR(ac_open_date), MONTH(ac_open_date)')
+            ")
+            ->groupByRaw("
+                UPPER(TRIM(acc_ofcr)),
+                YEAR(STR_TO_DATE(ac_open_date, '%d-%b-%y')),
+                MONTH(STR_TO_DATE(ac_open_date, '%d-%b-%y'))
+            ")
             ->get();
 
         $byRmByMonth = [];
