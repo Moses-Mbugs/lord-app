@@ -73,14 +73,15 @@ class RmTargetActualsService
             }
 
             // ── NTB per RM — unique CIFs whose account opened during the given year ────
-            // ac_open_date is stored as DD-Mon-YY (same format used for the branch dashboard).
+            // ac_open_date is a real DATE column (see the customer_accounts_imports migration
+            // and the model's cast) — compare it directly, no STR_TO_DATE reparsing needed.
             DB::table('customer_accounts_imports')
                 ->whereNotNull('acc_ofcr')
                 ->whereRaw("TRIM(acc_ofcr) <> ''")
                 ->whereNotNull('f12_cif')
                 ->whereNotNull('ac_open_date')
-                ->whereRaw("STR_TO_DATE(ac_open_date, '%d-%b-%y') >= ?", ["{$year}-01-01"])
-                ->whereRaw("STR_TO_DATE(ac_open_date, '%d-%b-%y') < ?", [($year + 1) . '-01-01'])
+                ->where('ac_open_date', '>=', "{$year}-01-01")
+                ->where('ac_open_date', '<', ($year + 1) . '-01-01')
                 ->selectRaw('UPPER(TRIM(acc_ofcr)) AS rm_code, COUNT(DISTINCT f12_cif) AS total')
                 ->groupByRaw('UPPER(TRIM(acc_ofcr))')
                 ->get()
