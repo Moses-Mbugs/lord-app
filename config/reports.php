@@ -766,3 +766,41 @@ return [
 //         OR cb.cr_gl <> '216220001'
 //       )
 // ORDER BY cb.cif, balance DESC;
+
+
+// -- Cif level movement (2026-07-31 -> 2026-08-27), with segment / sub-segment
+// SELECT
+//     cb.cif,
+//     MAX(cb.customer_name) AS customer_name,
+//     MAX(cb.branch_code)   AS branch_code,
+//     GROUP_CONCAT(DISTINCT cb.cust_ac_no ORDER BY cb.cust_ac_no SEPARATOR ', ') AS account_numbers,
+//     GROUP_CONCAT(DISTINCT cai.etibiseg2 ORDER BY cai.etibiseg2 SEPARATOR ', ') AS etibiseg2,
+//     GROUP_CONCAT(DISTINCT sm.business ORDER BY sm.business SEPARATOR ', ') AS segment,
+//     GROUP_CONCAT(DISTINCT sm.business_segment_name ORDER BY sm.business_segment_name SEPARATOR ', ') AS sub_segment,
+//     SUM(CASE WHEN cb.balance_date = '2026-07-31' THEN GREATEST(cb.lcy_balance, 0) ELSE 0 END) AS start_balance,
+//     SUM(CASE WHEN cb.balance_date = '2026-08-27' THEN GREATEST(cb.lcy_balance, 0) ELSE 0 END) AS end_balance,
+//     SUM(CASE WHEN cb.balance_date = '2026-08-27' THEN GREATEST(cb.lcy_balance, 0) ELSE 0 END)
+//       - SUM(CASE WHEN cb.balance_date = '2026-07-31' THEN GREATEST(cb.lcy_balance, 0) ELSE 0 END) AS movement
+// FROM customer_balances cb
+// LEFT JOIN customer_accounts_imports cai
+//     ON cai.f12_ac_no = cb.cust_ac_no
+// LEFT JOIN sub_segment_mappings sm
+//     ON UPPER(TRIM(sm.mis_code)) = UPPER(TRIM(cai.etibiseg2))
+//    AND sm.is_active = 1
+// WHERE cb.balance_date IN ('2026-07-31', '2026-08-27')
+//   AND cb.cif IS NOT NULL
+//   AND (
+//         cb.cif IN (
+//             '470000068','470218244','470224763','470090458',
+//             '470321717','470291487','470317567','470803302','470251434'
+//         )
+//         OR (
+//             UPPER(TRIM(cb.branch_code)) <> 'P50'
+//             AND (
+//                 cb.cr_gl IS NULL
+//                 OR cb.cr_gl <> '216220001'
+//             )
+//         )
+//       )
+// GROUP BY cb.cif
+// ORDER BY movement DESC;

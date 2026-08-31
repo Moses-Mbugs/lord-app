@@ -118,6 +118,7 @@ use App\Http\Controllers\Finance\RmMoversController;
 use App\Http\Controllers\Finance\RmWorkloadController;
 use App\Http\Controllers\Finance\RmTargetController;
 use App\Http\Controllers\Finance\RmTargetDashboardController;
+use App\Http\Controllers\Finance\RmPerformanceController;
 use App\Http\Controllers\Finance\TopMoversController;
 use App\Http\Controllers\Finance\LoansPipelineController;
 use App\Http\Controllers\Finance\BranchDashboardController;
@@ -215,6 +216,12 @@ Route::prefix('finance')->name('finance.')->middleware(['auth'])->group(function
             Route::put('manage/{rmTarget}', [RmTargetController::class, 'update'])->name('manage.update');
             Route::delete('manage/{rmTarget}', [RmTargetController::class, 'destroy'])->name('manage.destroy');
         });
+    });
+
+    Route::prefix('rm-performance')->name('rm-performance.')->group(function () {
+        Route::get('/', [RmPerformanceController::class, 'index'])->name('index');
+        Route::get('trend', [RmPerformanceController::class, 'trend'])->name('trend');
+        Route::post('build', [RmPerformanceController::class, 'build'])->name('build');
     });
 
     Route::prefix('customer-trend')->name('customer-trend.')->group(function () {

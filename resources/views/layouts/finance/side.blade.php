@@ -115,7 +115,8 @@
                 request()->is('finance/rm-workload*') ||
                 request()->is('finance/rm-work-load*') ||
                 request()->is('finance/rm-movers*') ||
-                request()->is('finance/rm-targets*'),
+                request()->is('finance/rm-targets*') ||
+                request()->is('finance/rm-performance*'),
             'badge' => null,
             'children' => [
                 [
@@ -136,6 +137,12 @@
                     'icon' => 'ti-target',
                     'url' => '/finance/rm-targets',
                     'activeCondition' => request()->is('finance/rm-targets'),
+                ],
+                [
+                    'title' => 'RM Performance',
+                    'icon' => 'ti-chart-bar',
+                    'url' => '/finance/rm-performance',
+                    'activeCondition' => request()->is('finance/rm-performance*'),
                 ],
                 [
                     'title' => 'Manage RM Targets',
