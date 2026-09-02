@@ -71,10 +71,28 @@ class LoanDashboardService
         // table grows from daily imports, this gets slow enough to trip
         // nginx's gateway timeout on every single page load. Cache it.
         return Cache::remember(
-            "loan_dashboard_payload:{$asOfDate}",
+            $this->dashboardCacheKey($asOfDate),
             now()->addMinutes(15),
             fn () => $this->buildDashboardPayloadUncached($asOfDate)
         );
+    }
+
+    /**
+     * Forces a fresh rebuild of the dashboard payload for a date, replacing
+     * whatever is cached. Called after an import/send from the loans pipeline
+     * so the dashboard reflects the new data immediately instead of waiting
+     * out the 15-minute cache TTL.
+     */
+    public function refreshDashboardPayload(string $asOfDate): array
+    {
+        Cache::forget($this->dashboardCacheKey($asOfDate));
+
+        return $this->buildDashboardPayload($asOfDate);
+    }
+
+    private function dashboardCacheKey(string $asOfDate): string
+    {
+        return "loan_dashboard_payload:{$asOfDate}";
     }
 
     private function buildDashboardPayloadUncached(string $asOfDate): array

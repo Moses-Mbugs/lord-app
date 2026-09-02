@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Finance;
 
 use App\Http\Controllers\Controller;
+use App\Services\Reports\LoanDashboardService;
 use App\Services\Reports\LoanImportService;
 use App\Services\Reports\LoanMovementService;
 use App\Mail\LoanMovementReportMail;
@@ -27,7 +28,7 @@ class LoansPipelineController extends Controller
     /**
      * Handle file upload: import the Excel, optionally send the report email.
      */
-    public function upload(Request $request, LoanImportService $importer, LoanMovementService $movement)
+    public function upload(Request $request, LoanImportService $importer, LoanMovementService $movement, LoanDashboardService $dashboard)
     {
         @set_time_limit(0);
 
@@ -66,6 +67,8 @@ class LoansPipelineController extends Controller
             $this->appendLog("[LOAN] Import complete for {$asAtDate}. Inserted {$result['inserted']} rows (skipped {$result['skipped']}).");
         }
 
+        $this->refreshDashboard($dashboard, $asAtDate);
+
         return redirect()
             ->route('finance.loans.pipeline')
             ->with('success', "Imported {$result['inserted']} rows for {$asAtDate} (skipped {$result['skipped']}).")
@@ -75,7 +78,7 @@ class LoansPipelineController extends Controller
     /**
      * Send loan movement email without re-importing — just build from existing DB data.
      */
-    public function send(Request $request, LoanMovementService $movement)
+    public function send(Request $request, LoanMovementService $movement, LoanDashboardService $dashboard)
     {
         @set_time_limit(0);
 
@@ -104,9 +107,29 @@ class LoansPipelineController extends Controller
 
         $this->appendLog("[LOAN] Manual email sent for {$start} → {$end}.");
 
+        $latestDate = $dashboard->latestDate();
+        if ($latestDate) {
+            $this->refreshDashboard($dashboard, $latestDate);
+        }
+
         return redirect()
             ->route('finance.loans.pipeline')
             ->with('success', "Loan movement email sent for {$start} → {$end}.");
+    }
+
+    /**
+     * Rebuilds the loan dashboard's cached payload so it reflects the latest
+     * data immediately, rather than showing stale figures until the 15-minute
+     * cache TTL in LoanDashboardService expires on its own. Best-effort: a
+     * failure here shouldn't fail the import/send action that triggered it.
+     */
+    private function refreshDashboard(LoanDashboardService $dashboard, string $asOfDate): void
+    {
+        try {
+            $dashboard->refreshDashboardPayload($asOfDate);
+        } catch (\Throwable $e) {
+            $this->appendLog("[LOAN] Dashboard refresh failed for {$asOfDate}: " . $e->getMessage());
+        }
     }
 
     private function resolveRecipients(array $checked, string $extra, string $configKey): array
