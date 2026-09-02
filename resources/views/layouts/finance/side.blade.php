@@ -68,6 +68,14 @@
             'children' => [],
         ],
         [
+            'title' => 'Loan Dashboard',
+            'icon' => 'ti-chart-histogram',
+            'url' => '/finance/loans/dashboard',
+            'activeCondition' => request()->is('finance/loans/dashboard'),
+            'badge' => null,
+            'children' => [],
+        ],
+        [
             'title' => 'Top Movers',
             'icon' => 'ti-trophy',
             'url' => '/finance/top-movers',
@@ -182,7 +190,7 @@
             'title' => 'Loans',
             'icon' => 'ti-cash-banknote',
             'url' => '/finance/loans/pipeline',
-            'activeCondition' => request()->is('finance/loans*'),
+            'activeCondition' => request()->is('finance/loans/pipeline*'),
             'badge' => $loanCount > 0 ? $loanCount : null,
             'children' => [],
             'requiresFinanceAdmin' => true,
@@ -212,7 +220,7 @@
         ->all();
 
     $sections = [
-        'Overview' => ['Finance Home', 'Top Movers', 'Sub-Segments'],
+        'Overview' => ['Finance Home', 'Loan Dashboard', 'Top Movers', 'Sub-Segments'],
         'Branches' => ['Branch Dashboard'],
         'Relationship Management' => ['RM Dashboard'],
         'Insights & Reports' => ['Customer Trend', 'Customer Profitability', 'Loans', 'Run Report'],

@@ -121,6 +121,7 @@ use App\Http\Controllers\Finance\RmTargetDashboardController;
 use App\Http\Controllers\Finance\RmPerformanceController;
 use App\Http\Controllers\Finance\TopMoversController;
 use App\Http\Controllers\Finance\LoansPipelineController;
+use App\Http\Controllers\Finance\LoanDashboardController;
 use App\Http\Controllers\Finance\BranchDashboardController;
 use App\Http\Controllers\Finance\customer_profitability\DashboardController;
 use App\Http\Controllers\Finance\customer_profitability\UploadController;
@@ -134,6 +135,11 @@ Route::prefix('finance')->name('finance.')->middleware(['auth'])->group(function
     Route::get('/segment/{segment}/cif-drivers', [FinanceSegmentController::class, 'cifDrivers'])->name('segment.cif-drivers');
 
     Route::get('/sub-segment-modal', [FinanceHomeController::class, 'subSegmentModal'])->name('sub-segment-modal');
+
+    // Loan Movements Dashboard — same access level as the deposits dashboard
+    // (auth only). Deliberately NOT inside the role:finance-admin 'loans.'
+    // group below, which is reserved for the pipeline upload/ops page.
+    Route::get('/loans/dashboard', [LoanDashboardController::class, 'index'])->name('loans.dashboard');
 
     Route::prefix('balances')->name('balances.')->middleware('role:finance-admin')->group(function () {
         Route::get('pipeline', [BalancesPipelineController::class, 'index'])->name('pipeline');
