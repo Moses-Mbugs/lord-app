@@ -1531,6 +1531,7 @@
                                         </thead>
                                         <tbody>
                                             @forelse (($topMovers['gainers'] ?? []) as $row)
+                                                @php($row = (array) $row)
                                                 <tr>
                                                     <th scope="row">{{ $row['name'] ?? '—' }}</th>
                                                     <td>{{ $row['branch'] ?? '—' }}</td>
@@ -1572,6 +1573,7 @@
                                         </thead>
                                         <tbody>
                                             @forelse (($topMovers['losers'] ?? []) as $row)
+                                                @php($row = (array) $row)
                                                 <tr>
                                                     <th scope="row">{{ $row['name'] ?? '—' }}</th>
                                                     <td>{{ $row['branch'] ?? '—' }}</td>
