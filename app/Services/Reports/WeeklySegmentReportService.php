@@ -252,11 +252,12 @@ class WeeklySegmentReportService
     {
         $exceptionPh = implode(',', array_fill(0, count(self::INCLUDED_EXCEPTION_CIFS), '?'));
 
-        return DB::select("
+        $rows = DB::select("
             SELECT
                 m.cif,
                 m.customer_name,
                 m.branch_code,
+                COALESCE(css.segment_code, 'OT') AS business_segment_code,
                 COALESCE(css.sub_segment_name, 'Unmapped') AS sub_segment_name,
                 m.period_start  AS start_balance,
                 m.period_end    AS end_balance,
@@ -282,14 +283,50 @@ class WeeklySegmentReportService
             ) m
             LEFT JOIN (
                 SELECT
-                    cai.f12_cif AS cif,
-                    MAX(sm.business_segment_name) AS sub_segment_name
-                FROM customer_accounts_imports cai
-                LEFT JOIN sub_segment_mappings sm
-                    ON sm.mis_code = TRIM(cai.etibiseg2)
-                WHERE cai.etibiseg2 IS NOT NULL
-                  AND TRIM(cai.etibiseg2) <> ''
-                GROUP BY cai.f12_cif
+                    x.cif,
+                    CASE
+                        WHEN SUM(CASE WHEN x.seg = 'CB' THEN 1 ELSE 0 END) > 0 THEN 'CB'
+                        WHEN SUM(CASE WHEN x.seg = 'CM' THEN 1 ELSE 0 END) > 0 THEN 'CM'
+                        WHEN SUM(CASE WHEN x.seg = 'CS' THEN 1 ELSE 0 END) > 0 THEN 'CS'
+                        ELSE 'OT'
+                    END AS segment_code,
+                    COALESCE(
+                        CASE
+                            WHEN SUM(CASE WHEN x.seg = 'CB' THEN 1 ELSE 0 END) > 0
+                                THEN MIN(CASE WHEN x.seg = 'CB' THEN x.sub_segment_name END)
+                            WHEN SUM(CASE WHEN x.seg = 'CM' THEN 1 ELSE 0 END) > 0
+                                THEN MIN(CASE WHEN x.seg = 'CM' THEN x.sub_segment_name END)
+                            WHEN SUM(CASE WHEN x.seg = 'CS' THEN 1 ELSE 0 END) > 0
+                                THEN MIN(CASE WHEN x.seg = 'CS' THEN x.sub_segment_name END)
+                            ELSE 'Unmapped'
+                        END,
+                        'Unmapped'
+                    ) AS sub_segment_name
+                FROM (
+                    SELECT
+                        cai.f12_cif AS cif,
+                        CASE
+                            /* Use the mapping table first. Some CS-prefixed MIS codes, e.g. CSMS_2100, are Commercial. */
+                            WHEN UPPER(TRIM(COALESCE(sm.business, ''))) = 'CORPORATE BANKING' THEN 'CB'
+                            WHEN UPPER(TRIM(COALESCE(sm.business, ''))) = 'COMMERCIAL BANKING' THEN 'CM'
+                            WHEN UPPER(TRIM(COALESCE(sm.business, ''))) = 'CONSUMER BANKING' THEN 'CS'
+
+                            /* Fallback only when the MIS code is not mapped. */
+                            WHEN UPPER(TRIM(cai.etibiseg2)) LIKE 'CB%' THEN 'CB'
+                            WHEN UPPER(TRIM(cai.etibiseg2)) LIKE 'CM%' THEN 'CM'
+                            WHEN UPPER(TRIM(cai.etibiseg2)) LIKE 'CS%' THEN 'CS'
+                            ELSE 'OT'
+                        END AS seg,
+                        COALESCE(NULLIF(TRIM(sm.business_segment_name), ''), 'Unmapped') AS sub_segment_name
+                    FROM customer_accounts_imports cai
+                    LEFT JOIN sub_segment_mappings sm
+                        ON UPPER(TRIM(sm.mis_code)) = UPPER(TRIM(cai.etibiseg2))
+                       AND sm.is_active = 1
+                    WHERE cai.f12_cif IS NOT NULL
+                      AND cai.etibiseg2 IS NOT NULL
+                      AND TRIM(cai.etibiseg2) <> ''
+                ) x
+                GROUP BY x.cif
             ) css ON css.cif = m.cif
             HAVING (m.period_end - m.period_start) <> 0
         ", array_merge(
@@ -297,6 +334,12 @@ class WeeklySegmentReportService
             self::INCLUDED_EXCEPTION_CIFS,
             [self::EXCLUDED_CR_GL]
         ));
+
+        foreach ($rows as $row) {
+            $row->business_segment_name = self::SEGMENT_MAP[$row->business_segment_code] ?? $row->business_segment_code;
+        }
+
+        return $rows;
     }
 
     // -------------------------------------------------------------------------

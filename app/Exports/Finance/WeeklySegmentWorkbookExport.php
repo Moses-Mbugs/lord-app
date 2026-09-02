@@ -332,7 +332,7 @@ class WeeklySegmentDrilldownSheet implements FromArray, WithTitle, WithColumnWid
 
     public function columnWidths(): array
     {
-        return ['A' => 6, 'B' => 16, 'C' => 34, 'D' => 10, 'E' => 18, 'F' => 18, 'G' => 18];
+        return ['A' => 6, 'B' => 16, 'C' => 34, 'D' => 10, 'E' => 20, 'F' => 26, 'G' => 18, 'H' => 18, 'I' => 18];
     }
 
     public function array(): array
@@ -346,57 +346,61 @@ class WeeklySegmentDrilldownSheet implements FromArray, WithTitle, WithColumnWid
         $rows   = [];
         $rowNum = 0;
 
-        $rows[] = ['CIF DRILLDOWN — TOP 100 GAINERS & LOSERS  (WHOLE BANK, ANY CURRENCY)', '', '', '', '', '', ''];
+        $rows[] = ['CIF DRILLDOWN — TOP 100 GAINERS & LOSERS  (WHOLE BANK, ANY CURRENCY)', '', '', '', '', '', '', '', ''];
         $this->mergeRows[] = ++$rowNum;
 
-        $rows[] = ["Week: {$weekStart}  →  {$weekEnd}", '', '', '', '', '', ''];
+        $rows[] = ["Week: {$weekStart}  →  {$weekEnd}", '', '', '', '', '', '', '', ''];
         $this->mergeRows[] = ++$rowNum;
 
-        $rows[] = ['', '', '', '', '', '', ''];  // spacer
+        $rows[] = ['', '', '', '', '', '', '', '', ''];  // spacer
         $rowNum++;
 
         if ($gainers->isNotEmpty()) {
-            $rows[] = ['▲  GAINERS', '', '', '', '', '', ''];
+            $rows[] = ['▲  GAINERS', '', '', '', '', '', '', '', ''];
             $this->mergeRows[]   = ++$rowNum;
             $this->gainHdrRows[] = $rowNum;
 
-            $rows[] = ['#', 'CIF', 'Customer Name', 'Branch', 'Start Balance', 'End Balance', 'Weekly Mv'];
+            $rows[] = ['#', 'CIF', 'Customer Name', 'Branch', 'Business Segment', 'Sub Segment', 'Start Balance', 'End Balance', 'Weekly Mv'];
             $this->gainHdrRows[] = ++$rowNum;
 
             foreach ($gainers as $i => $r) {
                 $rows[] = [
                     $i + 1,
-                    (string) ($r->cif           ?? ''),
-                    (string) ($r->customer_name ?? ''),
-                    (string) ($r->branch_code   ?? ''),
-                    (float)  ($r->start_balance ?? 0),
-                    (float)  ($r->end_balance   ?? 0),
-                    (float)  ($r->movement      ?? 0),
+                    (string) ($r->cif                    ?? ''),
+                    (string) ($r->customer_name          ?? ''),
+                    (string) ($r->branch_code            ?? ''),
+                    (string) ($r->business_segment_name  ?? ''),
+                    (string) ($r->sub_segment_name       ?? ''),
+                    (float)  ($r->start_balance          ?? 0),
+                    (float)  ($r->end_balance            ?? 0),
+                    (float)  ($r->movement               ?? 0),
                 ];
                 $this->gainDataRows[] = ++$rowNum;
             }
         }
 
         if ($losers->isNotEmpty()) {
-            $rows[] = ['', '', '', '', '', '', ''];  // spacer
+            $rows[] = ['', '', '', '', '', '', '', '', ''];  // spacer
             $rowNum++;
 
-            $rows[] = ['▼  LOSERS', '', '', '', '', '', ''];
+            $rows[] = ['▼  LOSERS', '', '', '', '', '', '', '', ''];
             $this->mergeRows[]   = ++$rowNum;
             $this->lossHdrRows[] = $rowNum;
 
-            $rows[] = ['#', 'CIF', 'Customer Name', 'Branch', 'Start Balance', 'End Balance', 'Weekly Mv'];
+            $rows[] = ['#', 'CIF', 'Customer Name', 'Branch', 'Business Segment', 'Sub Segment', 'Start Balance', 'End Balance', 'Weekly Mv'];
             $this->lossHdrRows[] = ++$rowNum;
 
             foreach ($losers as $i => $r) {
                 $rows[] = [
                     $i + 1,
-                    (string) ($r->cif           ?? ''),
-                    (string) ($r->customer_name ?? ''),
-                    (string) ($r->branch_code   ?? ''),
-                    (float)  ($r->start_balance ?? 0),
-                    (float)  ($r->end_balance   ?? 0),
-                    (float)  ($r->movement      ?? 0),
+                    (string) ($r->cif                    ?? ''),
+                    (string) ($r->customer_name          ?? ''),
+                    (string) ($r->branch_code            ?? ''),
+                    (string) ($r->business_segment_name  ?? ''),
+                    (string) ($r->sub_segment_name       ?? ''),
+                    (float)  ($r->start_balance          ?? 0),
+                    (float)  ($r->end_balance            ?? 0),
+                    (float)  ($r->movement               ?? 0),
                 ];
                 $this->lossDataRows[] = ++$rowNum;
             }
@@ -413,11 +417,11 @@ class WeeklySegmentDrilldownSheet implements FromArray, WithTitle, WithColumnWid
                 $sheet = $event->sheet->getDelegate();
 
                 foreach ($this->mergeRows as $r) {
-                    $sheet->mergeCells("A{$r}:G{$r}");
+                    $sheet->mergeCells("A{$r}:I{$r}");
                 }
 
                 // Title (row 1)
-                $sheet->getStyle('A1:G1')->applyFromArray([
+                $sheet->getStyle('A1:I1')->applyFromArray([
                     'font'      => ['bold' => true, 'size' => 13, 'color' => ['rgb' => 'FFFFFF']],
                     'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1F3A5F']],
                     'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT,
@@ -426,14 +430,14 @@ class WeeklySegmentDrilldownSheet implements FromArray, WithTitle, WithColumnWid
                 $sheet->getRowDimension(1)->setRowHeight(24);
 
                 // Period row (row 2)
-                $sheet->getStyle('A2:G2')->applyFromArray([
+                $sheet->getStyle('A2:I2')->applyFromArray([
                     'font' => ['size' => 10, 'italic' => true, 'color' => ['rgb' => '475569']],
                     'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F1F5F9']],
                 ]);
 
                 // Gainers section label + column header: green
                 foreach ($this->gainHdrRows as $r) {
-                    $sheet->getStyle("A{$r}:G{$r}")->applyFromArray([
+                    $sheet->getStyle("A{$r}:I{$r}")->applyFromArray([
                         'font'      => ['bold' => true, 'size' => 10, 'color' => ['rgb' => 'FFFFFF']],
                         'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '166534']],
                         'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER,
@@ -444,7 +448,7 @@ class WeeklySegmentDrilldownSheet implements FromArray, WithTitle, WithColumnWid
 
                 // Losers section label + column header: red
                 foreach ($this->lossHdrRows as $r) {
-                    $sheet->getStyle("A{$r}:G{$r}")->applyFromArray([
+                    $sheet->getStyle("A{$r}:I{$r}")->applyFromArray([
                         'font'      => ['bold' => true, 'size' => 10, 'color' => ['rgb' => 'FFFFFF']],
                         'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '991B1B']],
                         'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER,
@@ -455,7 +459,7 @@ class WeeklySegmentDrilldownSheet implements FromArray, WithTitle, WithColumnWid
 
                 // Gainers data: light green tint
                 foreach ($this->gainDataRows as $r) {
-                    $sheet->getStyle("A{$r}:G{$r}")->applyFromArray([
+                    $sheet->getStyle("A{$r}:I{$r}")->applyFromArray([
                         'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F0FDF4']],
                     ]);
                     $this->styleDataRow($sheet, $r, true);
@@ -463,7 +467,7 @@ class WeeklySegmentDrilldownSheet implements FromArray, WithTitle, WithColumnWid
 
                 // Losers data: light red tint
                 foreach ($this->lossDataRows as $r) {
-                    $sheet->getStyle("A{$r}:G{$r}")->applyFromArray([
+                    $sheet->getStyle("A{$r}:I{$r}")->applyFromArray([
                         'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FFF1F2']],
                     ]);
                     $this->styleDataRow($sheet, $r, false);
@@ -476,10 +480,10 @@ class WeeklySegmentDrilldownSheet implements FromArray, WithTitle, WithColumnWid
 
     private function styleDataRow(Worksheet $sheet, int $r, bool $isGain): void
     {
-        $sheet->getStyle("E{$r}:G{$r}")->getNumberFormat()->setFormatCode('#,##0');
-        $sheet->getStyle("E{$r}:G{$r}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
-        $sheet->getStyle("G{$r}")->getFont()->getColor()->setRGB($isGain ? '166534' : '991B1B');
-        $sheet->getStyle("A{$r}:G{$r}")->getBorders()->getBottom()
+        $sheet->getStyle("G{$r}:I{$r}")->getNumberFormat()->setFormatCode('#,##0');
+        $sheet->getStyle("G{$r}:I{$r}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+        $sheet->getStyle("I{$r}")->getFont()->getColor()->setRGB($isGain ? '166534' : '991B1B');
+        $sheet->getStyle("A{$r}:I{$r}")->getBorders()->getBottom()
             ->setBorderStyle(Border::BORDER_HAIR)->getColor()->setRGB('E2E8F0');
     }
 }
