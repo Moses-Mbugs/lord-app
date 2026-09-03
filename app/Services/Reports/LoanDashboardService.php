@@ -37,6 +37,14 @@ class LoanDashboardService
         'Consumer Banking'   => '#10B981',
     ];
 
+    // URL slugs used by the segment drill-down route (finance.loans.segment.show),
+    // matching the segment cards on the loan dashboard.
+    private const SEGMENT_SLUGS = [
+        'corporate'  => 'Corporate Banking',
+        'commercial' => 'Commercial Banking',
+        'consumer'   => 'Consumer Banking',
+    ];
+
     private const STATUS_ORDER = ['Performing', 'Watch', 'Substandard', 'Doubtful', 'Loss', 'Other'];
 
     private const STATUS_COLORS = [
@@ -63,6 +71,33 @@ class LoanDashboardService
         $date = DB::table('loan_listings')->max('as_at_date');
 
         return $date ? Carbon::parse((string) $date)->toDateString() : null;
+    }
+
+    /**
+     * Resolves a URL slug (e.g. "corporate") to its canonical segment name,
+     * short display label, and accent color — mirrors
+     * FinanceSegmentController::resolveSegment() for deposits.
+     */
+    public static function resolveSegmentSlug(string $slug): ?array
+    {
+        $canon = self::SEGMENT_SLUGS[strtolower(trim($slug))] ?? null;
+
+        if (!$canon) {
+            return null;
+        }
+
+        return [
+            'slug'  => strtolower(trim($slug)),
+            'canon' => $canon,
+            'label' => self::SEGMENT_LABELS[$canon],
+            'color' => self::SEGMENT_COLORS[$canon],
+        ];
+    }
+
+    /** All segment slugs in display order, for building segment card links. */
+    public static function segmentSlugs(): array
+    {
+        return self::SEGMENT_SLUGS;
     }
 
     public function buildDashboardPayload(string $asOfDate): array

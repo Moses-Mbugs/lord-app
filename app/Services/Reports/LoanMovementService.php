@@ -149,10 +149,94 @@ class LoanMovementService
     }
 
     /**
+     * Status-bucket breakdown (Performing/Watch/Substandard/Doubtful/Loss) for
+     * a single business segment, combining LCY and FCY via loan_book_outstanding
+     * — the segment-page analog of build()'s per-segment category breakdown,
+     * pre-filtered to one segment instead of looping over all of them.
+     */
+    public function buildStatusBreakdownForSegment(string $start, string $end, string $segmentCanon): array
+    {
+        $startDate = Carbon::parse($start)->toDateString();
+        $endDate   = Carbon::parse($end)->toDateString();
+        $wodStart  = Carbon::parse($end)->subWeek()->toDateString();
+        $mtdStart  = Carbon::parse($end)->startOfMonth()->toDateString();
+        $ytdStart  = Carbon::parse($end)->startOfYear()->toDateString();
+
+        $dates  = array_unique([$startDate, $endDate, $wodStart, $mtdStart, $ytdStart]);
+        $cifBiz = $this->cifBusinessSubquery();
+
+        $rows = DB::table('loan_listings')
+            ->leftJoinSub($cifBiz, 'csm', fn($j) => $j->on('csm.cif', '=', 'loan_listings.cif'))
+            ->selectRaw('loan_listings.status_bucket AS status_bucket')
+            ->selectRaw('SUM(CASE WHEN loan_listings.as_at_date = ? THEN loan_book_outstanding ELSE 0 END) as start_bal', [$startDate])
+            ->selectRaw('SUM(CASE WHEN loan_listings.as_at_date = ? THEN loan_book_outstanding ELSE 0 END) as end_bal',   [$endDate])
+            ->selectRaw('SUM(CASE WHEN loan_listings.as_at_date = ? THEN loan_book_outstanding ELSE 0 END) as wod_start', [$wodStart])
+            ->selectRaw('SUM(CASE WHEN loan_listings.as_at_date = ? THEN loan_book_outstanding ELSE 0 END) as mtd_start', [$mtdStart])
+            ->selectRaw('SUM(CASE WHEN loan_listings.as_at_date = ? THEN loan_book_outstanding ELSE 0 END) as ytd_start', [$ytdStart])
+            ->whereIn('loan_listings.as_at_date', $dates)
+            ->whereRaw($this->segmentExpr() . ' = ?', [$segmentCanon])
+            ->groupBy('loan_listings.status_bucket')
+            ->get();
+
+        $buckets = [];
+        foreach ($rows as $r) {
+            $bucket = trim((string) ($r->status_bucket ?? '')) ?: 'Other';
+
+            if (!isset($buckets[$bucket])) {
+                $buckets[$bucket] = ['startBalance' => 0.0, 'endBalance' => 0.0, 'weekOnWeek' => 0.0, 'mtd' => 0.0, 'ytd' => 0.0];
+            }
+
+            $buckets[$bucket]['startBalance'] += (float) $r->start_bal;
+            $buckets[$bucket]['endBalance']   += (float) $r->end_bal;
+            $buckets[$bucket]['weekOnWeek']   += (float) $r->end_bal - (float) $r->wod_start;
+            $buckets[$bucket]['mtd']          += (float) $r->end_bal - (float) $r->mtd_start;
+            $buckets[$bucket]['ytd']          += (float) $r->end_bal - (float) $r->ytd_start;
+        }
+
+        $allBuckets = array_unique(array_merge(self::BUCKET_ORDER, array_keys($buckets)));
+        $categories = [];
+        $segStart = $segEnd = $segWow = $segMtd = $segYtd = 0.0;
+
+        foreach ($allBuckets as $bucketName) {
+            if (!isset($buckets[$bucketName])) continue;
+
+            $b = $buckets[$bucketName];
+            $categories[] = [
+                'name'         => $bucketName,
+                'startBalance' => $b['startBalance'],
+                'endBalance'   => $b['endBalance'],
+                'weekOnWeek'   => $b['weekOnWeek'],
+                'mtd'          => $b['mtd'],
+                'ytd'          => $b['ytd'],
+                'direction'    => $this->direction($b['endBalance'] - $b['startBalance']),
+            ];
+
+            $segStart += $b['startBalance'];
+            $segEnd   += $b['endBalance'];
+            $segWow   += $b['weekOnWeek'];
+            $segMtd   += $b['mtd'];
+            $segYtd   += $b['ytd'];
+        }
+
+        return [
+            'categories'   => $categories,
+            'startBalance' => $segStart,
+            'endBalance'   => $segEnd,
+            'weekOnWeek'   => $segWow,
+            'mtd'          => $segMtd,
+            'ytd'          => $segYtd,
+            'direction'    => $this->direction($segEnd - $segStart),
+        ];
+    }
+
+    /**
      * Combined segment overview with separate LCY and FCY movement columns.
      * Both currency types use loan_book_outstanding as the KES-equivalent amount.
+     *
+     * $segmentFilter, when given, restricts everything (including the movers
+     * list) to that one canonical segment — used by the segment drill-down page.
      */
-    public function buildCombined(string $start, string $end, int $moverLimit = 10): array
+    public function buildCombined(string $start, string $end, int $moverLimit = 10, ?string $segmentFilter = null): array
     {
         $startDate = Carbon::parse($start)->toDateString();
         $endDate   = Carbon::parse($end)->toDateString();
@@ -169,6 +253,7 @@ class LoanMovementService
                 ->whereIn('loan_listings.as_at_date', [$startDate, $endDate])
                 ->where('loan_listings.currency_type', $ctype)
                 ->whereRaw("(TRIM(COALESCE(loan_listings.loan_status, '')) = '' OR loan_listings.loan_status IN ('NORM', 'Normal', 'OAEM', 'SUBS', 'Watch'))")
+                ->when($segmentFilter, fn($q) => $q->whereRaw($this->segmentExpr() . ' = ?', [$segmentFilter]))
                 ->groupBy(DB::raw($this->segmentExpr()))
                 ->get();
 
@@ -251,7 +336,7 @@ class LoanMovementService
                 'bankTotalStart' => $this->totalLoanBook($startDate),
                 'bankTotalEnd'   => $this->totalLoanBook($endDate),
             ],
-            'movers' => $this->topMoversCombined($startDate, $endDate, $moverLimit),
+            'movers' => $this->topMoversCombined($startDate, $endDate, $moverLimit, $segmentFilter),
         ];
     }
 
@@ -267,7 +352,7 @@ class LoanMovementService
             ->sum('loan_book_outstanding');
     }
 
-    private function topMoversCombined(string $startDate, string $endDate, int $limit): array
+    private function topMoversCombined(string $startDate, string $endDate, int $limit, ?string $segmentFilter = null): array
     {
         $startExpr = 'SUM(CASE WHEN loan_listings.as_at_date = ? THEN loan_book_outstanding ELSE 0 END)';
         $endExpr   = 'SUM(CASE WHEN loan_listings.as_at_date = ? THEN loan_book_outstanding ELSE 0 END)';
@@ -283,6 +368,7 @@ class LoanMovementService
             ->selectRaw("{$moveExpr}  as movement",      [$endDate, $startDate])
             ->whereIn('loan_listings.as_at_date', [$startDate, $endDate])
             ->whereRaw("(TRIM(COALESCE(loan_listings.loan_status, '')) = '' OR loan_listings.loan_status IN ('NORM', 'Normal', 'OAEM', 'SUBS', 'Watch'))")
+            ->when($segmentFilter, fn($q) => $q->whereRaw($this->segmentExpr() . ' = ?', [$segmentFilter]))
             ->groupBy('loan_listings.cif')
             ->havingRaw("{$moveExpr} <> 0", [$endDate, $startDate]);
 

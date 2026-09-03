@@ -1272,9 +1272,9 @@
 
                 @php
                     $segmentCards = [
-                        ['label' => 'Corporate', 'color' => '#005B82'],
-                        ['label' => 'Commercial', 'color' => '#008FC7'],
-                        ['label' => 'Consumer', 'color' => '#10B981'],
+                        ['label' => 'Corporate', 'color' => '#005B82', 'slug' => 'corporate'],
+                        ['label' => 'Commercial', 'color' => '#008FC7', 'slug' => 'commercial'],
+                        ['label' => 'Consumer', 'color' => '#10B981', 'slug' => 'consumer'],
                     ];
                     $segmentPie = $chartPayload['segmentPie'] ?? ['labels' => [], 'data' => [], 'colors' => []];
                     $segmentPieMap = collect($segmentPie['labels'] ?? [])->mapWithKeys(
@@ -1306,14 +1306,16 @@
                                     $pieTotal > 0 && $value !== null ? round(($value / $pieTotal) * 100, 1) : null;
                             @endphp
 
-                            <div class="segment-card" style="--seg-accent: {{ $meta['color'] }}"
+                            <a href="{{ route('finance.loans.segment.show', $segmentCard['slug']) }}" class="segment-card"
+                                style="--seg-accent: {{ $meta['color'] }}"
                                 data-segment-label="{{ $segmentCard['label'] }}"
-                                aria-label="{{ $segmentCard['label'] }} loan book">
+                                aria-label="Open {{ $segmentCard['label'] }} loan book details">
                                 <div class="segment-card-top">
                                     <div>
                                         <div class="segment-chip">{{ $segmentCard['label'] }}</div>
                                         <h2 class="segment-title">{{ $segmentCard['label'] }} loans</h2>
                                     </div>
+                                    <span class="segment-arrow" aria-hidden="true">→</span>
                                 </div>
 
                                 <div class="segment-balance">{{ $formatCompactKes($value) }}</div>
@@ -1325,8 +1327,9 @@
 
                                 <div class="segment-meta" style="margin-top: 7px">
                                     {{ $percentage === null ? 'Share unavailable' : number_format($percentage, 1) . '% of performing loan book' }}
+                                    · Open segment details
                                 </div>
-                            </div>
+                            </a>
                         @endforeach
                     </div>
 

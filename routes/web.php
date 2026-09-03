@@ -122,6 +122,7 @@ use App\Http\Controllers\Finance\RmPerformanceController;
 use App\Http\Controllers\Finance\TopMoversController;
 use App\Http\Controllers\Finance\LoansPipelineController;
 use App\Http\Controllers\Finance\LoanDashboardController;
+use App\Http\Controllers\Finance\LoanSegmentController;
 use App\Http\Controllers\Finance\BranchDashboardController;
 use App\Http\Controllers\Finance\customer_profitability\DashboardController;
 use App\Http\Controllers\Finance\customer_profitability\UploadController;
@@ -140,6 +141,7 @@ Route::prefix('finance')->name('finance.')->middleware(['auth'])->group(function
     // (auth only). Deliberately NOT inside the role:finance-admin 'loans.'
     // group below, which is reserved for the pipeline upload/ops page.
     Route::get('/loans/dashboard', [LoanDashboardController::class, 'index'])->name('loans.dashboard');
+    Route::get('/loans/segment/{segment}', [LoanSegmentController::class, 'show'])->name('loans.segment.show');
 
     Route::prefix('balances')->name('balances.')->middleware('role:finance-admin')->group(function () {
         Route::get('pipeline', [BalancesPipelineController::class, 'index'])->name('pipeline');
