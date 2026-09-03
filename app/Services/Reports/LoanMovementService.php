@@ -41,8 +41,17 @@ class LoanMovementService
         $startDate = Carbon::parse($start)->toDateString();
         $endDate   = Carbon::parse($end)->toDateString();
         $wodStart  = Carbon::parse($end)->subWeek()->toDateString();
-        $mtdStart  = Carbon::parse($end)->startOfMonth()->toDateString();
-        $ytdStart  = Carbon::parse($end)->startOfYear()->toDateString();
+
+        // MTD/YTD anchors resolve to the latest available snapshot on or before
+        // month-end/year-end (e.g. 2025-12-30, since 2025-12-31 has no loan_listings
+        // row) — an exact-date match here would silently zero out the whole
+        // MTD/YTD column whenever the calendar boundary falls on a non-import date.
+        // Mirrors LoanDashboardService's latestAvailableDateOnOrBefore() and the
+        // deposits side (FinanceHomeController::resolveEoyBaselineClosing()).
+        $mtdStart = $this->resolveDateOnOrBefore(Carbon::parse($end)->startOfMonth()->subDay()->toDateString())
+            ?? Carbon::parse($end)->startOfMonth()->toDateString();
+        $ytdStart = $this->resolveDateOnOrBefore(Carbon::parse($end)->startOfYear()->subDay()->toDateString())
+            ?? Carbon::parse($end)->startOfYear()->toDateString();
 
         $currencyType = strtoupper($currencyType);
         $dates        = array_unique([$startDate, $endDate, $wodStart, $mtdStart, $ytdStart]);
@@ -159,8 +168,13 @@ class LoanMovementService
         $startDate = Carbon::parse($start)->toDateString();
         $endDate   = Carbon::parse($end)->toDateString();
         $wodStart  = Carbon::parse($end)->subWeek()->toDateString();
-        $mtdStart  = Carbon::parse($end)->startOfMonth()->toDateString();
-        $ytdStart  = Carbon::parse($end)->startOfYear()->toDateString();
+
+        // See build()'s comment: resolve to the latest available snapshot on or
+        // before month-end/year-end (e.g. 2025-12-30), not an exact-date match.
+        $mtdStart = $this->resolveDateOnOrBefore(Carbon::parse($end)->startOfMonth()->subDay()->toDateString())
+            ?? Carbon::parse($end)->startOfMonth()->toDateString();
+        $ytdStart = $this->resolveDateOnOrBefore(Carbon::parse($end)->startOfYear()->subDay()->toDateString())
+            ?? Carbon::parse($end)->startOfYear()->toDateString();
 
         $dates  = array_unique([$startDate, $endDate, $wodStart, $mtdStart, $ytdStart]);
         $cifBiz = $this->cifBusinessSubquery();
@@ -478,5 +492,18 @@ class LoanMovementService
         if ($movement > 0) return 'GAIN';
         if ($movement < 0) return 'LOSS';
         return 'FLAT';
+    }
+
+    /**
+     * Latest loan_listings snapshot date on or before $targetDate, or null if
+     * none exists yet (e.g. a YTD target before the table's earliest import).
+     */
+    private function resolveDateOnOrBefore(string $targetDate): ?string
+    {
+        $date = DB::table('loan_listings')
+            ->where('as_at_date', '<=', $targetDate)
+            ->max('as_at_date');
+
+        return $date ? Carbon::parse((string) $date)->toDateString() : null;
     }
 }
