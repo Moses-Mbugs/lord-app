@@ -69,7 +69,7 @@
         ],
         [
             'title' => 'Loan Dashboard',
-            'icon' => 'ti-chart-histogram',
+            'icon' => 'ti-report-analytics',
             'url' => '/finance/loans/dashboard',
             'activeCondition' => request()->is('finance/loans/dashboard'),
             'badge' => null,

@@ -645,6 +645,23 @@ class LoanDashboardService
         string $toDate,
         string $accent
     ): array {
+        // No available snapshot on/before the comparison window yet (e.g. YTD
+        // before loan_listings has any December-of-last-year history) — don't
+        // fall back to comparing against 0, which would render the whole
+        // current balance as if it were the period's movement.
+        if ($fromDate === null) {
+            return [
+                'label' => $label,
+                'value' => 'Pending',
+                'raw' => null,
+                'direction' => 'flat',
+                'change_pct' => null,
+                'range' => 'Insufficient history before ' . Carbon::parse($toDate)->format('d M Y'),
+                'accent' => $accent,
+                'is_placeholder' => true,
+            ];
+        }
+
         $movement = round($current - $previous, 2);
         $changePct = abs($previous) > 0.00001
             ? round(($movement / abs($previous)) * 100, 2)
@@ -656,9 +673,7 @@ class LoanDashboardService
             'raw' => $movement,
             'direction' => $movement >= 0 ? 'up' : 'down',
             'change_pct' => $changePct,
-            'range' => $fromDate
-                ? Carbon::parse($fromDate)->format('d M Y') . ' → ' . Carbon::parse($toDate)->format('d M Y')
-                : 'Insufficient history',
+            'range' => Carbon::parse($fromDate)->format('d M Y') . ' → ' . Carbon::parse($toDate)->format('d M Y'),
             'accent' => $accent,
         ];
     }
