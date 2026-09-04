@@ -44,8 +44,8 @@ class BranchMoversWorkbookExport implements WithMultipleSheets
             // Sheet 3: CIF Movers by Branch (Top 10 CIF gainers/losers per branch) (from customer_balances)
             new CifMoversByBranchSheet($this->startDate, $this->endDate, $limit),
 
-            // Sheet 4: Loan Account Movers by Branch — commented out pending loan fixes
-            // new LoanAccountMoversByBranchSheet($this->startDate, $this->endDate, $limit),
+            // Sheet 4: Loan Account Movers by Branch
+            new LoanAccountMoversByBranchSheet($this->startDate, $this->endDate, $limit),
         ];
     }
 }
