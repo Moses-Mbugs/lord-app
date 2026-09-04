@@ -18,6 +18,15 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 class WeeklyLoanWorkbookExport implements WithMultipleSheets
 {
+    // Order + sheet title for each top-level segment in the (now-segmented) drilldown.
+    private const DRILLDOWN_SEGMENT_TITLES = [
+        'CORPORATE BANKING'  => 'Corporate CIF Drilldown',
+        'COMMERCIAL BANKING' => 'Commercial CIF Drilldown',
+        'CONSUMER BANKING'   => 'Consumer CIF Drilldown',
+        'UNMAPPED'           => 'Unmapped CIF Drilldown',
+    ];
+
+    /** @param array $drilldown [segmentCode => [subSegName => {gainers, losers}]] — see WeeklyLoanReportService::drilldownBySegment() */
     public function __construct(
         private readonly array $data,
         private readonly array $drilldown,
@@ -32,8 +41,14 @@ class WeeklyLoanWorkbookExport implements WithMultipleSheets
         $sheets = [
             new WeeklyLoanSummarySheet($this->data),
             new WeeklyLoanTopMoversSheet($this->weekTopMovers, $this->mtdTopMovers, $this->data['periods'] ?? []),
-            new WeeklyLoanDrilldownSheet($this->drilldown, $this->data['periods'] ?? []),
         ];
+
+        foreach (self::DRILLDOWN_SEGMENT_TITLES as $code => $title) {
+            $subSegments = $this->drilldown[$code] ?? [];
+            if (empty($subSegments)) continue;
+
+            $sheets[] = new WeeklyLoanDrilldownSheet($subSegments, $this->data['periods'] ?? [], $title);
+        }
 
         if (!empty($this->monthlyMovement['monthLabels'])) {
             $sheets[] = new WeeklyLoanMonthlyMovementSheet($this->monthlyMovement);
@@ -442,12 +457,15 @@ class WeeklyLoanMonthlyMovementSheet implements FromArray, WithTitle, WithColumn
 
 class WeeklyLoanTopMoversSheet implements FromArray, WithTitle, WithColumnWidths, WithEvents
 {
-    private array $mergeRows      = [];
+    private array $mergeRowsFull  = [];
     private array $sectionHdrRows = [];
     private array $gainHdrRows    = [];
     private array $lossHdrRows    = [];
+    private array $colHdrRows     = [];
     private array $gainDataRows   = [];
     private array $lossDataRows   = [];
+
+    private const NUM_COLS = 15; // A-G gainers, H gap, I-O losers
 
     public function __construct(
         private readonly array $weekTopMovers,
@@ -459,7 +477,11 @@ class WeeklyLoanTopMoversSheet implements FromArray, WithTitle, WithColumnWidths
 
     public function columnWidths(): array
     {
-        return ['A' => 6, 'B' => 16, 'C' => 34, 'D' => 10, 'E' => 18, 'F' => 18, 'G' => 18];
+        return [
+            'A' => 6,  'B' => 16, 'C' => 32, 'D' => 10, 'E' => 16, 'F' => 16, 'G' => 16,
+            'H' => 3,
+            'I' => 6,  'J' => 16, 'K' => 32, 'L' => 10, 'M' => 16, 'N' => 16, 'O' => 16,
+        ];
     }
 
     public function array(): array
@@ -471,10 +493,10 @@ class WeeklyLoanTopMoversSheet implements FromArray, WithTitle, WithColumnWidths
         $rows   = [];
         $rowNum = 0;
 
-        $rows[] = ['PERFORMING LOANS — TOP 10 GAINERS & LOSERS', '', '', '', '', '', ''];
-        $this->mergeRows[] = ++$rowNum;
+        $rows[] = array_pad(['PERFORMING LOANS — TOP 10 GAINERS & LOSERS'], self::NUM_COLS, '');
+        $this->mergeRowsFull[] = ++$rowNum;
 
-        $rows[] = ['', '', '', '', '', '', ''];
+        $rows[] = array_fill(0, self::NUM_COLS, '');
         $rowNum++;
 
         $rowNum = $this->appendPeriodSection(
@@ -484,7 +506,7 @@ class WeeklyLoanTopMoversSheet implements FromArray, WithTitle, WithColumnWidths
             $this->weekTopMovers
         );
 
-        $rows[] = ['', '', '', '', '', '', ''];
+        $rows[] = array_fill(0, self::NUM_COLS, '');
         $rowNum++;
 
         $this->appendPeriodSection(
@@ -497,57 +519,63 @@ class WeeklyLoanTopMoversSheet implements FromArray, WithTitle, WithColumnWidths
         return $rows;
     }
 
+    /** Gainers occupy A:G, losers occupy I:O, side by side on the same rows. */
     private function appendPeriodSection(array &$rows, int $rowNum, string $label, array $topMovers): int
     {
         $gainers = collect($topMovers['gainers'] ?? []);
         $losers  = collect($topMovers['losers']  ?? []);
 
-        $rows[] = [$label, '', '', '', '', '', ''];
-        $this->mergeRows[]      = ++$rowNum;
+        $rows[] = array_pad([$label], self::NUM_COLS, '');
+        $this->mergeRowsFull[]  = ++$rowNum;
         $this->sectionHdrRows[] = $rowNum;
 
-        if ($gainers->isNotEmpty()) {
-            $rows[] = ['▲  TOP GAINERS', '', '', '', '', '', ''];
-            $this->mergeRows[]   = ++$rowNum;
-            $this->gainHdrRows[] = $rowNum;
+        $rows[] = [
+            '▲  TOP GAINERS', '', '', '', '', '', '', '',
+            '▼  TOP LOSERS', '', '', '', '', '', '',
+        ];
+        ++$rowNum;
+        $this->gainHdrRows[] = $rowNum;
+        $this->lossHdrRows[] = $rowNum;
 
-            $rows[] = ['#', 'CIF', 'Customer Name', 'Branch', 'Start Balance', 'End Balance', 'Movement'];
-            $this->gainHdrRows[] = ++$rowNum;
+        $rows[] = [
+            '#', 'CIF', 'Customer Name', 'Branch', 'Start Balance', 'End Balance', 'Movement', '',
+            '#', 'CIF', 'Customer Name', 'Branch', 'Start Balance', 'End Balance', 'Movement',
+        ];
+        ++$rowNum;
+        $this->colHdrRows[] = $rowNum;
 
-            foreach ($gainers as $i => $r) {
-                $rows[] = [
-                    $i + 1,
-                    (string) ($r->cif           ?? ''),
-                    (string) ($r->customer_name ?? ''),
-                    (string) ($r->branch_code   ?? ''),
-                    (float)  ($r->start_balance ?? 0),
-                    (float)  ($r->end_balance   ?? 0),
-                    (float)  ($r->movement      ?? 0),
-                ];
-                $this->gainDataRows[] = ++$rowNum;
+        $count = max($gainers->count(), $losers->count());
+
+        for ($i = 0; $i < $count; $i++) {
+            $g   = $gainers->get($i);
+            $l   = $losers->get($i);
+            $row = array_fill(0, self::NUM_COLS, '');
+
+            if ($g) {
+                $row[0] = $i + 1;
+                $row[1] = (string) ($g->cif           ?? '');
+                $row[2] = (string) ($g->customer_name ?? '');
+                $row[3] = (string) ($g->branch_code   ?? '');
+                $row[4] = (float)  ($g->start_balance ?? 0);
+                $row[5] = (float)  ($g->end_balance   ?? 0);
+                $row[6] = (float)  ($g->movement      ?? 0);
             }
-        }
 
-        if ($losers->isNotEmpty()) {
-            $rows[] = ['▼  TOP LOSERS', '', '', '', '', '', ''];
-            $this->mergeRows[]   = ++$rowNum;
-            $this->lossHdrRows[] = $rowNum;
-
-            $rows[] = ['#', 'CIF', 'Customer Name', 'Branch', 'Start Balance', 'End Balance', 'Movement'];
-            $this->lossHdrRows[] = ++$rowNum;
-
-            foreach ($losers as $i => $r) {
-                $rows[] = [
-                    $i + 1,
-                    (string) ($r->cif           ?? ''),
-                    (string) ($r->customer_name ?? ''),
-                    (string) ($r->branch_code   ?? ''),
-                    (float)  ($r->start_balance ?? 0),
-                    (float)  ($r->end_balance   ?? 0),
-                    (float)  ($r->movement      ?? 0),
-                ];
-                $this->lossDataRows[] = ++$rowNum;
+            if ($l) {
+                $row[8]  = $i + 1;
+                $row[9]  = (string) ($l->cif           ?? '');
+                $row[10] = (string) ($l->customer_name ?? '');
+                $row[11] = (string) ($l->branch_code   ?? '');
+                $row[12] = (float)  ($l->start_balance ?? 0);
+                $row[13] = (float)  ($l->end_balance   ?? 0);
+                $row[14] = (float)  ($l->movement      ?? 0);
             }
+
+            $rows[] = $row;
+            ++$rowNum;
+
+            if ($g) $this->gainDataRows[] = $rowNum;
+            if ($l) $this->lossDataRows[] = $rowNum;
         }
 
         return $rowNum;
@@ -560,11 +588,11 @@ class WeeklyLoanTopMoversSheet implements FromArray, WithTitle, WithColumnWidths
                 /** @var Worksheet $sheet */
                 $sheet = $event->sheet->getDelegate();
 
-                foreach ($this->mergeRows as $r) {
-                    $sheet->mergeCells("A{$r}:G{$r}");
+                foreach ($this->mergeRowsFull as $r) {
+                    $sheet->mergeCells("A{$r}:O{$r}");
                 }
 
-                $sheet->getStyle('A1:G1')->applyFromArray([
+                $sheet->getStyle('A1:O1')->applyFromArray([
                     'font'      => ['bold' => true, 'size' => 13, 'color' => ['rgb' => 'FFFFFF']],
                     'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1F3A5F']],
                     'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT, 'vertical' => Alignment::VERTICAL_CENTER],
@@ -572,7 +600,7 @@ class WeeklyLoanTopMoversSheet implements FromArray, WithTitle, WithColumnWidths
                 $sheet->getRowDimension(1)->setRowHeight(24);
 
                 foreach ($this->sectionHdrRows as $r) {
-                    $sheet->getStyle("A{$r}:G{$r}")->applyFromArray([
+                    $sheet->getStyle("A{$r}:O{$r}")->applyFromArray([
                         'font'      => ['bold' => true, 'size' => 11, 'color' => ['rgb' => 'FFFFFF']],
                         'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '334155']],
                         'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT, 'vertical' => Alignment::VERTICAL_CENTER],
@@ -581,48 +609,64 @@ class WeeklyLoanTopMoversSheet implements FromArray, WithTitle, WithColumnWidths
                 }
 
                 foreach ($this->gainHdrRows as $r) {
+                    $sheet->mergeCells("A{$r}:G{$r}");
                     $sheet->getStyle("A{$r}:G{$r}")->applyFromArray([
                         'font'      => ['bold' => true, 'size' => 10, 'color' => ['rgb' => 'FFFFFF']],
                         'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '166534']],
-                        'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
+                        'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT, 'vertical' => Alignment::VERTICAL_CENTER],
                     ]);
-                    $sheet->getStyle("A{$r}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
                 }
 
                 foreach ($this->lossHdrRows as $r) {
-                    $sheet->getStyle("A{$r}:G{$r}")->applyFromArray([
+                    $sheet->mergeCells("I{$r}:O{$r}");
+                    $sheet->getStyle("I{$r}:O{$r}")->applyFromArray([
                         'font'      => ['bold' => true, 'size' => 10, 'color' => ['rgb' => 'FFFFFF']],
                         'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '991B1B']],
+                        'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT, 'vertical' => Alignment::VERTICAL_CENTER],
+                    ]);
+                }
+
+                foreach ($this->colHdrRows as $r) {
+                    $sheet->getStyle("A{$r}:G{$r}")->applyFromArray([
+                        'font'      => ['bold' => true, 'size' => 9, 'color' => ['rgb' => '166534']],
+                        'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F0FDF4']],
                         'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
                     ]);
                     $sheet->getStyle("A{$r}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+
+                    $sheet->getStyle("I{$r}:O{$r}")->applyFromArray([
+                        'font'      => ['bold' => true, 'size' => 9, 'color' => ['rgb' => '991B1B']],
+                        'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FFF1F2']],
+                        'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER, 'vertical' => Alignment::VERTICAL_CENTER],
+                    ]);
+                    $sheet->getStyle("I{$r}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
                 }
 
                 foreach ($this->gainDataRows as $r) {
                     $sheet->getStyle("A{$r}:G{$r}")->applyFromArray([
                         'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F0FDF4']],
                     ]);
-                    $this->styleDataRow($sheet, $r, true);
+                    $this->styleDataRow($sheet, $r, 'A', 'E', 'G', true);
                 }
 
                 foreach ($this->lossDataRows as $r) {
-                    $sheet->getStyle("A{$r}:G{$r}")->applyFromArray([
+                    $sheet->getStyle("I{$r}:O{$r}")->applyFromArray([
                         'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FFF1F2']],
                     ]);
-                    $this->styleDataRow($sheet, $r, false);
+                    $this->styleDataRow($sheet, $r, 'I', 'M', 'O', false);
                 }
 
-                $sheet->freezePane('A3');
+                $sheet->freezePane('A4');
             },
         ];
     }
 
-    private function styleDataRow(Worksheet $sheet, int $r, bool $isGain): void
+    private function styleDataRow(Worksheet $sheet, int $r, string $firstCol, string $amountStartCol, string $lastCol, bool $isGain): void
     {
-        $sheet->getStyle("E{$r}:G{$r}")->getNumberFormat()->setFormatCode('#,##0');
-        $sheet->getStyle("E{$r}:G{$r}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
-        $sheet->getStyle("G{$r}")->getFont()->getColor()->setRGB($isGain ? '166534' : '991B1B');
-        $sheet->getStyle("A{$r}:G{$r}")->getBorders()->getBottom()
+        $sheet->getStyle("{$amountStartCol}{$r}:{$lastCol}{$r}")->getNumberFormat()->setFormatCode('#,##0');
+        $sheet->getStyle("{$amountStartCol}{$r}:{$lastCol}{$r}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+        $sheet->getStyle("{$lastCol}{$r}")->getFont()->getColor()->setRGB($isGain ? '166534' : '991B1B');
+        $sheet->getStyle("{$firstCol}{$r}:{$lastCol}{$r}")->getBorders()->getBottom()
             ->setBorderStyle(Border::BORDER_HAIR)->getColor()->setRGB('E2E8F0');
     }
 }
@@ -864,10 +908,11 @@ class WeeklyLoanDrilldownSheet implements FromArray, WithTitle, WithColumnWidths
 
     public function __construct(
         private readonly array $drilldown,
-        private readonly array $periods
+        private readonly array $periods,
+        private readonly string $sheetTitle = 'CIF Drilldown'
     ) {}
 
-    public function title(): string { return 'CIF Drilldown'; }
+    public function title(): string { return $this->sheetTitle; }
 
     public function columnWidths(): array
     {
@@ -882,7 +927,7 @@ class WeeklyLoanDrilldownSheet implements FromArray, WithTitle, WithColumnWidths
         $rows   = [];
         $rowNum = 0;
 
-        $rows[] = ['WEEKLY PERFORMING LOAN CIF MOVERS BY SUB-SEGMENT  (LCY+FCY combined)', '', '', '', '', '', '', ''];
+        $rows[] = [strtoupper($this->sheetTitle) . '  (LCY+FCY combined)', '', '', '', '', '', '', ''];
         $this->mergeRows[] = ++$rowNum;
 
         $rows[] = ["Week: {$weekStart}  →  {$weekEnd}", '', '', '', '', '', '', ''];

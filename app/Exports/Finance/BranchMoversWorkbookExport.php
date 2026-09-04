@@ -377,7 +377,7 @@ class CifMoversByBranchSheet implements FromArray, WithTitle, ShouldAutoSize, Wi
 
     public function title(): string
     {
-        return 'CIF Movers by Branch';
+        return 'Deposit CIF';
     }
 
     public function array(): array
@@ -574,16 +574,14 @@ $found = $byBranch->keys()->map(fn ($k) => (string) $k)->all();
 }
 
 /**
- * SHEET 4: Loan Account Movers by Branch
- * Top N loan account gainers/losers per branch, side-by-side.
- * Source: loan_listings (deduped per related_account per date, Corporate excluded).
+ * SHEET 4: Loans CIF (Top N loan account gainers/losers per branch, side-by-side, all in one sheet)
+ * source: loan_listings (deduped per related_account per date, Corporate excluded)
+ * Layout mirrors the Deposit CIF sheet (Rank / Account / Name / Movement, same styling).
  */
 class LoanAccountMoversByBranchSheet implements FromArray, WithTitle, ShouldAutoSize, WithColumnFormatting, WithEvents
 {
-    private array $mergeRows       = [];
-    private array $boldRows        = [];
-    private array $branchHdrRows   = [];
-    private array $tableHdrRows    = [];
+    private array $mergeRows = [];
+    private array $boldRows  = [];
 
     public function __construct(
         private readonly string $startDate,
@@ -591,7 +589,10 @@ class LoanAccountMoversByBranchSheet implements FromArray, WithTitle, ShouldAuto
         private readonly int $limit = 10
     ) {}
 
-    public function title(): string { return 'Loan Acct Movers'; }
+    public function title(): string
+    {
+        return 'Loans CIF';
+    }
 
     public function array(): array
     {
@@ -603,9 +604,7 @@ class LoanAccountMoversByBranchSheet implements FromArray, WithTitle, ShouldAuto
             ->whereNotNull('as_at_date')->whereDate('as_at_date', '<=', $this->endDate)->max('as_at_date');
 
         if (!$loanStartDate || !$loanEndDate || $loanStartDate === $loanEndDate) {
-            return array_map(fn ($r) => array_pad($r, 13, ''), [
-                ['No loan movement data — only one snapshot available for the selected period.'],
-            ]);
+            return [array_pad(['No loan movement data — only one snapshot available for the selected period.'], 9, '')];
         }
 
         $raw = DB::table('loan_listings as ll')
@@ -633,143 +632,168 @@ class LoanAccountMoversByBranchSheet implements FromArray, WithTitle, ShouldAuto
                 $r->loan_movement = round((float) $r->loan_close - (float) $r->loan_open, 2);
                 return $r;
             })
-            ->filter(fn ($r) => $r->loan_movement != 0)
-            ->groupBy(fn ($r) => strtoupper(trim((string) $r->branch_code)));
+            ->filter(fn ($r) => $r->loan_movement != 0);
 
-        $rows   = [];
-        $rowNum = 0;
+        $byBranch = $raw
+            ->map(function ($r) {
+                $r->branch_code = $this->normalizeBranchCode((string) ($r->branch_code ?? ''));
+                return $r;
+            })
+            ->filter(fn ($r) => is_string($r->branch_code) && trim($r->branch_code) !== '')
+            ->groupBy(fn ($r) => (string) $r->branch_code);
+
+        $preferred = [
+            'P01','P02','P03','P04','P06','P07','P08','P09','P11','P12','P13','P15','P17',
+            'P22','P23','P24','P25','P30',
+        ];
+
+        $found = $byBranch->keys()->map(fn ($k) => (string) $k)->all();
+        $ordered = [];
+        foreach ($preferred as $b) {
+            if (in_array($b, $found, true)) $ordered[] = $b;
+        }
+        $others = array_values(array_diff($found, $preferred));
+        sort($others);
+        $branchOrder = array_merge($ordered, $others);
+
+        $rows = [];
 
         // Title
-        $rows[] = ['Loan Account Movers by Branch (Top Gainers vs Losers)', '', '', '', '', '', '', '', '', '', '', '', ''];
-        $this->mergeRows[] = ++$rowNum;
-        $this->boldRows[]  = $rowNum;
+        $rows[] = ['Top Loan Movers by Branch (Gainers vs Losers)'];
+        $this->mergeRows[] = 1;
+        $this->boldRows[]  = 1;
 
-        // Period / snapshot info
-        $rows[] = ["Period: {$this->startDate} → {$this->endDate}  |  Loan snapshots: {$loanStartDate} → {$loanEndDate}  |  Corporate excluded", '', '', '', '', '', '', '', '', '', '', '', ''];
-        $this->mergeRows[] = ++$rowNum;
+        // Period
+        $rows[] = ["Period: {$this->startDate} → {$this->endDate}  |  Loan snapshots: {$loanStartDate} → {$loanEndDate}  |  Corporate excluded"];
+        $this->mergeRows[] = 2;
 
         // Spacer
-        $rows[] = array_fill(0, 13, '');
-        $this->mergeRows[] = ++$rowNum;
+        $rows[] = [''];
+        $this->mergeRows[] = 3;
 
-        foreach ($raw as $branchCode => $branchRows) {
-            $branchName  = (string) ($branchRows->first()->branch_name ?? $branchCode);
-            $displayName = trim($branchName) !== '' && strtoupper($branchName) !== strtoupper($branchCode)
-                ? "{$branchCode} — {$branchName}"
-                : $branchCode;
+        foreach ($branchOrder as $branchCode) {
+            $branchCode = (string) $branchCode;
+            $branchName = $this->branchDisplayName($branchCode);
+            $branchTitle = "Branch {$branchCode} - {$branchName}";
 
             // Branch header
-            $rows[] = [$displayName, '', '', '', '', '', '', '', '', '', '', '', ''];
-            $this->branchHdrRows[] = ++$rowNum;
-            $this->mergeRows[]     = $rowNum;
-            $this->boldRows[]      = $rowNum;
+            $branchHeaderRow = count($rows) + 1;
+            $rows[] = [$branchTitle];
+            $this->mergeRows[] = $branchHeaderRow;
+            $this->boldRows[]  = $branchHeaderRow;
 
-            // Column header (gainers left | spacer | losers right)
+            // Table headers (side-by-side)
+            $headerRow = count($rows) + 1;
             $rows[] = [
-                'Rank', 'Account No.', 'Name', 'Opening', 'Closing', 'Movement',
-                '',
-                'Rank', 'Account No.', 'Name', 'Opening', 'Closing', 'Movement',
+                'Rank', 'Account No.', 'Name', 'Movement', '',
+                'Rank', 'Account No.', 'Name', 'Movement',
             ];
-            $this->tableHdrRows[] = ++$rowNum;
-            $this->boldRows[]     = $rowNum;
+            $this->boldRows[] = $headerRow;
 
-            $gainers = $branchRows
-                ->filter(fn ($r) => $r->loan_movement > 0)
-                ->sortByDesc(fn ($r) => $r->loan_movement)
-                ->take($limit)->values();
+            /** @var Collection $items */
+            $items = $byBranch->get($branchCode, collect());
 
-            $losers = $branchRows
-                ->filter(fn ($r) => $r->loan_movement < 0)
-                ->sortBy(fn ($r) => $r->loan_movement)
-                ->take($limit)->values();
+            $gainers = $items
+                ->filter(fn ($r) => (float) $r->loan_movement > 0)
+                ->sortByDesc(fn ($r) => (float) $r->loan_movement)
+                ->take($limit)
+                ->values();
+
+            $losers = $items
+                ->filter(fn ($r) => (float) $r->loan_movement < 0)
+                ->sortBy(fn ($r) => (float) $r->loan_movement)
+                ->take($limit)
+                ->values();
 
             $maxRows = max($gainers->count(), $losers->count(), 1);
 
             for ($i = 0; $i < $maxRows; $i++) {
                 $g = $gainers->get($i);
                 $l = $losers->get($i);
+
                 $rows[] = [
-                    $g ? $i + 1 : '',
-                    $g ? (string) $g->related_account : ($gainers->isEmpty() ? '(no gainers)' : ''),
+                    $g ? ($i + 1) : '',
+                    $g ? (string) $g->related_account : ($items->isEmpty() ? '(no movers)' : ''),
                     $g ? (string) ($g->account_name ?? '') : '',
-                    $g ? (float) $g->loan_open : '',
-                    $g ? (float) $g->loan_close : '',
-                    $g ? (float) $g->loan_movement : '',
+                    $g ? (float) ($g->loan_movement ?? 0) : '',
                     '',
-                    $l ? $i + 1 : '',
-                    $l ? (string) $l->related_account : ($losers->isEmpty() ? '(no losers)' : ''),
+                    $l ? ($i + 1) : '',
+                    $l ? (string) $l->related_account : ($items->isEmpty() ? '(no movers)' : ''),
                     $l ? (string) ($l->account_name ?? '') : '',
-                    $l ? (float) $l->loan_open : '',
-                    $l ? (float) $l->loan_close : '',
-                    $l ? (float) $l->loan_movement : '',
+                    $l ? (float) ($l->loan_movement ?? 0) : '',
                 ];
-                ++$rowNum;
             }
 
             // Spacer between branches
-            $rows[] = array_fill(0, 13, '');
-            $this->mergeRows[] = ++$rowNum;
+            $rows[] = [''];
+            $this->mergeRows[] = count($rows);
         }
 
-        return $rows;
+        // Pad to 9 columns
+        return array_map(fn ($r) => array_pad(is_array($r) ? $r : [$r], 9, ''), $rows);
     }
 
     public function columnFormats(): array
     {
         return [
             'D' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
-            'E' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
-            'F' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
-            'K' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
-            'L' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
-            'M' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
+            'I' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
         ];
     }
 
     public function registerEvents(): array
     {
         return [
-            AfterSheet::class => function (AfterSheet $event): void {
+            AfterSheet::class => function (AfterSheet $event) {
                 $sheet = $event->sheet->getDelegate();
 
-                // Merge + bold tracked rows
                 foreach ($this->mergeRows as $r) {
-                    $sheet->mergeCells("A{$r}:M{$r}");
+                    $sheet->mergeCells("A{$r}:I{$r}");
                 }
+
                 foreach ($this->boldRows as $r) {
-                    $sheet->getStyle("A{$r}:M{$r}")->getFont()->setBold(true);
-                }
-
-                // Title row — dark green banner
-                $sheet->getStyle('A1:M1')->applyFromArray([
-                    'font' => ['bold' => true, 'size' => 14, 'color' => ['rgb' => 'FFFFFF']],
-                    'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '166534']],
-                    'alignment' => ['horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_LEFT],
-                ]);
-                $sheet->getRowDimension(1)->setRowHeight(26);
-
-                // Branch header rows — mid green
-                foreach ($this->branchHdrRows as $r) {
-                    $sheet->getStyle("A{$r}:M{$r}")->applyFromArray([
-                        'font' => ['bold' => true, 'size' => 11, 'color' => ['rgb' => 'FFFFFF']],
-                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1F6B3F']],
-                    ]);
-                }
-
-                // Table header rows — gainers side green, losers side red
-                foreach ($this->tableHdrRows as $r) {
-                    $sheet->getStyle("A{$r}:F{$r}")->applyFromArray([
-                        'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
-                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '166534']],
-                    ]);
-                    $sheet->getStyle("H{$r}:M{$r}")->applyFromArray([
-                        'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
-                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '991B1B']],
-                    ]);
+                    $sheet->getStyle("A{$r}:I{$r}")->getFont()->setBold(true);
                 }
 
                 $sheet->freezePane('A4');
             },
         ];
+    }
+
+    private function normalizeBranchCode(string $branchCode): string
+    {
+        $b = strtoupper(trim($branchCode));
+        if (preg_match('/^P(\d{1,2})$/', $b, $m)) {
+            return 'P' . str_pad($m[1], 2, '0', STR_PAD_LEFT);
+        }
+        return $b;
+    }
+
+    private function branchDisplayName(string $branchCode): string
+    {
+        $b = $this->normalizeBranchCode($branchCode);
+
+        return match ($b) {
+            'P01' => 'TOWERS',
+            'P02' => 'MOMBASA MOI AVENUE',
+            'P03' => 'PLAZA',
+            'P04' => 'WESTMINSTER',
+            'P06' => 'THIKA',
+            'P07' => 'ELDORET',
+            'P08' => 'KISUMU',
+            'P09' => 'KISII',
+            'P11' => 'INDUSTRIAL AREA',
+            'P12' => 'KARATINA',
+            'P13' => 'WESTLANDS',
+            'P15' => 'NAKURU',
+            'P17' => 'NYERI',
+            'P22' => 'UPPER HILL',
+            'P23' => 'VALLEY ARCADE',
+            'P24' => 'KAREN',
+            'P25' => 'NYALI',
+            'P30' => 'FORTIS OFFICE PARK',
+            'P50' => 'HEAD OFFICE',
+            default => $b,
+        };
     }
 }

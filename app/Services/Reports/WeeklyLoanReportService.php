@@ -187,26 +187,63 @@ class WeeklyLoanReportService
         $result = [];
 
         foreach (collect($rows)->groupBy('sub_segment_name') as $subSegName => $subRows) {
-            $gainers = collect($subRows)
-                ->filter(fn($r) => (float) $r->movement > 0)
-                ->sortByDesc(fn($r) => (float) $r->movement)
-                ->take($limit)
-                ->values();
-
-            $losers = collect($subRows)
-                ->filter(fn($r) => (float) $r->movement < 0)
-                ->sortBy(fn($r) => (float) $r->movement)
-                ->take($limit)
-                ->values();
-
-            $result[(string) $subSegName] = [
-                'gainers' => $gainers,
-                'losers'  => $losers,
-            ];
+            $result[(string) $subSegName] = $this->gainersLosers($subRows, $limit);
         }
 
         ksort($result);
         return $result;
+    }
+
+    /**
+     * Same as drilldown(), but grouped by top-level business segment first —
+     * feeds the per-segment CIF Drilldown sheets (Corporate / Commercial /
+     * Consumer / Unmapped) in the weekly Excel workbook.
+     *
+     * @return array<string, array<string, array{gainers: Collection, losers: Collection}>>
+     *         outer key: segment code (SEGMENT_ORDER), inner key: sub-segment name
+     */
+    public function drilldownBySegment(string $weekStart, string $weekEnd, int $limit = 100): array
+    {
+        $rows = $this->fetchCifMovementRows($weekStart, $weekEnd);
+
+        $bySegment = collect($rows)->groupBy(
+            fn($r) => trim((string) ($r->business_segment ?? '')) ?: 'UNMAPPED'
+        );
+
+        $result = [];
+
+        foreach (array_keys(self::SEGMENT_ORDER) as $code) {
+            $segRows = $bySegment->get($code);
+            if (!$segRows) continue;
+
+            $bySub = [];
+            foreach (collect($segRows)->groupBy('sub_segment_name') as $subSegName => $subRows) {
+                $bySub[(string) $subSegName] = $this->gainersLosers($subRows, $limit);
+            }
+
+            ksort($bySub);
+            $result[$code] = $bySub;
+        }
+
+        return $result;
+    }
+
+    /** @return array{gainers: Collection, losers: Collection} */
+    private function gainersLosers(iterable $rows, int $limit): array
+    {
+        $gainers = collect($rows)
+            ->filter(fn($r) => (float) $r->movement > 0)
+            ->sortByDesc(fn($r) => (float) $r->movement)
+            ->take($limit)
+            ->values();
+
+        $losers = collect($rows)
+            ->filter(fn($r) => (float) $r->movement < 0)
+            ->sortBy(fn($r) => (float) $r->movement)
+            ->take($limit)
+            ->values();
+
+        return ['gainers' => $gainers, 'losers' => $losers];
     }
 
     /**
@@ -245,6 +282,7 @@ class WeeklyLoanReportService
             ->leftJoinSub($cifSub, 'css', fn($j) => $j->on('css.cif', '=', 'loan_listings.cif'))
             ->selectRaw('loan_listings.cif, MAX(loan_listings.name) as customer_name, MAX(loan_listings.branch) as branch_code')
             ->selectRaw("COALESCE(NULLIF(TRIM(MAX(css.sub_segment_name)), ''), 'Unmapped') as sub_segment_name")
+            ->selectRaw('MAX(' . $this->loans->segmentExpr() . ') as business_segment')
             ->selectRaw('SUM(CASE WHEN loan_listings.as_at_date = ? THEN loan_book_outstanding ELSE 0 END) as start_balance', [$start])
             ->selectRaw('SUM(CASE WHEN loan_listings.as_at_date = ? THEN loan_book_outstanding ELSE 0 END) as end_balance', [$end])
             ->whereIn('loan_listings.as_at_date', [$start, $end])

@@ -71,7 +71,7 @@ class EmailWeeklyLoanMovementCommand extends Command
         $this->line("  Week  : {$data['periods']['week_start']} → {$data['periods']['week_end']}");
         $this->line("  MTD   : {$data['periods']['mtd_start']} → {$data['periods']['week_end']}");
 
-        $drilldown = $service->drilldown(
+        $drilldown = $service->drilldownBySegment(
             $data['periods']['week_start'],
             $data['periods']['week_end'],
             $limit
