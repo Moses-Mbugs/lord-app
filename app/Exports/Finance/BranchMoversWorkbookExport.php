@@ -41,10 +41,10 @@ class BranchMoversWorkbookExport implements WithMultipleSheets
             // Sheet 2: Branch Movement (Top 10 gainers then Top 10 losers) (from group_movers)
             new BranchMovementSheet($this->startDate, $this->endDate, $limit),
 
-            // Sheet 3: CIF Movers by Branch (Top 10 CIF gainers/losers per branch) (from customer_balances)
-            new CifMoversByBranchSheet($this->startDate, $this->endDate, $limit),
+            // Sheet 3: Deposit CIF (Top 20 CIF gainers/losers per branch) (from customer_balances)
+            new CifMoversByBranchSheet($this->startDate, $this->endDate, 20),
 
-            // Sheet 4: Loan Account Movers by Branch
+            // Sheet 4: Loans CIF (Top N loan account gainers/losers per branch)
             new LoanAccountMoversByBranchSheet($this->startDate, $this->endDate, $limit),
         ];
     }
@@ -171,7 +171,23 @@ class BranchSummarySheet implements FromArray, WithTitle, WithHeadings, ShouldAu
             ->whereDate('as_at_date', '<=', $this->endDate)
             ->max('as_at_date');
 
-        if (!$loanStartDate && !$loanEndDate) return [];
+        // Fall back to the last two distinct loan snapshots when the deposit period
+        // has no matching loan data (or both bounds resolve to the same snapshot),
+        // so branch loan movement doesn't silently collapse to zero.
+        if (!$loanStartDate || !$loanEndDate || $loanStartDate === $loanEndDate) {
+            $latest = DB::table('loan_listings')
+                ->whereNotNull('as_at_date')
+                ->select(DB::raw('DATE(as_at_date) AS snap_date'))
+                ->distinct()
+                ->orderByDesc('snap_date')
+                ->limit(2)
+                ->pluck('snap_date');
+
+            if ($latest->count() < 2) return [];
+
+            $loanEndDate   = (string) $latest->first();
+            $loanStartDate = (string) $latest->last();
+        }
 
         $dates = array_values(array_unique(array_filter([$loanStartDate, $loanEndDate])));
 
@@ -603,8 +619,26 @@ class LoanAccountMoversByBranchSheet implements FromArray, WithTitle, ShouldAuto
         $loanEndDate = DB::table('loan_listings')
             ->whereNotNull('as_at_date')->whereDate('as_at_date', '<=', $this->endDate)->max('as_at_date');
 
+        // Loan snapshots don't always land on the same dates as the deposit period
+        // (e.g. deposit period 2026-09-04 → 2026-09-07, but loans only refreshed up to
+        // 2026-09-03/2026-09-04) — fall back to the last two distinct snapshots available
+        // so we still show a movement instead of going blank. The period row below states
+        // which loan snapshot dates were actually used.
         if (!$loanStartDate || !$loanEndDate || $loanStartDate === $loanEndDate) {
-            return [array_pad(['No loan movement data — only one snapshot available for the selected period.'], 9, '')];
+            $latest = DB::table('loan_listings')
+                ->whereNotNull('as_at_date')
+                ->select(DB::raw('DATE(as_at_date) AS snap_date'))
+                ->distinct()
+                ->orderByDesc('snap_date')
+                ->limit(2)
+                ->pluck('snap_date');
+
+            if ($latest->count() < 2) {
+                return [array_pad(['No loan movement data — at least two loan snapshots are required.'], 9, '')];
+            }
+
+            $loanEndDate   = (string) $latest->first();
+            $loanStartDate = (string) $latest->last();
         }
 
         $raw = DB::table('loan_listings as ll')
