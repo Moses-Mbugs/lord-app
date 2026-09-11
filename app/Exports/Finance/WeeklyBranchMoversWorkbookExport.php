@@ -229,21 +229,21 @@ class WeeklyBranchMoversWorkbookExport implements FromArray, WithTitle, ShouldAu
                 $lastRow = $sheet->getHighestRow();
 
                 // Title row
-                $sheet->mergeCells("A1:J1");
-                $sheet->getStyle('A1:J1')->applyFromArray([
+                $sheet->mergeCells("A1:K1");
+                $sheet->getStyle('A1:K1')->applyFromArray([
                     'font'      => ['bold' => true, 'size' => 14, 'color' => ['rgb' => 'FFFFFF']],
                     'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '002E4A']],
                     'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT],
                 ]);
                 $sheet->getRowDimension(1)->setRowHeight(26);
-                $sheet->mergeCells('A2:J2');
+                $sheet->mergeCells('A2:K2');
 
                 foreach ($this->boldRows as $r) {
-                    $sheet->getStyle("A{$r}:J{$r}")->getFont()->setBold(true);
+                    $sheet->getStyle("A{$r}:K{$r}")->getFont()->setBold(true);
                 }
 
                 // Column header row
-                $sheet->getStyle("A{$hdr}:J{$hdr}")->applyFromArray([
+                $sheet->getStyle("A{$hdr}:K{$hdr}")->applyFromArray([
                     'font'      => ['bold' => true, 'size' => 11, 'color' => ['rgb' => 'FFFFFF']],
                     'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1F3A5F']],
                     'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
@@ -252,13 +252,14 @@ class WeeklyBranchMoversWorkbookExport implements FromArray, WithTitle, ShouldAu
 
                 // Deposits/Loans/NTB header tints
                 $sheet->getStyle("C{$hdr}:E{$hdr}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1D4ED8']]]);
-                $sheet->getStyle("F{$hdr}:G{$hdr}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '166534']]]);
-                $sheet->getStyle("H{$hdr}:J{$hdr}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'B45309']]]);
+                $sheet->getStyle("F{$hdr}:H{$hdr}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '166534']]]);
+                $sheet->getStyle("I{$hdr}:K{$hdr}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'B45309']]]);
 
                 // Branch data rows
                 if ($this->lastBranchRow > $hdr) {
                     for ($row = $hdr + 1; $row <= $this->lastBranchRow; $row++) {
-                        foreach (['C', 'D', 'E', 'F', 'G'] as $col) {
+                        // Colour only the movement columns by sign — not the closing-balance columns (E, H)
+                        foreach (['C', 'D', 'F', 'G'] as $col) {
                             $v = $sheet->getCell("{$col}{$row}")->getValue();
                             if (!is_numeric($v)) continue;
                             $vf = (float) $v;
@@ -266,15 +267,17 @@ class WeeklyBranchMoversWorkbookExport implements FromArray, WithTitle, ShouldAu
                             elseif ($vf < 0) $sheet->getStyle("{$col}{$row}")->getFont()->getColor()->setRGB('B00020');
                         }
                         $sheet->getStyle("C{$row}:E{$row}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'EFF6FF']]]);
-                        $sheet->getStyle("F{$row}:G{$row}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F0FDF4']]]);
-                        $sheet->getStyle("H{$row}:J{$row}")->applyFromArray([
+                        $sheet->getStyle("F{$row}:H{$row}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F0FDF4']]]);
+                        $sheet->getStyle("I{$row}:K{$row}")->applyFromArray([
                             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FFFBEB']],
                             'font' => ['color' => ['rgb' => '92400E']],
                         ]);
+                        $sheet->getStyle("E{$row}")->getFont()->getColor()->setRGB('374151');
+                        $sheet->getStyle("H{$row}")->getFont()->getColor()->setRGB('374151');
                     }
 
                     // ALL row (last branch row) — bold + light grey
-                    $sheet->getStyle("A{$this->lastBranchRow}:J{$this->lastBranchRow}")->applyFromArray([
+                    $sheet->getStyle("A{$this->lastBranchRow}:K{$this->lastBranchRow}")->applyFromArray([
                         'font' => ['bold' => true, 'size' => 11],
                         'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'E2E8F0']],
                     ]);
@@ -291,7 +294,7 @@ class WeeklyBranchMoversWorkbookExport implements FromArray, WithTitle, ShouldAu
                 }
 
                 if ($lastRow > $hdr) {
-                    $sheet->getStyle("A{$hdr}:J{$lastRow}")->getBorders()->getAllBorders()
+                    $sheet->getStyle("A{$hdr}:K{$lastRow}")->getBorders()->getAllBorders()
                         ->setBorderStyle(Border::BORDER_HAIR)->getColor()->setRGB('E2E8F0');
                 }
 
