@@ -21,7 +21,8 @@ class WeeklySegmentMovementMail extends Mailable
         public array  $drilldown,
         public array  $historicalSection,
         public array  $toList,
-        public array  $ccList = []
+        public array  $ccList = [],
+        public array  $drilldownBySegment = []
     ) {}
 
     public function build(): static
@@ -32,7 +33,8 @@ class WeeklySegmentMovementMail extends Mailable
             new WeeklySegmentWorkbookExport(
                 $this->data,
                 $this->drilldown,
-                $this->historicalSection
+                $this->historicalSection,
+                $this->drilldownBySegment
             ),
             ExcelWriter::XLSX
         );

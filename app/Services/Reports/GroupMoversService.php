@@ -28,6 +28,7 @@ class GroupMoversService
         '470317567',
         '470803302',
         '470251434',
+        '470130430',
     ];
 
     private function branchDisplayName(string $branchCode): string

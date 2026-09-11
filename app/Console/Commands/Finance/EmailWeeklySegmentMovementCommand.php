@@ -87,6 +87,12 @@ class EmailWeeklySegmentMovementCommand extends Command
             $limit
         );
 
+        $drilldownBySegment = $service->drilldownBySegment(
+            $data['periods']['week_start'],
+            $data['periods']['week_end'],
+            $limit
+        );
+
         $historicalSection = $service->buildHistoricalSection($weekEnd);
 
         Mail::to($to)
@@ -97,7 +103,8 @@ class EmailWeeklySegmentMovementCommand extends Command
                 $drilldown,
                 $historicalSection,
                 $to,
-                $cc
+                $cc,
+                $drilldownBySegment
             ));
 
         $this->info('Weekly segment movement email sent.');

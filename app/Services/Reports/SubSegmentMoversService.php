@@ -23,6 +23,7 @@ class SubSegmentMoversService
         '470317567',
         '470803302',
         '470251434',
+        '470130430',
     ];
 
     public function build(string $start, string $end): int

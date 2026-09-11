@@ -9,17 +9,11 @@
 <body style="margin:0;padding:0;background:#EAEEF2;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:#1a1f2e;-webkit-font-smoothing:antialiased;">
 
 @php
-    $weekPeriod = $periods['week'] ?? [];
-    $mtdPeriod  = $periods['mtd']  ?? [];
-    $ytdPeriod  = $periods['ytd']  ?? [];
+    $weekStart = $period['start'] ?? '';
 
-    $weekStart = $weekPeriod['start'] ?? '';
-    $mtdStart  = $mtdPeriod['start']  ?? '';
-    $ytdStart  = $ytdPeriod['start']  ?? '';
-
-    $weekData = $data['week'] ?? ['summary' => collect(), 'topGainers' => collect(), 'topLosers' => collect()];
-    $mtdData  = $data['mtd']  ?? ['summary' => collect(), 'topGainers' => collect(), 'topLosers' => collect()];
-    $ytdData  = $data['ytd']  ?? ['summary' => collect(), 'topGainers' => collect(), 'topLosers' => collect()];
+    $summary    = $data['summary']    ?? collect();
+    $topGainers = ($data['topGainers'] ?? collect())->take(5);
+    $topLosers  = ($data['topLosers']  ?? collect())->take(5);
 
     $fmtDate  = fn($d) => $d ? \Carbon\Carbon::parse($d)->format('d M Y') : '—';
     $fmtShort = fn($d) => $d ? \Carbon\Carbon::parse($d)->format('d M')   : '—';
@@ -42,63 +36,32 @@
         return 'KES ' . number_format((int) $n);
     };
 
-    // Extract TOTAL row from weekly summary for KPIs
-    $weekAll = $weekData['summary']->first(fn($r) => strtoupper(trim((string)($r->group_key ?? ''))) === 'ALL');
-    $mtdAll  = $mtdData['summary']->first(fn($r)  => strtoupper(trim((string)($r->group_key ?? ''))) === 'ALL');
-    $ytdAll  = $ytdData['summary']->first(fn($r)  => strtoupper(trim((string)($r->group_key ?? ''))) === 'ALL');
+    // Extract TOTAL row for KPIs
+    $all = $summary->first(fn($r) => strtoupper(trim((string)($r->group_key ?? ''))) === 'ALL');
 
-    $totalDeposits   = (float) ($weekAll->end_balance   ?? 0);
-    $weeklyMovement  = (float) ($weekAll->movement      ?? 0);
-    $mtdMovement     = (float) ($mtdAll->movement       ?? 0);
-    $ytdMovement     = (float) ($ytdAll->movement       ?? 0);
-
-    $weekNtb = (int) ($weekAll->ntb_count ?? 0);
-    $mtdNtb  = (int) ($mtdAll->ntb_count  ?? 0);
-    $ytdNtb  = (int) ($ytdAll->ntb_count  ?? 0);
+    $totalDeposits  = (float) ($all->end_balance ?? 0);
+    $weeklyMovement = (float) ($all->movement    ?? 0);
+    $weekNtb        = (int)   ($all->ntb_count   ?? 0);
 
     $kpis = [
         ['label' => 'Total Deposits',     'kind' => 'balance',  'value' => $totalDeposits,  'sub' => 'as at ' . $fmtDate($weekEnd)],
-        ['label' => 'Weekly Movement',    'kind' => 'movement', 'value' => $weeklyMovement, 'sub' => $fmtShort($weekStart) . ' → ' . $fmtShort($weekEnd)],
-        ['label' => 'Month-to-Date',      'kind' => 'movement', 'value' => $mtdMovement,    'sub' => 'from ' . $fmtDate($mtdStart)],
-        ['label' => 'Year-to-Date',       'kind' => 'movement', 'value' => $ytdMovement,    'sub' => 'from ' . $fmtDate($ytdStart)],
-        ['label' => 'New Accounts (NTB)', 'kind' => 'count',    'value' => $weekNtb,        'sub' => 'MTD ' . number_format($mtdNtb) . '  ·  YTD ' . number_format($ytdNtb)],
+        ['label' => 'Deposits Movement',  'kind' => 'movement', 'value' => $weeklyMovement, 'sub' => $fmtShort($weekStart) . ' → ' . $fmtShort($weekEnd)],
+        ['label' => 'New Accounts (NTB)', 'kind' => 'count',    'value' => $weekNtb,        'sub' => $fmtShort($weekStart) . ' → ' . $fmtShort($weekEnd)],
     ];
 
-    $emptyBranchRow = fn($code, $name) => [
-        'code' => $code, 'name' => $name, 'end_balance' => 0,
-        'week_mv' => 0, 'week_loan_mv' => 0, 'week_ntb' => 0,
-        'mtd_mv' => 0, 'mtd_ntb' => 0,
-        'ytd_mv' => 0, 'ytd_ntb' => 0,
-    ];
-
-    // Build combined branch map keyed by group_key for the multi-period table
+    // Build branch rows keyed by group_key
     $branchMap = [];
-    foreach ($weekData['summary'] as $r) {
+    foreach ($summary as $r) {
         $code = strtoupper(trim((string)($r->group_key ?? '')));
         if ($code === '') continue;
-        $branchMap[$code] = $emptyBranchRow($code, (string)($r->group_name ?? $code));
-        $branchMap[$code]['end_balance']  = (float)($r->end_balance ?? 0);
-        $branchMap[$code]['week_mv']      = (float)($r->movement ?? 0);
-        $branchMap[$code]['week_loan_mv'] = (float)($r->loan_movement ?? 0);
-        $branchMap[$code]['week_ntb']     = (int)($r->ntb_count ?? 0);
-    }
-    foreach ($mtdData['summary'] as $r) {
-        $code = strtoupper(trim((string)($r->group_key ?? '')));
-        if ($code === '') continue;
-        if (!isset($branchMap[$code])) {
-            $branchMap[$code] = $emptyBranchRow($code, (string)($r->group_name ?? $code));
-        }
-        $branchMap[$code]['mtd_mv']  = (float)($r->movement ?? 0);
-        $branchMap[$code]['mtd_ntb'] = (int)($r->ntb_count ?? 0);
-    }
-    foreach ($ytdData['summary'] as $r) {
-        $code = strtoupper(trim((string)($r->group_key ?? '')));
-        if ($code === '') continue;
-        if (!isset($branchMap[$code])) {
-            $branchMap[$code] = $emptyBranchRow($code, (string)($r->group_name ?? $code));
-        }
-        $branchMap[$code]['ytd_mv']  = (float)($r->movement ?? 0);
-        $branchMap[$code]['ytd_ntb'] = (int)($r->ntb_count ?? 0);
+        $branchMap[$code] = [
+            'code'        => $code,
+            'name'        => (string)($r->group_name ?? $code),
+            'end_balance' => (float)($r->end_balance   ?? 0),
+            'deposit_mv'  => (float)($r->movement      ?? 0),
+            'loan_mv'     => (float)($r->loan_movement ?? 0),
+            'ntb'         => (int)($r->ntb_count       ?? 0),
+        ];
     }
 
     // Sort: regular P-branches first (A-Z), then 834/950, then ALL
@@ -109,9 +72,6 @@
         if ($as !== $bs) return $as - $bs;
         return strcmp($a, $b);
     });
-
-    $topGainers = $weekData['topGainers']->take(5);
-    $topLosers  = $weekData['topLosers']->take(5);
 @endphp
 
 <div style="max-width:980px;margin:0 auto;padding:24px 14px;">
@@ -133,7 +93,7 @@
             <div style="font-size:26px;font-weight:900;color:#ffffff;letter-spacing:-0.6px;line-height:1.1;">
               Weekly Branch Movements</div>
             <div style="font-size:12px;font-weight:500;color:rgba(255,255,255,0.55);margin-top:5px;letter-spacing:0.2px;">
-              Deposits &amp; Performing Loans &nbsp;·&nbsp; All Branches (P50 excluded)
+              Deposits &bull; Performing Loans &bull; NTB &nbsp;·&nbsp; All Branches (P50 excluded)
             </div>
           </td>
           <td style="vertical-align:top;text-align:right;white-space:nowrap;">
@@ -145,16 +105,10 @@
         </tr>
       </table>
 
-      {{-- Period pills --}}
+      {{-- Period pill --}}
       <div style="margin-top:16px;">
-        <span style="display:inline-block;padding:5px 13px;border-radius:999px;font-size:10.5px;font-weight:700;color:#ffffff;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);margin-right:7px;white-space:nowrap;">
-          Week &nbsp;{{ $fmtShort($weekStart) }} → {{ $fmtShort($weekEnd) }}
-        </span>
-        <span style="display:inline-block;padding:5px 13px;border-radius:999px;font-size:10.5px;font-weight:700;color:#ffffff;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);margin-right:7px;white-space:nowrap;">
-          MTD from &nbsp;{{ $fmtDate($mtdStart) }}
-        </span>
         <span style="display:inline-block;padding:5px 13px;border-radius:999px;font-size:10.5px;font-weight:700;color:#ffffff;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);white-space:nowrap;">
-          YTD from &nbsp;{{ $fmtDate($ytdStart) }}
+          Week &nbsp;{{ $fmtShort($weekStart) }} → {{ $fmtShort($weekEnd) }}
         </span>
       </div>
 
@@ -217,7 +171,7 @@
       </td>
       <td style="vertical-align:middle;">
         <span style="font-size:13px;font-weight:800;color:#0F172A;letter-spacing:-0.2px;">Branch Movement Summary</span>
-        <span style="font-size:11px;font-weight:500;color:#94A3B8;margin-left:8px;">· KES Equivalent</span>
+        <span style="font-size:11px;font-weight:500;color:#94A3B8;margin-left:8px;">· Deposits &bull; Loans &bull; NTB &bull; KES Equivalent</span>
       </td>
     </tr>
   </table>
@@ -226,49 +180,20 @@
     style="width:100%;border-collapse:separate;border-spacing:0;font-size:11px;border:1px solid #E2E8F0;border-radius:10px;overflow:hidden;background:#ffffff;mso-table-lspace:0pt;mso-table-rspace:0pt;">
     <thead>
       <tr>
-        {{-- Group headers --}}
-        <th rowspan="2"
-          style="padding:7px 10px;background:#F1F5F9;border-bottom:2px solid #CBD5E1;text-align:left;font-size:9px;font-weight:900;color:#475569;text-transform:uppercase;letter-spacing:0.7px;white-space:nowrap;border-right:1px solid #CBD5E1;width:22%;">
+        <th style="padding:7px 10px;background:#F1F5F9;border-bottom:2px solid #CBD5E1;text-align:left;font-size:9px;font-weight:900;color:#475569;text-transform:uppercase;letter-spacing:0.7px;white-space:nowrap;border-right:1px solid #CBD5E1;width:28%;">
           Branch
         </th>
-        <th rowspan="2"
-          style="padding:7px 10px;background:#F1F5F9;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#475569;text-transform:uppercase;letter-spacing:0.7px;white-space:nowrap;border-right:2px solid #CBD5E1;width:14%;">
+        <th style="padding:7px 10px;background:#F1F5F9;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#475569;text-transform:uppercase;letter-spacing:0.7px;white-space:nowrap;border-right:2px solid #CBD5E1;">
           End Balance
         </th>
-        <th colspan="3"
-          style="padding:6px 10px;background:#EFF6FF;border-bottom:1px solid #BFDBFE;text-align:center;font-size:9px;font-weight:900;color:#1D4ED8;text-transform:uppercase;letter-spacing:0.7px;border-right:2px solid #BFDBFE;">
-          Deposits Movement
+        <th style="padding:7px 10px;background:#EFF6FF;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#1D4ED8;text-transform:uppercase;letter-spacing:0.7px;white-space:nowrap;">
+          Deposits Δ
         </th>
-        <th colspan="1"
-          style="padding:6px 10px;background:#F0FDF4;border-bottom:1px solid #BBF7D0;text-align:center;font-size:9px;font-weight:900;color:#15803D;text-transform:uppercase;letter-spacing:0.7px;border-right:2px solid #BBF7D0;">
-          Perf. Loans
+        <th style="padding:7px 10px;background:#F0FDF4;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#15803D;text-transform:uppercase;letter-spacing:0.7px;white-space:nowrap;">
+          Loans Δ
         </th>
-        <th colspan="3"
-          style="padding:6px 10px;background:#FFFBEB;border-bottom:1px solid #FDE68A;text-align:center;font-size:9px;font-weight:900;color:#B45309;text-transform:uppercase;letter-spacing:0.7px;">
-          New Accounts (NTB)
-        </th>
-      </tr>
-      <tr>
-        <th style="padding:6px 10px;background:#EFF6FF;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#1D4ED8;text-transform:uppercase;letter-spacing:0.6px;white-space:nowrap;border-left:1px solid #BFDBFE;">
-          Weekly Δ
-        </th>
-        <th style="padding:6px 10px;background:#EFF6FF;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#1D4ED8;text-transform:uppercase;letter-spacing:0.6px;white-space:nowrap;">
-          MTD Δ
-        </th>
-        <th style="padding:6px 10px;background:#EFF6FF;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#1D4ED8;text-transform:uppercase;letter-spacing:0.6px;white-space:nowrap;border-right:2px solid #BFDBFE;">
-          YTD Δ
-        </th>
-        <th style="padding:6px 10px;background:#F0FDF4;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#15803D;text-transform:uppercase;letter-spacing:0.6px;white-space:nowrap;border-right:2px solid #BBF7D0;">
-          Weekly Δ
-        </th>
-        <th style="padding:6px 10px;background:#FFFBEB;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#B45309;text-transform:uppercase;letter-spacing:0.6px;white-space:nowrap;border-left:1px solid #FDE68A;">
-          Weekly
-        </th>
-        <th style="padding:6px 10px;background:#FFFBEB;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#B45309;text-transform:uppercase;letter-spacing:0.6px;white-space:nowrap;">
-          MTD
-        </th>
-        <th style="padding:6px 10px;background:#FFFBEB;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#B45309;text-transform:uppercase;letter-spacing:0.6px;white-space:nowrap;">
-          YTD
+        <th style="padding:7px 10px;background:#FFFBEB;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#B45309;text-transform:uppercase;letter-spacing:0.7px;white-space:nowrap;">
+          NTB
         </th>
       </tr>
     </thead>
@@ -281,14 +206,10 @@
           $isLast   = $loop->last;
           $border   = $isLast ? 'none' : '1px solid #E2E8F0';
 
-          $eb       = (float) ($b['end_balance'] ?? 0);
-          $wkMv     = (float) ($b['week_mv']     ?? 0);
-          $mtdMv    = (float) ($b['mtd_mv']      ?? 0);
-          $ytdMv    = (float) ($b['ytd_mv']      ?? 0);
-          $loanWk   = (float) ($b['week_loan_mv'] ?? 0);
-          $ntbWk    = (int) ($b['week_ntb'] ?? 0);
-          $ntbMtd   = (int) ($b['mtd_ntb']  ?? 0);
-          $ntbYtd   = (int) ($b['ytd_ntb']  ?? 0);
+          $eb     = (float) ($b['end_balance'] ?? 0);
+          $depMv  = (float) ($b['deposit_mv']  ?? 0);
+          $loanMv = (float) ($b['loan_mv']     ?? 0);
+          $ntb    = (int)   ($b['ntb']         ?? 0);
 
           $fmtMv = function($v) {
               $n    = abs((float) $v);
@@ -325,26 +246,14 @@
           <td style="padding:7px 10px;border-bottom:{{ $border }};border-right:2px solid #CBD5E1;text-align:right;font-family:ui-monospace,'Courier New',monospace;font-weight:700;font-size:11px;color:#374151;">
             {{ $fmtBal($eb) }}
           </td>
-          <td style="padding:7px 10px;border-bottom:{{ $border }};text-align:right;border-left:1px solid #BFDBFE;">
-            <span style="{{ $mvStyle($wkMv) }}">{{ $fmtMv($wkMv) }}</span>
+          <td style="padding:7px 10px;border-bottom:{{ $border }};background:{{ $isEven ? '#EFF6FF' : '#F5F9FF' }};text-align:right;">
+            <span style="{{ $mvStyle($depMv) }}">{{ $fmtMv($depMv) }}</span>
           </td>
-          <td style="padding:7px 10px;border-bottom:{{ $border }};text-align:right;">
-            <span style="{{ $mvStyle($mtdMv) }}">{{ $fmtMv($mtdMv) }}</span>
-          </td>
-          <td style="padding:7px 10px;border-bottom:{{ $border }};text-align:right;border-right:2px solid #BFDBFE;">
-            <span style="{{ $mvStyle($ytdMv) }}">{{ $fmtMv($ytdMv) }}</span>
-          </td>
-          <td style="padding:7px 10px;border-bottom:{{ $border }};border-right:2px solid #BBF7D0;background:{{ $isEven ? '#F0FDF4' : '#ECFDF5' }};text-align:right;">
-            <span style="{{ $loanMvStyle($loanWk) }}">{{ $fmtMv($loanWk) }}</span>
+          <td style="padding:7px 10px;border-bottom:{{ $border }};background:{{ $isEven ? '#F0FDF4' : '#ECFDF5' }};text-align:right;">
+            <span style="{{ $loanMvStyle($loanMv) }}">{{ $fmtMv($loanMv) }}</span>
           </td>
           <td style="padding:7px 10px;border-bottom:{{ $border }};background:{{ $isEven ? '#FFFBEB' : '#FEFCE8' }};text-align:right;font-weight:700;font-family:ui-monospace,'Courier New',monospace;color:#92400E;">
-            {{ number_format($ntbWk) }}
-          </td>
-          <td style="padding:7px 10px;border-bottom:{{ $border }};background:{{ $isEven ? '#FFFBEB' : '#FEFCE8' }};text-align:right;font-weight:700;font-family:ui-monospace,'Courier New',monospace;color:#92400E;">
-            {{ number_format($ntbMtd) }}
-          </td>
-          <td style="padding:7px 10px;border-bottom:{{ $border }};background:{{ $isEven ? '#FFFBEB' : '#FEFCE8' }};text-align:right;font-weight:700;font-family:ui-monospace,'Courier New',monospace;color:#92400E;">
-            {{ number_format($ntbYtd) }}
+            {{ number_format($ntb) }}
           </td>
         </tr>
       @endforeach
@@ -462,10 +371,10 @@
   {{-- ── Notes ──────────────────────── --}}
   <div style="margin-top:20px;font-size:10.5px;color:#64748B;padding:10px 14px;background:#F8FAFC;border:1px solid #E2E8F0;border-left:4px solid #005B82;border-radius:8px;line-height:1.6;">
     <strong style="color:#1F3A5F;font-weight:900;">Notes:</strong>
-    Movement = <span style="background:rgba(0,0,0,0.06);padding:2px 5px;border-radius:4px;font-family:ui-monospace,'Courier New',monospace;font-size:10px;">end_balance − start_balance</span> for each period.
-    MTD is measured from the last day of the previous month; YTD from 31 Dec of the previous year.
+    Deposits/Loans Δ = <span style="background:rgba(0,0,0,0.06);padding:2px 5px;border-radius:4px;font-family:ui-monospace,'Courier New',monospace;font-size:10px;">end_balance − start_balance</span> for the week.
+    NTB = distinct CIFs with a new account opened this week.
     Performing Loans excludes Corporate segment; deduped per account per snapshot.
-    P50 (Head Office) excluded from all branch figures. Excel attachment contains full period detail.
+    P50 (Head Office) excluded from all branch figures. Excel attachment contains full detail plus top gainers/losers.
   </div>
 
 </div>

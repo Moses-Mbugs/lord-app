@@ -44,6 +44,7 @@ class FinanceDailyMixSummaryService
         '470317567',
         '470803302',
         '470251434',
+        '470130430',
     ];
 
     public function latestBalanceDate(): ?string

@@ -15,7 +15,7 @@ class WeeklyBranchMoversReportMail extends Mailable
 
     public function __construct(
         public string $weekEnd,
-        public array  $periods,
+        public array  $period,
         public array  $data,
         public int    $limit = 10
     ) {}
@@ -28,7 +28,7 @@ class WeeklyBranchMoversReportMail extends Mailable
             ->view('emails.finance.weekly_branch_movers_report')
             ->with([
                 'weekEnd' => $this->weekEnd,
-                'periods' => $this->periods,
+                'period'  => $this->period,
                 'data'    => $this->data,
                 'limit'   => $this->limit,
             ]);

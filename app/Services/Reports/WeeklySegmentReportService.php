@@ -15,7 +15,7 @@ class WeeklySegmentReportService
 
     private const INCLUDED_EXCEPTION_CIFS = [
         '470000068', '470218244', '470224763', '470090458',
-        '470321717', '470291487', '470317567', '470803302', '470251434',
+        '470321717', '470291487', '470317567', '470803302', '470251434', '470130430',
     ];
 
     private const SEGMENT_MAP = [
@@ -228,14 +228,53 @@ class WeeklySegmentReportService
      */
     public function topMovers(string $start, string $end, int $limit = 10): array
     {
+        return $this->gainersLosers($this->fetchCifMovementRows($start, $end), $limit);
+    }
+
+    /**
+     * Same as topMovers(), but grouped by top-level business segment first —
+     * feeds the per-segment CIF Drilldown sheets (Corporate / Commercial /
+     * Consumer / Others) in the weekly Excel workbook. Same pattern as
+     * WeeklyLoanReportService::drilldownBySegment().
+     *
+     * @return array<string, array<string, array{gainers: Collection, losers: Collection}>>
+     *         outer key: segment code (SEGMENT_ORDER), inner key: sub-segment name
+     */
+    public function drilldownBySegment(string $start, string $end, int $limit = 100): array
+    {
         $rows = collect($this->fetchCifMovementRows($start, $end));
 
-        $gainers = $rows->filter(fn($r) => (float) $r->movement > 0)
+        $bySegment = $rows->groupBy(fn($r) => $r->business_segment_code ?: 'OT');
+
+        $result = [];
+
+        foreach (array_keys(self::SEGMENT_ORDER) as $code) {
+            $segRows = $bySegment->get($code);
+            if (!$segRows) continue;
+
+            $bySub = [];
+            foreach (collect($segRows)->groupBy('sub_segment_name') as $subSegName => $subRows) {
+                $bySub[(string) $subSegName] = $this->gainersLosers($subRows, $limit);
+            }
+
+            ksort($bySub);
+            $result[$code] = $bySub;
+        }
+
+        return $result;
+    }
+
+    /** @return array{gainers: Collection, losers: Collection} */
+    private function gainersLosers(iterable $rows, int $limit): array
+    {
+        $gainers = collect($rows)
+            ->filter(fn($r) => (float) $r->movement > 0)
             ->sortByDesc(fn($r) => (float) $r->movement)
             ->take($limit)
             ->values();
 
-        $losers = $rows->filter(fn($r) => (float) $r->movement < 0)
+        $losers = collect($rows)
+            ->filter(fn($r) => (float) $r->movement < 0)
             ->sortBy(fn($r) => (float) $r->movement)
             ->take($limit)
             ->values();

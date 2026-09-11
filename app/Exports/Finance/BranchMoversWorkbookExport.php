@@ -419,6 +419,13 @@ class CifMoversByBranchSheet implements FromArray, WithTitle, ShouldAutoSize, Wi
             ->whereNotNull('cb.branch_code')
             ->whereNotNull('cb.cif')
             ->whereRaw("UPPER(TRIM(cb.branch_code)) <> 'P50'")
+            ->whereNotIn('cb.cif', function ($sub) {
+                $sub->from('customer_accounts_imports')
+                    ->select('f12_cif')
+                    ->whereNotNull('f12_cif')
+                    ->whereRaw("UPPER(TRIM(etibiseg2)) LIKE 'CB%'")
+                    ->distinct();
+            })
             ->groupByRaw("UPPER(TRIM(cb.branch_code))")
             ->groupBy('cb.cif')
             ->havingRaw("{$moveExpr} <> 0", [$this->endDate, $this->startDate])
