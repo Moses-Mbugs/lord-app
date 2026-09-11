@@ -21,10 +21,10 @@ class EmailWeeklyBranchMoversCommand extends Command
         {--to= : Override TO recipients (comma/semicolon/space separated)}
         {--cc= : Override CC recipients (comma/semicolon/space separated)}
         {--limit=10 : Top N gainers/losers}
-        {--auto-build : Build branch movers for the week if data is not already stored}
+        {--auto-build : Build branch movers for each period if data is not already stored}
     ';
 
-    protected $description = 'Email Weekly Branch Movers report: weekly deposits, loans, and NTB (new accounts) movement per branch.';
+    protected $description = 'Email Weekly Branch Movers report: Deposits (WTD/MTD/YTD), Loans (WTD/MTD), and NTB (WTD/MTD/YTD) movement per branch.';
 
     public function handle(GroupMoversService $service): int
     {
@@ -72,58 +72,77 @@ class EmailWeeklyBranchMoversCommand extends Command
             return self::FAILURE;
         }
 
-        // Weekly Branch Movers is week-only: Deposits, Loans, and NTB movement for the week.
-        $period = [
-            'start' => $this->resolveWeekStart($weekEnd),
-            'end'   => $weekEnd,
-            'label' => 'Weekly',
+        // Deposits: WTD/MTD/YTD. Loans: WTD/MTD only. NTB: WTD/MTD/YTD.
+        $weekEndDate = Carbon::parse($weekEnd);
+        $periods = [
+            'week' => [
+                'start' => $this->resolveWeekStart($weekEnd),
+                'end'   => $weekEnd,
+                'label' => 'Weekly',
+            ],
+            'mtd' => [
+                'start' => $weekEndDate->copy()->startOfMonth()->subDay()->toDateString(),
+                'end'   => $weekEnd,
+                'label' => 'MTD',
+            ],
+            'ytd' => [
+                'start' => $weekEndDate->copy()->startOfYear()->subDay()->toDateString(),
+                'end'   => $weekEnd,
+                'label' => 'YTD',
+            ],
         ];
 
         $this->line("Week ending : {$weekEnd}");
-        $this->line("  Weekly    : {$period['start']} → {$weekEnd}");
+        $this->line("  Weekly    : {$periods['week']['start']} → {$weekEnd}");
+        $this->line("  MTD       : {$periods['mtd']['start']} → {$weekEnd}");
+        $this->line("  YTD       : {$periods['ytd']['start']} → {$weekEnd}");
 
-        [$summary, $top] = $this->fetchGroupMovers($period['start'], $period['end']);
+        // Fetch / build data for each period
+        $data = [];
+        foreach ($periods as $key => $period) {
+            [$summary, $top] = $this->fetchGroupMovers($period['start'], $period['end']);
 
-        if ($summary->isEmpty() && $top->isEmpty()) {
-            if ($autoBuild) {
-                $this->line("  Building Weekly ({$period['start']} → {$period['end']})…");
-                $service->buildBranchMovers($period['start'], $period['end'], $limit);
-                [$summary, $top] = $this->fetchGroupMovers($period['start'], $period['end']);
-            } else {
-                $this->warn("  No data for Weekly ({$period['start']} → {$period['end']}).");
-                $this->warn("  Run: php artisan reports:build-branch-movers {$period['start']} {$period['end']} --limit={$limit}");
-                $this->warn("  Or re-run this command with --auto-build to build on-the-fly.");
+            if ($summary->isEmpty() && $top->isEmpty()) {
+                if ($autoBuild) {
+                    $this->line("  Building {$period['label']} ({$period['start']} → {$period['end']})…");
+                    $service->buildBranchMovers($period['start'], $period['end'], $limit);
+                    [$summary, $top] = $this->fetchGroupMovers($period['start'], $period['end']);
+                } else {
+                    $this->warn("  No data for {$period['label']} ({$period['start']} → {$period['end']}).");
+                    $this->warn("  Run: php artisan reports:build-branch-movers {$period['start']} {$period['end']} --limit={$limit}");
+                    $this->warn("  Or re-run this command with --auto-build to build on-the-fly.");
+                }
             }
+
+            // Enrich summary rows with loan data + NTB (new accounts opened in this period)
+            $loanByBranch = $this->fetchBranchLoanData($period['start'], $period['end']);
+            $ntbByBranch  = $this->fetchBranchNtbCounts($period['start'], $period['end']);
+            $summary = $summary->map(function ($row) use ($loanByBranch, $ntbByBranch) {
+                $code = strtoupper(trim((string) ($row->group_key ?? '')));
+                $loan = $loanByBranch[$code] ?? ['open' => 0.0, 'close' => 0.0];
+                $row->loan_open     = $loan['open'];
+                $row->loan_close    = $loan['close'];
+                $row->loan_movement = round($loan['close'] - $loan['open'], 2);
+                $row->ntb_count     = $ntbByBranch[$code] ?? 0;
+                return $row;
+            });
+
+            $data[$key] = [
+                'period'     => $period,
+                'summary'    => $summary,
+                'topGainers' => $top->where('direction', 'GAIN')->sortBy('rank')->values(),
+                'topLosers'  => $top->where('direction', 'LOSS')->sortBy('rank')->values(),
+            ];
         }
-
-        // Enrich summary rows with loan data + NTB (new accounts opened this week)
-        $loanByBranch = $this->fetchBranchLoanData($period['start'], $period['end']);
-        $ntbByBranch  = $this->fetchBranchNtbCounts($period['start'], $period['end']);
-        $summary = $summary->map(function ($row) use ($loanByBranch, $ntbByBranch) {
-            $code = strtoupper(trim((string) ($row->group_key ?? '')));
-            $loan = $loanByBranch[$code] ?? ['open' => 0.0, 'close' => 0.0];
-            $row->loan_open     = $loan['open'];
-            $row->loan_close    = $loan['close'];
-            $row->loan_movement = round($loan['close'] - $loan['open'], 2);
-            $row->ntb_count     = $ntbByBranch[$code] ?? 0;
-            return $row;
-        });
-
-        $data = [
-            'period'     => $period,
-            'summary'    => $summary,
-            'topGainers' => $top->where('direction', 'GAIN')->sortBy('rank')->values(),
-            'topLosers'  => $top->where('direction', 'LOSS')->sortBy('rank')->values(),
-        ];
 
         // Build Excel attachment
         $excelName   = "Weekly_Branch_Movers_{$weekEnd}.xlsx";
         $excelBinary = Excel::raw(
-            new WeeklyBranchMoversWorkbookExport($weekEnd, $period, $data, $limit),
+            new WeeklyBranchMoversWorkbookExport($weekEnd, $periods, $data, $limit),
             ExcelWriter::XLSX
         );
 
-        $mailable = new WeeklyBranchMoversReportMail($weekEnd, $period, $data, $limit);
+        $mailable = new WeeklyBranchMoversReportMail($weekEnd, $periods, $data, $limit);
         $mailable->attachData(
             $excelBinary,
             $excelName,

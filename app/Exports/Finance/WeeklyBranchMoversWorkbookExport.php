@@ -8,157 +8,191 @@ use Maatwebsite\Excel\Concerns\FromArray;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithColumnFormatting;
 use Maatwebsite\Excel\Concerns\WithEvents;
-use Maatwebsite\Excel\Concerns\WithMultipleSheets;
-use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithTitle;
 use Maatwebsite\Excel\Events\AfterSheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
-class WeeklyBranchMoversWorkbookExport implements WithMultipleSheets
+/**
+ * Single-sheet workbook: branch summary (Deposits WTD/MTD/YTD Δ, Loans WTD/MTD Δ, NTB
+ * WTD/MTD/YTD) followed by the week's top gainers/losers.
+ *
+ * Columns: A Branch Code, B Branch Name, C-E Deposits Δ (WTD/MTD/YTD), F-G Loans Δ
+ * (WTD/MTD), H-J NTB (WTD/MTD/YTD).
+ */
+class WeeklyBranchMoversWorkbookExport implements FromArray, WithTitle, ShouldAutoSize, WithColumnFormatting, WithEvents
 {
+    private const NUM_COLS = 10;
+
+    private array $boldRows       = [];
+    private int   $headerRow      = 0;
+    private int   $lastBranchRow  = 0;
+    private array $gainDataRows   = [];
+    private array $lossDataRows   = [];
+
+    /** @param array $periods ['week'|'mtd'|'ytd' => ['start','end','label']] */
+    /** @param array $data    ['week'|'mtd'|'ytd' => ['summary','topGainers','topLosers']] */
     public function __construct(
         private readonly string $weekEnd,
-        private readonly array  $period,
+        private readonly array  $periods,
         private readonly array  $data,
         private readonly int    $limit = 10
     ) {}
 
-    public function sheets(): array
-    {
-        return [
-            new WeeklyBranchPeriodSheet('Weekly', $this->period, $this->data, $this->limit),
-        ];
-    }
-}
-
-/**
- * SHEET: Weekly branch summary (Deposits Δ, Loans Δ, NTB) + top gainers/losers.
- */
-class WeeklyBranchPeriodSheet implements FromArray, WithTitle, ShouldAutoSize, WithColumnFormatting, WithStyles, WithEvents
-{
-    private array $boldRows = [];
-
-    public function __construct(
-        private readonly string $label,
-        private readonly array  $period,
-        private readonly array  $periodData,
-        private readonly int    $limit = 10
-    ) {}
-
-    public function title(): string { return $this->label; }
-
-    public function headings(): array
-    {
-        return ['Branch Code', 'Branch Name', 'Start Balance', 'End Balance', 'Dep Movement', 'Loan Opening', 'Loan Closing', 'Loan Movement', 'NTB'];
-    }
+    public function title(): string { return 'Weekly Branch Movers'; }
 
     public function array(): array
     {
-        $summary    = collect($this->periodData['summary']    ?? []);
-        $topGainers = collect($this->periodData['topGainers'] ?? []);
-        $topLosers  = collect($this->periodData['topLosers']  ?? []);
+        $weekPeriod = $this->periods['week'] ?? [];
+        $mtdPeriod  = $this->periods['mtd']  ?? [];
+        $ytdPeriod  = $this->periods['ytd']  ?? [];
 
-        $start = $this->period['start'] ?? '—';
-        $end   = $this->period['end']   ?? '—';
-        $label = $this->label;
+        $weekData = $this->data['week'] ?? ['summary' => collect(), 'topGainers' => collect(), 'topLosers' => collect()];
+        $mtdData  = $this->data['mtd']  ?? ['summary' => collect()];
+        $ytdData  = $this->data['ytd']  ?? ['summary' => collect()];
+
+        // Build branch map: code → [name, dep_week/mtd/ytd, loan_week/mtd, ntb_week/mtd/ytd]
+        $map = [];
+
+        foreach (['week' => $weekData, 'mtd' => $mtdData, 'ytd' => $ytdData] as $key => $periodData) {
+            foreach (collect($periodData['summary'] ?? []) as $r) {
+                $code = strtoupper(trim((string) ($r->group_key ?? '')));
+                if ($code === '') continue;
+                if (!isset($map[$code])) {
+                    $map[$code] = [
+                        'code' => $code, 'name' => (string) ($r->group_name ?? $code),
+                        'dep_week' => 0, 'dep_mtd' => 0, 'dep_ytd' => 0,
+                        'loan_week' => 0, 'loan_mtd' => 0,
+                        'ntb_week' => 0, 'ntb_mtd' => 0, 'ntb_ytd' => 0,
+                    ];
+                }
+                $map[$code]['name']         = (string) ($r->group_name ?? $map[$code]['name']);
+                $map[$code]["dep_{$key}"]   = (float) ($r->movement  ?? 0);
+                $map[$code]["ntb_{$key}"]   = (int)   ($r->ntb_count ?? 0);
+                if ($key !== 'ytd') {
+                    $map[$code]["loan_{$key}"] = (float) ($r->loan_movement ?? 0);
+                }
+            }
+        }
+
+        // Sort: regular branches (P-prefix or others), then 834, 950, ALL
+        uksort($map, function ($a, $b) {
+            $special = ['834' => 1, '950' => 2, 'ALL' => 99];
+            $as = $special[$a] ?? 0;
+            $bs = $special[$b] ?? 0;
+            if ($as !== $bs) return $as - $bs;
+            return strcmp($a, $b);
+        });
 
         $rows   = [];
         $rowNum = 0;
 
         // Title
-        $rows[] = ["ECOBANK KENYA — {$label} BRANCH MOVEMENTS  ({$start} → {$end})", '', '', '', '', '', '', ''];
+        $rows[] = array_pad(['ECOBANK KENYA — WEEKLY BRANCH MOVERS'], self::NUM_COLS, '');
         $this->boldRows[] = ++$rowNum;
 
-        $rows[] = ['', '', '', '', '', '', '', ''];
+        $rows[] = array_pad(["Week ending: {$this->weekEnd}"], self::NUM_COLS, '');
         ++$rowNum;
 
-        // Summary section header
-        $rows[] = ['BRANCH SUMMARY', '', '', '', '', '', '', ''];
-        $this->boldRows[] = ++$rowNum;
+        $rows[] = array_pad([
+            "Weekly: {$weekPeriod['start']} → {$weekPeriod['end']}",
+            "MTD: {$mtdPeriod['start']} → {$mtdPeriod['end']}",
+            "YTD: {$ytdPeriod['start']} → {$ytdPeriod['end']}",
+        ], self::NUM_COLS, '');
+        ++$rowNum;
 
-        $this->boldRows[] = ++$rowNum;
-        $rows[] = $this->headings();
+        $rows[] = array_fill(0, self::NUM_COLS, '');
+        ++$rowNum;
 
-        if ($summary->isEmpty()) {
-            $rows[] = ['(no data)', '', '', '', '', '', '', ''];
+        // Column header
+        $this->headerRow = ++$rowNum;
+        $rows[] = [
+            'Branch Code', 'Branch Name',
+            'Deposits WTD Δ', 'Deposits MTD Δ', 'Deposits YTD Δ',
+            'Loans WTD Δ', 'Loans MTD Δ',
+            'NTB WTD', 'NTB MTD', 'NTB YTD',
+        ];
+        $this->boldRows[] = $this->headerRow;
+
+        foreach ($map as $b) {
             ++$rowNum;
-        } else {
-            foreach ($summary as $r) {
-                $rows[] = [
-                    (string) ($r->group_key     ?? ''),
-                    (string) ($r->group_name    ?? ''),
-                    (float)  ($r->start_balance ?? 0),
-                    (float)  ($r->end_balance   ?? 0),
-                    (float)  ($r->movement      ?? 0),
-                    (float)  ($r->loan_open      ?? 0),
-                    (float)  ($r->loan_close     ?? 0),
-                    (float)  ($r->loan_movement  ?? 0),
-                    (int)    ($r->ntb_count      ?? 0),
-                ];
-                ++$rowNum;
-            }
+            $rows[] = [
+                (string) $b['code'],
+                (string) $b['name'],
+                (float)  $b['dep_week'],
+                (float)  $b['dep_mtd'],
+                (float)  $b['dep_ytd'],
+                (float)  $b['loan_week'],
+                (float)  $b['loan_mtd'],
+                (int)    $b['ntb_week'],
+                (int)    $b['ntb_mtd'],
+                (int)    $b['ntb_ytd'],
+            ];
         }
+        $this->lastBranchRow = $rowNum;
 
-        $rows[] = ['', '', '', '', '', '', '', ''];
+        $rows[] = array_fill(0, self::NUM_COLS, '');
         ++$rowNum;
 
-        // Top gainers section
+        // Top gainers / losers (week only)
+        $topGainers = collect($weekData['topGainers'] ?? []);
+        $topLosers  = collect($weekData['topLosers']  ?? []);
+
         $gHeaderRow = ++$rowNum;
-        $rows[] = ["TOP {$this->limit} GAINERS", '', '', '', '', '', '', ''];
+        $rows[] = array_pad(["TOP {$this->limit} WEEKLY GAINERS"], self::NUM_COLS, '');
         $this->boldRows[] = $gHeaderRow;
 
         $gTableRow = ++$rowNum;
-        $rows[] = ['Rank', 'Branch Code', 'Branch Name', 'Start Balance', 'End Balance', 'Movement', '', ''];
+        $rows[] = array_pad(['Rank', 'Branch Code', 'Branch Name', 'Start Balance', 'End Balance', 'Movement'], self::NUM_COLS, '');
         $this->boldRows[] = $gTableRow;
 
         if ($topGainers->isEmpty()) {
-            $rows[] = ['', '(no data)', '', '', '', '', '', ''];
+            $rows[] = array_pad(['', '(no data)'], self::NUM_COLS, '');
             ++$rowNum;
         } else {
             foreach ($topGainers as $r) {
-                $rows[] = [
+                $rows[] = array_pad([
                     (int)    ($r->rank          ?? 0),
                     (string) ($r->group_key     ?? ''),
                     (string) ($r->group_name    ?? ''),
                     (float)  ($r->start_balance ?? 0),
                     (float)  ($r->end_balance   ?? 0),
                     (float)  ($r->movement      ?? 0),
-                    '', '',
-                ];
+                ], self::NUM_COLS, '');
                 ++$rowNum;
+                $this->gainDataRows[] = $rowNum;
             }
         }
 
-        $rows[] = ['', '', '', '', '', '', '', ''];
+        $rows[] = array_fill(0, self::NUM_COLS, '');
         ++$rowNum;
 
-        // Top losers section
         $lHeaderRow = ++$rowNum;
-        $rows[] = ["TOP {$this->limit} LOSERS", '', '', '', '', '', '', ''];
+        $rows[] = array_pad(["TOP {$this->limit} WEEKLY LOSERS"], self::NUM_COLS, '');
         $this->boldRows[] = $lHeaderRow;
 
         $lTableRow = ++$rowNum;
-        $rows[] = ['Rank', 'Branch Code', 'Branch Name', 'Start Balance', 'End Balance', 'Movement', '', ''];
+        $rows[] = array_pad(['Rank', 'Branch Code', 'Branch Name', 'Start Balance', 'End Balance', 'Movement'], self::NUM_COLS, '');
         $this->boldRows[] = $lTableRow;
 
         if ($topLosers->isEmpty()) {
-            $rows[] = ['', '(no data)', '', '', '', '', '', ''];
+            $rows[] = array_pad(['', '(no data)'], self::NUM_COLS, '');
             ++$rowNum;
         } else {
             foreach ($topLosers as $r) {
-                $rows[] = [
+                $rows[] = array_pad([
                     (int)    ($r->rank          ?? 0),
                     (string) ($r->group_key     ?? ''),
                     (string) ($r->group_name    ?? ''),
                     (float)  ($r->start_balance ?? 0),
                     (float)  ($r->end_balance   ?? 0),
                     (float)  ($r->movement      ?? 0),
-                    '', '',
-                ];
+                ], self::NUM_COLS, '');
                 ++$rowNum;
+                $this->lossDataRows[] = $rowNum;
             }
         }
 
@@ -173,71 +207,89 @@ class WeeklyBranchPeriodSheet implements FromArray, WithTitle, ShouldAutoSize, W
             'E' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'F' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'G' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
-            'H' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
+            'H' => NumberFormat::FORMAT_NUMBER,
             'I' => NumberFormat::FORMAT_NUMBER,
+            'J' => NumberFormat::FORMAT_NUMBER,
         ];
-    }
-
-    public function styles(Worksheet $sheet): array
-    {
-        return [1 => ['font' => ['bold' => true]]];
     }
 
     public function registerEvents(): array
     {
         return [
             AfterSheet::class => function (AfterSheet $event): void {
+                /** @var Worksheet $sheet */
                 $sheet   = $event->sheet->getDelegate();
+                $hdr     = $this->headerRow;
                 $lastRow = $sheet->getHighestRow();
 
-                // Title row — dark navy
-                $sheet->mergeCells('A1:I1');
-                $sheet->getStyle('A1:I1')->applyFromArray([
-                    'font' => ['bold' => true, 'size' => 13, 'color' => ['rgb' => 'FFFFFF']],
-                    'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '002E4A']],
+                // Title row
+                $sheet->mergeCells("A1:J1");
+                $sheet->getStyle('A1:J1')->applyFromArray([
+                    'font'      => ['bold' => true, 'size' => 14, 'color' => ['rgb' => 'FFFFFF']],
+                    'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '002E4A']],
                     'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT],
                 ]);
-                $sheet->getRowDimension(1)->setRowHeight(24);
+                $sheet->getRowDimension(1)->setRowHeight(26);
+                $sheet->mergeCells('A2:J2');
 
                 foreach ($this->boldRows as $r) {
-                    $sheet->getStyle("A{$r}:I{$r}")->getFont()->setBold(true);
+                    $sheet->getStyle("A{$r}:J{$r}")->getFont()->setBold(true);
                 }
 
-                // Loan columns — green tint
-                if ($lastRow > 4) {
-                    $sheet->getStyle("F4:H{$lastRow}")->applyFromArray([
-                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F0FDF4']],
-                        'font' => ['color' => ['rgb' => '166534']],
-                    ]);
-                    // loan header cells styled in bold rows (row 4 is the summary header)
-                    $sheet->getStyle("F4:H4")->applyFromArray([
-                        'font' => ['bold' => true, 'color' => ['rgb' => '14532D']],
-                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'DCFCE7']],
-                    ]);
+                // Column header row
+                $sheet->getStyle("A{$hdr}:J{$hdr}")->applyFromArray([
+                    'font'      => ['bold' => true, 'size' => 11, 'color' => ['rgb' => 'FFFFFF']],
+                    'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1F3A5F']],
+                    'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+                ]);
+                $sheet->getStyle("A{$hdr}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
 
-                    // NTB column — amber tint
-                    $sheet->getStyle("I4:I{$lastRow}")->applyFromArray([
-                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FFFBEB']],
-                        'font' => ['color' => ['rgb' => '92400E']],
-                    ]);
-                    $sheet->getStyle('I4')->applyFromArray([
-                        'font' => ['bold' => true, 'color' => ['rgb' => '92400E']],
-                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FDE68A']],
-                    ]);
-                }
+                // Deposits/Loans/NTB header tints
+                $sheet->getStyle("C{$hdr}:E{$hdr}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1D4ED8']]]);
+                $sheet->getStyle("F{$hdr}:G{$hdr}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '166534']]]);
+                $sheet->getStyle("H{$hdr}:J{$hdr}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'B45309']]]);
 
-                // Colour movement columns (E = dep movement, H = loan movement)
-                for ($row = 5; $row <= $lastRow; $row++) {
-                    foreach (['E', 'H'] as $col) {
-                        $v = $sheet->getCell("{$col}{$row}")->getValue();
-                        if (!is_numeric($v)) continue;
-                        $vf = (float) $v;
-                        if ($vf > 0)     $sheet->getStyle("{$col}{$row}")->getFont()->getColor()->setRGB('0B6E4F');
-                        elseif ($vf < 0) $sheet->getStyle("{$col}{$row}")->getFont()->getColor()->setRGB('B00020');
+                // Branch data rows
+                if ($this->lastBranchRow > $hdr) {
+                    for ($row = $hdr + 1; $row <= $this->lastBranchRow; $row++) {
+                        foreach (['C', 'D', 'E', 'F', 'G'] as $col) {
+                            $v = $sheet->getCell("{$col}{$row}")->getValue();
+                            if (!is_numeric($v)) continue;
+                            $vf = (float) $v;
+                            if ($vf > 0)     $sheet->getStyle("{$col}{$row}")->getFont()->getColor()->setRGB('0B6E4F');
+                            elseif ($vf < 0) $sheet->getStyle("{$col}{$row}")->getFont()->getColor()->setRGB('B00020');
+                        }
+                        $sheet->getStyle("C{$row}:E{$row}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'EFF6FF']]]);
+                        $sheet->getStyle("F{$row}:G{$row}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F0FDF4']]]);
+                        $sheet->getStyle("H{$row}:J{$row}")->applyFromArray([
+                            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FFFBEB']],
+                            'font' => ['color' => ['rgb' => '92400E']],
+                        ]);
                     }
+
+                    // ALL row (last branch row) — bold + light grey
+                    $sheet->getStyle("A{$this->lastBranchRow}:J{$this->lastBranchRow}")->applyFromArray([
+                        'font' => ['bold' => true, 'size' => 11],
+                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'E2E8F0']],
+                    ]);
                 }
 
-                $sheet->freezePane('A5');
+                // Top gainers / losers data rows — colour the Movement column (F)
+                foreach ($this->gainDataRows as $r) {
+                    $sheet->getStyle("A{$r}:F{$r}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F0FDF4']]]);
+                    $sheet->getStyle("F{$r}")->getFont()->getColor()->setRGB('166534');
+                }
+                foreach ($this->lossDataRows as $r) {
+                    $sheet->getStyle("A{$r}:F{$r}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FFF1F2']]]);
+                    $sheet->getStyle("F{$r}")->getFont()->getColor()->setRGB('991B1B');
+                }
+
+                if ($lastRow > $hdr) {
+                    $sheet->getStyle("A{$hdr}:J{$lastRow}")->getBorders()->getAllBorders()
+                        ->setBorderStyle(Border::BORDER_HAIR)->getColor()->setRGB('E2E8F0');
+                }
+
+                $sheet->freezePane('A' . ($hdr + 1));
             },
         ];
     }
