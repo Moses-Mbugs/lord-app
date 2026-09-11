@@ -17,15 +17,15 @@ use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 /**
- * Single-sheet workbook: branch summary (Deposits WTD/MTD/YTD Δ, Loans WTD/MTD Δ, NTB
- * WTD/MTD/YTD) followed by the week's top gainers/losers.
+ * Single-sheet workbook: branch summary (Deposits WTD/MTD Δ + Closing Balance, Loans
+ * WTD/MTD Δ + Closing Balance, NTB WTD/MTD/YTD) followed by the week's top gainers/losers.
  *
- * Columns: A Branch Code, B Branch Name, C-E Deposits Δ (WTD/MTD/YTD), F-G Loans Δ
- * (WTD/MTD), H-J NTB (WTD/MTD/YTD).
+ * Columns: A Branch Code, B Branch Name, C-E Deposits (WTD Δ/MTD Δ/Closing Bal), F-H
+ * Loans (WTD Δ/MTD Δ/Closing Bal), I-K NTB (WTD/MTD/YTD).
  */
 class WeeklyBranchMoversWorkbookExport implements FromArray, WithTitle, ShouldAutoSize, WithColumnFormatting, WithEvents
 {
-    private const NUM_COLS = 10;
+    private const NUM_COLS = 11;
 
     private array $boldRows       = [];
     private int   $headerRow      = 0;
@@ -54,7 +54,7 @@ class WeeklyBranchMoversWorkbookExport implements FromArray, WithTitle, ShouldAu
         $mtdData  = $this->data['mtd']  ?? ['summary' => collect()];
         $ytdData  = $this->data['ytd']  ?? ['summary' => collect()];
 
-        // Build branch map: code → [name, dep_week/mtd/ytd, loan_week/mtd, ntb_week/mtd/ytd]
+        // Build branch map: code → [name, dep_week/mtd/balance, loan_week/mtd/balance, ntb_week/mtd/ytd]
         $map = [];
 
         foreach (['week' => $weekData, 'mtd' => $mtdData, 'ytd' => $ytdData] as $key => $periodData) {
@@ -64,16 +64,20 @@ class WeeklyBranchMoversWorkbookExport implements FromArray, WithTitle, ShouldAu
                 if (!isset($map[$code])) {
                     $map[$code] = [
                         'code' => $code, 'name' => (string) ($r->group_name ?? $code),
-                        'dep_week' => 0, 'dep_mtd' => 0, 'dep_ytd' => 0,
-                        'loan_week' => 0, 'loan_mtd' => 0,
+                        'dep_week' => 0, 'dep_mtd' => 0, 'dep_balance' => 0,
+                        'loan_week' => 0, 'loan_mtd' => 0, 'loan_balance' => 0,
                         'ntb_week' => 0, 'ntb_mtd' => 0, 'ntb_ytd' => 0,
                     ];
                 }
-                $map[$code]['name']         = (string) ($r->group_name ?? $map[$code]['name']);
-                $map[$code]["dep_{$key}"]   = (float) ($r->movement  ?? 0);
-                $map[$code]["ntb_{$key}"]   = (int)   ($r->ntb_count ?? 0);
+                $map[$code]['name']       = (string) ($r->group_name ?? $map[$code]['name']);
+                $map[$code]["ntb_{$key}"] = (int) ($r->ntb_count ?? 0);
                 if ($key !== 'ytd') {
+                    $map[$code]["dep_{$key}"]  = (float) ($r->movement      ?? 0);
                     $map[$code]["loan_{$key}"] = (float) ($r->loan_movement ?? 0);
+                }
+                if ($key === 'week') {
+                    $map[$code]['dep_balance']  = (float) ($r->end_balance ?? 0);
+                    $map[$code]['loan_balance'] = (float) ($r->loan_close  ?? 0);
                 }
             }
         }
@@ -111,8 +115,8 @@ class WeeklyBranchMoversWorkbookExport implements FromArray, WithTitle, ShouldAu
         $this->headerRow = ++$rowNum;
         $rows[] = [
             'Branch Code', 'Branch Name',
-            'Deposits WTD Δ', 'Deposits MTD Δ', 'Deposits YTD Δ',
-            'Loans WTD Δ', 'Loans MTD Δ',
+            'Deposits WTD Δ', 'Deposits MTD Δ', 'Deposits Closing Bal',
+            'Loans WTD Δ', 'Loans MTD Δ', 'Loans Closing Bal',
             'NTB WTD', 'NTB MTD', 'NTB YTD',
         ];
         $this->boldRows[] = $this->headerRow;
@@ -124,9 +128,10 @@ class WeeklyBranchMoversWorkbookExport implements FromArray, WithTitle, ShouldAu
                 (string) $b['name'],
                 (float)  $b['dep_week'],
                 (float)  $b['dep_mtd'],
-                (float)  $b['dep_ytd'],
+                (float)  $b['dep_balance'],
                 (float)  $b['loan_week'],
                 (float)  $b['loan_mtd'],
+                (float)  $b['loan_balance'],
                 (int)    $b['ntb_week'],
                 (int)    $b['ntb_mtd'],
                 (int)    $b['ntb_ytd'],
@@ -207,9 +212,10 @@ class WeeklyBranchMoversWorkbookExport implements FromArray, WithTitle, ShouldAu
             'E' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'F' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'G' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
-            'H' => NumberFormat::FORMAT_NUMBER,
+            'H' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'I' => NumberFormat::FORMAT_NUMBER,
             'J' => NumberFormat::FORMAT_NUMBER,
+            'K' => NumberFormat::FORMAT_NUMBER,
         ];
     }
 
