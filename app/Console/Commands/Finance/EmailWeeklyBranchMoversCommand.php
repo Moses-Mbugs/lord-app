@@ -114,14 +114,16 @@ class EmailWeeklyBranchMoversCommand extends Command
                 }
             }
 
-            // Enrich summary rows with loan data
+            // Enrich summary rows with loan data + NTB (new accounts opened in this period)
             $loanByBranch = $this->fetchBranchLoanData($period['start'], $period['end']);
-            $summary = $summary->map(function ($row) use ($loanByBranch) {
+            $ntbByBranch  = $this->fetchBranchNtbCounts($period['start'], $period['end']);
+            $summary = $summary->map(function ($row) use ($loanByBranch, $ntbByBranch) {
                 $code = strtoupper(trim((string) ($row->group_key ?? '')));
                 $loan = $loanByBranch[$code] ?? ['open' => 0.0, 'close' => 0.0];
                 $row->loan_open     = $loan['open'];
                 $row->loan_close    = $loan['close'];
                 $row->loan_movement = round($loan['close'] - $loan['open'], 2);
+                $row->ntb_count     = $ntbByBranch[$code] ?? 0;
                 return $row;
             });
 
@@ -256,6 +258,46 @@ class EmailWeeklyBranchMoversCommand extends Command
         }
 
         $result['ALL'] = ['open' => $allOpen, 'close' => $allClose];
+
+        return $result;
+    }
+
+    /**
+     * NTB — distinct CIFs with a new account opened in (start, end] — per branch, plus 'ALL'.
+     * Exclusive of $start / inclusive of $end so back-to-back periods (e.g. this week's end
+     * being next week's start) never double-count an account opened on the boundary date.
+     *
+     * ac_open_date is stored as free text in D-Mon-YY form (e.g. "22-Oct-24") despite the
+     * migration declaring a DATE column — STR_TO_DATE is required to parse it, mirroring
+     * BranchDailyPerformanceSummaryService's NTB calculation. P50 (Head Office) is excluded,
+     * matching every other figure in this report.
+     */
+    private function fetchBranchNtbCounts(string $start, string $end): array
+    {
+        $base = DB::table('customer_accounts_imports')
+            ->whereNotNull('branch_code')
+            ->whereNotNull('f12_cif')
+            ->whereNotNull('ac_open_date')
+            ->whereRaw("TRIM(ac_open_date) <> ''")
+            ->whereRaw("UPPER(TRIM(branch_code)) <> 'P50'")
+            ->whereRaw("STR_TO_DATE(ac_open_date, '%d-%b-%y') > ?", [$start])
+            ->whereRaw("STR_TO_DATE(ac_open_date, '%d-%b-%y') <= ?", [$end]);
+
+        $rows = (clone $base)
+            ->selectRaw("UPPER(TRIM(branch_code)) as branch_code, COUNT(DISTINCT f12_cif) as ntb_count")
+            ->groupByRaw("UPPER(TRIM(branch_code))")
+            ->get();
+
+        $result = [];
+        foreach ($rows as $r) {
+            $code = strtoupper(trim((string) $r->branch_code));
+            if ($code === '') continue;
+            $result[$code] = (int) $r->ntb_count;
+        }
+
+        // Distinct across all branches (not a sum of the per-branch counts above), in case the
+        // same CIF opened accounts at more than one branch within the period.
+        $result['ALL'] = (int) ((clone $base)->selectRaw('COUNT(DISTINCT f12_cif) as agg')->value('agg') ?? 0);
 
         return $result;
     }

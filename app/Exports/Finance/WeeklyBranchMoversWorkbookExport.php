@@ -63,7 +63,7 @@ class WeeklyBranchOverviewSheet implements FromArray, WithTitle, ShouldAutoSize,
         $mtdPeriod  = $this->periods['mtd']  ?? [];
         $ytdPeriod  = $this->periods['ytd']  ?? [];
 
-        // Build branch map: code → [name, end_balance, week_mv, mtd_mv, ytd_mv, loan_week_mv, loan_mtd_mv, loan_ytd_mv]
+        // Build branch map: code → [name, end_balance, week_mv, mtd_mv, ytd_mv, loan_week_mv, loan_mtd_mv, loan_ytd_mv, week_ntb, mtd_ntb, ytd_ntb]
         $map = [];
 
         foreach (['week', 'mtd', 'ytd'] as $key) {
@@ -82,10 +82,14 @@ class WeeklyBranchOverviewSheet implements FromArray, WithTitle, ShouldAutoSize,
                         'week_loan_mv' => 0,
                         'mtd_loan_mv'  => 0,
                         'ytd_loan_mv'  => 0,
+                        'week_ntb'     => 0,
+                        'mtd_ntb'      => 0,
+                        'ytd_ntb'      => 0,
                     ];
                 }
                 $map[$code]["{$key}_mv"]      = (float) ($r->movement      ?? 0);
                 $map[$code]["{$key}_loan_mv"]  = (float) ($r->loan_movement ?? 0);
+                $map[$code]["{$key}_ntb"]      = (int)   ($r->ntb_count     ?? 0);
                 if ($key === 'week') {
                     $map[$code]['end_balance'] = (float) ($r->end_balance ?? 0);
                     $map[$code]['name']        = (string) ($r->group_name ?? $code);
@@ -106,21 +110,21 @@ class WeeklyBranchOverviewSheet implements FromArray, WithTitle, ShouldAutoSize,
         $rowNum  = 0;
 
         // Title
-        $rows[] = ['ECOBANK KENYA — WEEKLY BRANCH MOVEMENT OVERVIEW', '', '', '', '', '', '', '', ''];
+        $rows[] = ['ECOBANK KENYA — WEEKLY BRANCH MOVEMENT OVERVIEW', '', '', '', '', '', '', '', '', '', '', ''];
         $this->boldRows[] = ++$rowNum;
 
-        $rows[] = ["Week ending: {$this->weekEnd}", '', '', '', '', '', '', '', ''];
+        $rows[] = ["Week ending: {$this->weekEnd}", '', '', '', '', '', '', '', '', '', '', ''];
         ++$rowNum;
 
         $rows[] = [
             "Weekly: {$weekPeriod['start']} → {$weekPeriod['end']}",
             "MTD: {$mtdPeriod['start']} → {$mtdPeriod['end']}",
             "YTD: {$ytdPeriod['start']} → {$ytdPeriod['end']}",
-            '', '', '', '', '', '',
+            '', '', '', '', '', '', '', '', '',
         ];
         ++$rowNum;
 
-        $rows[] = ['', '', '', '', '', '', '', '', ''];
+        $rows[] = ['', '', '', '', '', '', '', '', '', '', '', ''];
         ++$rowNum;
 
         // Column header
@@ -135,6 +139,9 @@ class WeeklyBranchOverviewSheet implements FromArray, WithTitle, ShouldAutoSize,
             'Weekly Δ (Loans)',
             'MTD Δ (Loans)',
             'YTD Δ (Loans)',
+            'Weekly NTB',
+            'MTD NTB',
+            'YTD NTB',
         ];
         $this->boldRows[] = $headerRow;
 
@@ -150,6 +157,9 @@ class WeeklyBranchOverviewSheet implements FromArray, WithTitle, ShouldAutoSize,
                 (float)  $b['week_loan_mv'],
                 (float)  $b['mtd_loan_mv'],
                 (float)  $b['ytd_loan_mv'],
+                (int)    $b['week_ntb'],
+                (int)    $b['mtd_ntb'],
+                (int)    $b['ytd_ntb'],
             ];
         }
 
@@ -166,6 +176,9 @@ class WeeklyBranchOverviewSheet implements FromArray, WithTitle, ShouldAutoSize,
             'G' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'H' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'I' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
+            'J' => NumberFormat::FORMAT_NUMBER,
+            'K' => NumberFormat::FORMAT_NUMBER,
+            'L' => NumberFormat::FORMAT_NUMBER,
         ];
     }
 
@@ -177,21 +190,21 @@ class WeeklyBranchOverviewSheet implements FromArray, WithTitle, ShouldAutoSize,
                 $lastRow = $sheet->getHighestRow();
 
                 // Title row
-                $sheet->getStyle('A1:I1')->applyFromArray([
+                $sheet->getStyle('A1:L1')->applyFromArray([
                     'font' => ['bold' => true, 'size' => 14, 'color' => ['rgb' => 'FFFFFF']],
                     'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '002E4A']],
                     'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT],
                 ]);
-                $sheet->mergeCells('A1:I1');
+                $sheet->mergeCells('A1:L1');
                 $sheet->getRowDimension(1)->setRowHeight(26);
 
                 // Period info rows
-                $sheet->mergeCells('A2:I2');
+                $sheet->mergeCells('A2:L2');
                 $sheet->mergeCells('A3:C3');
 
                 // Column header row (row 5)
                 $headerRow = 5;
-                $sheet->getStyle("A{$headerRow}:I{$headerRow}")->applyFromArray([
+                $sheet->getStyle("A{$headerRow}:L{$headerRow}")->applyFromArray([
                     'font' => ['bold' => true, 'size' => 11, 'color' => ['rgb' => 'FFFFFF']],
                     'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1F3A5F']],
                     'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
@@ -203,7 +216,12 @@ class WeeklyBranchOverviewSheet implements FromArray, WithTitle, ShouldAutoSize,
                     'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '166534']],
                 ]);
 
-                // Data rows — colour movement columns by sign
+                // NTB columns — amber tint header
+                $sheet->getStyle("J{$headerRow}:L{$headerRow}")->applyFromArray([
+                    'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'B45309']],
+                ]);
+
+                // Data rows — colour movement columns by sign, amber-tint NTB columns (plain counts, not gain/loss)
                 if ($lastRow > $headerRow) {
                     for ($row = $headerRow + 1; $row <= $lastRow; $row++) {
                         foreach (['D', 'E', 'F', 'G', 'H', 'I'] as $col) {
@@ -217,10 +235,15 @@ class WeeklyBranchOverviewSheet implements FromArray, WithTitle, ShouldAutoSize,
                         $sheet->getStyle("G{$row}:I{$row}")->applyFromArray([
                             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F0FDF4']],
                         ]);
+                        // Light amber tint + font colour on NTB columns
+                        $sheet->getStyle("J{$row}:L{$row}")->applyFromArray([
+                            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FFFBEB']],
+                            'font' => ['color' => ['rgb' => '92400E']],
+                        ]);
                     }
 
                     // ALL row (last data row) — bold + light grey
-                    $sheet->getStyle("A{$lastRow}:I{$lastRow}")->applyFromArray([
+                    $sheet->getStyle("A{$lastRow}:L{$lastRow}")->applyFromArray([
                         'font' => ['bold' => true, 'size' => 11],
                         'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'E2E8F0']],
                     ]);
@@ -250,7 +273,7 @@ class WeeklyBranchPeriodSheet implements FromArray, WithTitle, ShouldAutoSize, W
 
     public function headings(): array
     {
-        return ['Branch Code', 'Branch Name', 'Start Balance', 'End Balance', 'Dep Movement', 'Loan Opening', 'Loan Closing', 'Loan Movement'];
+        return ['Branch Code', 'Branch Name', 'Start Balance', 'End Balance', 'Dep Movement', 'Loan Opening', 'Loan Closing', 'Loan Movement', 'NTB'];
     }
 
     public function array(): array
@@ -294,6 +317,7 @@ class WeeklyBranchPeriodSheet implements FromArray, WithTitle, ShouldAutoSize, W
                     (float)  ($r->loan_open      ?? 0),
                     (float)  ($r->loan_close     ?? 0),
                     (float)  ($r->loan_movement  ?? 0),
+                    (int)    ($r->ntb_count      ?? 0),
                 ];
                 ++$rowNum;
             }
@@ -371,6 +395,7 @@ class WeeklyBranchPeriodSheet implements FromArray, WithTitle, ShouldAutoSize, W
             'F' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'G' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'H' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
+            'I' => NumberFormat::FORMAT_NUMBER,
         ];
     }
 
@@ -387,8 +412,8 @@ class WeeklyBranchPeriodSheet implements FromArray, WithTitle, ShouldAutoSize, W
                 $lastRow = $sheet->getHighestRow();
 
                 // Title row — dark navy
-                $sheet->mergeCells('A1:H1');
-                $sheet->getStyle('A1:H1')->applyFromArray([
+                $sheet->mergeCells('A1:I1');
+                $sheet->getStyle('A1:I1')->applyFromArray([
                     'font' => ['bold' => true, 'size' => 13, 'color' => ['rgb' => 'FFFFFF']],
                     'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '002E4A']],
                     'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT],
@@ -396,7 +421,7 @@ class WeeklyBranchPeriodSheet implements FromArray, WithTitle, ShouldAutoSize, W
                 $sheet->getRowDimension(1)->setRowHeight(24);
 
                 foreach ($this->boldRows as $r) {
-                    $sheet->getStyle("A{$r}:H{$r}")->getFont()->setBold(true);
+                    $sheet->getStyle("A{$r}:I{$r}")->getFont()->setBold(true);
                 }
 
                 // Loan columns — green tint
@@ -409,6 +434,16 @@ class WeeklyBranchPeriodSheet implements FromArray, WithTitle, ShouldAutoSize, W
                     $sheet->getStyle("F4:H4")->applyFromArray([
                         'font' => ['bold' => true, 'color' => ['rgb' => '14532D']],
                         'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'DCFCE7']],
+                    ]);
+
+                    // NTB column — amber tint
+                    $sheet->getStyle("I4:I{$lastRow}")->applyFromArray([
+                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FFFBEB']],
+                        'font' => ['color' => ['rgb' => '92400E']],
+                    ]);
+                    $sheet->getStyle('I4')->applyFromArray([
+                        'font' => ['bold' => true, 'color' => ['rgb' => '92400E']],
+                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FDE68A']],
                     ]);
                 }
 

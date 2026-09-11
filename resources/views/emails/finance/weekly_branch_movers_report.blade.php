@@ -52,11 +52,23 @@
     $mtdMovement     = (float) ($mtdAll->movement       ?? 0);
     $ytdMovement     = (float) ($ytdAll->movement       ?? 0);
 
+    $weekNtb = (int) ($weekAll->ntb_count ?? 0);
+    $mtdNtb  = (int) ($mtdAll->ntb_count  ?? 0);
+    $ytdNtb  = (int) ($ytdAll->ntb_count  ?? 0);
+
     $kpis = [
-        ['label' => 'Total Deposits',  'value' => $totalDeposits,  'mv' => false, 'sub' => 'as at ' . $fmtDate($weekEnd)],
-        ['label' => 'Weekly Movement', 'value' => $weeklyMovement, 'mv' => true,  'sub' => $fmtShort($weekStart) . ' → ' . $fmtShort($weekEnd)],
-        ['label' => 'Month-to-Date',   'value' => $mtdMovement,    'mv' => true,  'sub' => 'from ' . $fmtDate($mtdStart)],
-        ['label' => 'Year-to-Date',    'value' => $ytdMovement,    'mv' => true,  'sub' => 'from ' . $fmtDate($ytdStart)],
+        ['label' => 'Total Deposits',     'kind' => 'balance',  'value' => $totalDeposits,  'sub' => 'as at ' . $fmtDate($weekEnd)],
+        ['label' => 'Weekly Movement',    'kind' => 'movement', 'value' => $weeklyMovement, 'sub' => $fmtShort($weekStart) . ' → ' . $fmtShort($weekEnd)],
+        ['label' => 'Month-to-Date',      'kind' => 'movement', 'value' => $mtdMovement,    'sub' => 'from ' . $fmtDate($mtdStart)],
+        ['label' => 'Year-to-Date',       'kind' => 'movement', 'value' => $ytdMovement,    'sub' => 'from ' . $fmtDate($ytdStart)],
+        ['label' => 'New Accounts (NTB)', 'kind' => 'count',    'value' => $weekNtb,        'sub' => 'MTD ' . number_format($mtdNtb) . '  ·  YTD ' . number_format($ytdNtb)],
+    ];
+
+    $emptyBranchRow = fn($code, $name) => [
+        'code' => $code, 'name' => $name, 'end_balance' => 0,
+        'week_mv' => 0, 'week_loan_mv' => 0, 'week_ntb' => 0,
+        'mtd_mv' => 0, 'mtd_ntb' => 0,
+        'ytd_mv' => 0, 'ytd_ntb' => 0,
     ];
 
     // Build combined branch map keyed by group_key for the multi-period table
@@ -64,31 +76,29 @@
     foreach ($weekData['summary'] as $r) {
         $code = strtoupper(trim((string)($r->group_key ?? '')));
         if ($code === '') continue;
-        $branchMap[$code] = [
-            'code'         => $code,
-            'name'         => (string)($r->group_name ?? $code),
-            'end_balance'  => (float)($r->end_balance ?? 0),
-            'week_mv'      => (float)($r->movement ?? 0),
-            'week_loan_mv' => (float)($r->loan_movement ?? 0),
-            'mtd_mv'       => 0,
-            'ytd_mv'       => 0,
-        ];
+        $branchMap[$code] = $emptyBranchRow($code, (string)($r->group_name ?? $code));
+        $branchMap[$code]['end_balance']  = (float)($r->end_balance ?? 0);
+        $branchMap[$code]['week_mv']      = (float)($r->movement ?? 0);
+        $branchMap[$code]['week_loan_mv'] = (float)($r->loan_movement ?? 0);
+        $branchMap[$code]['week_ntb']     = (int)($r->ntb_count ?? 0);
     }
     foreach ($mtdData['summary'] as $r) {
         $code = strtoupper(trim((string)($r->group_key ?? '')));
         if ($code === '') continue;
         if (!isset($branchMap[$code])) {
-            $branchMap[$code] = ['code' => $code, 'name' => (string)($r->group_name ?? $code), 'end_balance' => 0, 'week_mv' => 0, 'week_loan_mv' => 0, 'mtd_mv' => 0, 'ytd_mv' => 0];
+            $branchMap[$code] = $emptyBranchRow($code, (string)($r->group_name ?? $code));
         }
-        $branchMap[$code]['mtd_mv'] = (float)($r->movement ?? 0);
+        $branchMap[$code]['mtd_mv']  = (float)($r->movement ?? 0);
+        $branchMap[$code]['mtd_ntb'] = (int)($r->ntb_count ?? 0);
     }
     foreach ($ytdData['summary'] as $r) {
         $code = strtoupper(trim((string)($r->group_key ?? '')));
         if ($code === '') continue;
         if (!isset($branchMap[$code])) {
-            $branchMap[$code] = ['code' => $code, 'name' => (string)($r->group_name ?? $code), 'end_balance' => 0, 'week_mv' => 0, 'week_loan_mv' => 0, 'mtd_mv' => 0, 'ytd_mv' => 0];
+            $branchMap[$code] = $emptyBranchRow($code, (string)($r->group_name ?? $code));
         }
-        $branchMap[$code]['ytd_mv'] = (float)($r->movement ?? 0);
+        $branchMap[$code]['ytd_mv']  = (float)($r->movement ?? 0);
+        $branchMap[$code]['ytd_ntb'] = (int)($r->ntb_count ?? 0);
     }
 
     // Sort: regular P-branches first (A-Z), then 834/950, then ALL
@@ -158,15 +168,31 @@
   <tr>
     @foreach ($kpis as $i => $kpi)
       @php
-        $mv      = (float) $kpi['value'];
-        $isGain  = $mv >= 0;
-        $mvColor = $kpi['mv'] ? ($isGain ? '#15803D' : '#BE123C') : '#0F172A';
-        $mvBg    = $kpi['mv'] ? ($isGain ? '#F0FDF4'  : '#FFF1F2') : '#F1F5F9';
-        $mvBd    = $kpi['mv'] ? ($isGain ? '#BBF7D0'  : '#FECDD3') : '#E2E8F0';
-        $numText = $kpi['mv'] ? $abbr($mv) : $abbrAbs($mv);
+        $kind   = $kpi['kind'] ?? 'movement';
+        $mv     = (float) $kpi['value'];
+        $isGain = $mv >= 0;
+
+        if ($kind === 'movement') {
+            $mvColor = $isGain ? '#15803D' : '#BE123C';
+            $mvBg    = $isGain ? '#F0FDF4' : '#FFF1F2';
+            $mvBd    = $isGain ? '#BBF7D0' : '#FECDD3';
+            $numText = $abbr($mv);
+        } elseif ($kind === 'count') {
+            $mvColor = '#B45309';
+            $mvBg    = '#FFFBEB';
+            $mvBd    = '#FDE68A';
+            $numText = number_format((int) $mv);
+        } else { // balance
+            $mvColor = '#0F172A';
+            $mvBg    = '#F1F5F9';
+            $mvBd    = '#E2E8F0';
+            $numText = $abbrAbs($mv);
+        }
+
         $isLast  = $i === count($kpis) - 1;
+        $tdWidth = round(100 / count($kpis), 4);
       @endphp
-      <td style="padding:18px 22px;{{ !$isLast ? 'border-right:1px solid #E2E8F0;' : '' }}vertical-align:top;background:#F8FAFC;width:25%;" bgcolor="#F8FAFC">
+      <td style="padding:18px 22px;{{ !$isLast ? 'border-right:1px solid #E2E8F0;' : '' }}vertical-align:top;background:#F8FAFC;width:{{ $tdWidth }}%;" bgcolor="#F8FAFC">
         <div style="font-size:9.5px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">
           {{ $kpi['label'] }}
         </div>
@@ -214,8 +240,12 @@
           Deposits Movement
         </th>
         <th colspan="1"
-          style="padding:6px 10px;background:#F0FDF4;border-bottom:1px solid #BBF7D0;text-align:center;font-size:9px;font-weight:900;color:#15803D;text-transform:uppercase;letter-spacing:0.7px;">
+          style="padding:6px 10px;background:#F0FDF4;border-bottom:1px solid #BBF7D0;text-align:center;font-size:9px;font-weight:900;color:#15803D;text-transform:uppercase;letter-spacing:0.7px;border-right:2px solid #BBF7D0;">
           Perf. Loans
+        </th>
+        <th colspan="3"
+          style="padding:6px 10px;background:#FFFBEB;border-bottom:1px solid #FDE68A;text-align:center;font-size:9px;font-weight:900;color:#B45309;text-transform:uppercase;letter-spacing:0.7px;">
+          New Accounts (NTB)
         </th>
       </tr>
       <tr>
@@ -228,8 +258,17 @@
         <th style="padding:6px 10px;background:#EFF6FF;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#1D4ED8;text-transform:uppercase;letter-spacing:0.6px;white-space:nowrap;border-right:2px solid #BFDBFE;">
           YTD Δ
         </th>
-        <th style="padding:6px 10px;background:#F0FDF4;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#15803D;text-transform:uppercase;letter-spacing:0.6px;white-space:nowrap;">
+        <th style="padding:6px 10px;background:#F0FDF4;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#15803D;text-transform:uppercase;letter-spacing:0.6px;white-space:nowrap;border-right:2px solid #BBF7D0;">
           Weekly Δ
+        </th>
+        <th style="padding:6px 10px;background:#FFFBEB;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#B45309;text-transform:uppercase;letter-spacing:0.6px;white-space:nowrap;border-left:1px solid #FDE68A;">
+          Weekly
+        </th>
+        <th style="padding:6px 10px;background:#FFFBEB;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#B45309;text-transform:uppercase;letter-spacing:0.6px;white-space:nowrap;">
+          MTD
+        </th>
+        <th style="padding:6px 10px;background:#FFFBEB;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#B45309;text-transform:uppercase;letter-spacing:0.6px;white-space:nowrap;">
+          YTD
         </th>
       </tr>
     </thead>
@@ -247,6 +286,9 @@
           $mtdMv    = (float) ($b['mtd_mv']      ?? 0);
           $ytdMv    = (float) ($b['ytd_mv']      ?? 0);
           $loanWk   = (float) ($b['week_loan_mv'] ?? 0);
+          $ntbWk    = (int) ($b['week_ntb'] ?? 0);
+          $ntbMtd   = (int) ($b['mtd_ntb']  ?? 0);
+          $ntbYtd   = (int) ($b['ytd_ntb']  ?? 0);
 
           $fmtMv = function($v) {
               $n    = abs((float) $v);
@@ -292,8 +334,17 @@
           <td style="padding:7px 10px;border-bottom:{{ $border }};text-align:right;border-right:2px solid #BFDBFE;">
             <span style="{{ $mvStyle($ytdMv) }}">{{ $fmtMv($ytdMv) }}</span>
           </td>
-          <td style="padding:7px 10px;border-bottom:{{ $border }};background:{{ $isEven ? '#F0FDF4' : '#ECFDF5' }};text-align:right;">
+          <td style="padding:7px 10px;border-bottom:{{ $border }};border-right:2px solid #BBF7D0;background:{{ $isEven ? '#F0FDF4' : '#ECFDF5' }};text-align:right;">
             <span style="{{ $loanMvStyle($loanWk) }}">{{ $fmtMv($loanWk) }}</span>
+          </td>
+          <td style="padding:7px 10px;border-bottom:{{ $border }};background:{{ $isEven ? '#FFFBEB' : '#FEFCE8' }};text-align:right;font-weight:700;font-family:ui-monospace,'Courier New',monospace;color:#92400E;">
+            {{ number_format($ntbWk) }}
+          </td>
+          <td style="padding:7px 10px;border-bottom:{{ $border }};background:{{ $isEven ? '#FFFBEB' : '#FEFCE8' }};text-align:right;font-weight:700;font-family:ui-monospace,'Courier New',monospace;color:#92400E;">
+            {{ number_format($ntbMtd) }}
+          </td>
+          <td style="padding:7px 10px;border-bottom:{{ $border }};background:{{ $isEven ? '#FFFBEB' : '#FEFCE8' }};text-align:right;font-weight:700;font-family:ui-monospace,'Courier New',monospace;color:#92400E;">
+            {{ number_format($ntbYtd) }}
           </td>
         </tr>
       @endforeach
