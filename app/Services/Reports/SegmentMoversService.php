@@ -33,6 +33,28 @@ class SegmentMoversService
         '470130430',
     ];
 
+    // Forces this CIF into Corporate (CB) regardless of its actual etibiseg2 classification
+    // (or lack of one). Matches CIF_SEGMENT_OVERRIDES in WeeklySegmentReportService.
+    private const CIF_SEGMENT_OVERRIDES = [
+        '470130430' => 'CB',
+    ];
+
+    private function segmentOverrideCaseSql(string $cifColumn, string $fallbackExpr): string
+    {
+        $whens = implode(' ', array_fill(0, count(self::CIF_SEGMENT_OVERRIDES), "WHEN {$cifColumn} = ? THEN ?"));
+        return "CASE {$whens} ELSE {$fallbackExpr} END";
+    }
+
+    private function segmentOverrideBindings(): array
+    {
+        $bindings = [];
+        foreach (self::CIF_SEGMENT_OVERRIDES as $cif => $code) {
+            $bindings[] = $cif;
+            $bindings[] = $code;
+        }
+        return $bindings;
+    }
+
     public function build(string $start, string $end): void
     {
         $startDate = Carbon::parse($start)->toDateString();
@@ -49,10 +71,11 @@ class SegmentMoversService
         $now = now();
 
         $exceptionPlaceholders = implode(',', array_fill(0, count(self::INCLUDED_EXCEPTION_CIFS), '?'));
+        $segCodeCase = $this->segmentOverrideCaseSql('m.cif', "COALESCE(s.segment_code, 'OT')");
 
         $segmentRows = DB::select("
             SELECT
-                COALESCE(s.segment_code, 'OT') AS segment_code,
+                {$segCodeCase} AS segment_code,
                 SUM(m.start_balance)            AS start_balance,
                 SUM(m.end_balance)              AS end_balance,
                 SUM(m.end_balance - m.start_balance) AS movement,
@@ -127,8 +150,9 @@ class SegmentMoversService
                 GROUP BY x.cif
             ) s ON s.cif = m.cif
 
-            GROUP BY COALESCE(s.segment_code, 'OT')
+            GROUP BY {$segCodeCase}
         ", array_merge(
+            $this->segmentOverrideBindings(),
             [
                 $startDate,
                 $endDate,
@@ -138,7 +162,8 @@ class SegmentMoversService
             self::INCLUDED_EXCEPTION_CIFS,
             [
                 self::EXCLUDED_CR_GL,
-            ]
+            ],
+            $this->segmentOverrideBindings()
         ));
 
         if (empty($segmentRows)) {

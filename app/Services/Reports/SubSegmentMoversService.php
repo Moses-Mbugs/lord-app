@@ -26,6 +26,28 @@ class SubSegmentMoversService
         '470130430',
     ];
 
+    // Forces this CIF's business/business_segment_name into Corporate Banking /
+    // Regional Corporates for the aggregate totals below, regardless of its actual
+    // etibiseg2 -> sub_segment_mappings result (or lack of one). Note: mis_code and
+    // business_seg_short are left as their real mapped values, so this CIF will not
+    // appear in a per-MIS-code drilldown (drilldown()/drilldownByMisCodes() below) —
+    // only in the aggregate business_segment_name totals from build().
+    private const CIF_SEGMENT_OVERRIDES = [
+        '470130430' => ['business' => 'Corporate Banking', 'business_segment_name' => 'Regional Corporates'],
+    ];
+
+    /** @return array{0: string, 1: array} [CASE SQL, bindings] */
+    private function segmentOverrideCaseSql(string $cifColumn, string $field, string $fallbackExpr): array
+    {
+        $whens = implode(' ', array_fill(0, count(self::CIF_SEGMENT_OVERRIDES), "WHEN {$cifColumn} = ? THEN ?"));
+        $bindings = [];
+        foreach (self::CIF_SEGMENT_OVERRIDES as $cif => $override) {
+            $bindings[] = $cif;
+            $bindings[] = $override[$field];
+        }
+        return ["CASE {$whens} ELSE {$fallbackExpr} END", $bindings];
+    }
+
     public function build(string $start, string $end): int
     {
         $startDate = Carbon::parse($start)->toDateString();
@@ -38,6 +60,9 @@ class SubSegmentMoversService
         $balanceSub = $this->balanceSubquery($startDate, $endDate);
         $cifMisSub  = $this->cifMisCodeSubquery();
 
+        [$businessSql, $businessBindings] = $this->segmentOverrideCaseSql('b.cif', 'business', "COALESCE(sm.business, 'UNMAPPED')");
+        [$subSegSql, $subSegBindings]     = $this->segmentOverrideCaseSql('b.cif', 'business_segment_name', "COALESCE(sm.business_segment_name, 'UNMAPPED')");
+
         $rows = DB::query()
             ->fromSub($balanceSub, 'b')
             ->leftJoinSub($cifMisSub, 'cm', function ($join) {
@@ -45,8 +70,8 @@ class SubSegmentMoversService
             })
             ->leftJoin('sub_segment_mappings as sm', 'sm.mis_code', '=', 'cm.mis_code')
             ->selectRaw("
-                COALESCE(sm.business, 'UNMAPPED') AS business,
-                COALESCE(sm.business_segment_name, 'UNMAPPED') AS business_segment_name,
+                {$businessSql} AS business,
+                {$subSegSql} AS business_segment_name,
                 COALESCE(sm.business_seg_short, 'UNMAPPED') AS business_seg_short,
                 COALESCE(sm.mis_code, cm.mis_code, 'UNMAPPED') AS mis_code,
                 COALESCE(sm.code_desc, 'Unmapped Sub Segment') AS code_desc,
@@ -54,9 +79,9 @@ class SubSegmentMoversService
                 SUM(b.end_balance) AS end_balance,
                 SUM(b.end_balance - b.start_balance) AS movement,
                 COUNT(DISTINCT b.cif) AS cif_count
-            ")
-            ->groupBy(DB::raw("COALESCE(sm.business, 'UNMAPPED')"))
-            ->groupBy(DB::raw("COALESCE(sm.business_segment_name, 'UNMAPPED')"))
+            ", array_merge($businessBindings, $subSegBindings))
+            ->groupByRaw($businessSql, $businessBindings)
+            ->groupByRaw($subSegSql, $subSegBindings)
             ->groupBy(DB::raw("COALESCE(sm.business_seg_short, 'UNMAPPED')"))
             ->groupBy(DB::raw("COALESCE(sm.mis_code, cm.mis_code, 'UNMAPPED')"))
             ->groupBy(DB::raw("COALESCE(sm.code_desc, 'Unmapped Sub Segment')"))

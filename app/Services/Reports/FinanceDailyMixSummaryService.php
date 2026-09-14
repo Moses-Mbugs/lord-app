@@ -47,6 +47,24 @@ class FinanceDailyMixSummaryService
         '470130430',
     ];
 
+    // Forces this CIF into Corporate (CB) regardless of its actual etibiseg2 classification
+    // (or lack of one). Matches CIF_SEGMENT_OVERRIDES in WeeklySegmentReportService.
+    private const CIF_SEGMENT_OVERRIDES = [
+        '470130430' => 'CB',
+    ];
+
+    /** @return array{0: string, 1: array} [CASE SQL, bindings] */
+    private function segmentOverrideCaseSql(string $cifColumn, string $fallbackExpr): array
+    {
+        $whens = implode(' ', array_fill(0, count(self::CIF_SEGMENT_OVERRIDES), "WHEN {$cifColumn} = ? THEN ?"));
+        $bindings = [];
+        foreach (self::CIF_SEGMENT_OVERRIDES as $cif => $code) {
+            $bindings[] = $cif;
+            $bindings[] = $code;
+        }
+        return ["CASE {$whens} ELSE {$fallbackExpr} END", $bindings];
+    }
+
     public function latestBalanceDate(): ?string
     {
         $date = DB::table('customer_balances')->max('balance_date');
@@ -234,6 +252,8 @@ class FinanceDailyMixSummaryService
             ->whereRaw("LEFT(TRIM(cai.etibiseg2), 2) IN ('CB','CM','CS')")
             ->groupBy('cai.f12_cif');
 
+        [$segCodeSql, $segCodeBindings] = $this->segmentOverrideCaseSql('cb.cif', "COALESCE(seg.segment_code, 'OT')");
+
         return DB::table('customer_balances as cb')
             ->leftJoinSub($cifSegmentSub, 'seg', function ($join) {
                 $join->on('seg.cif', '=', 'cb.cif');
@@ -256,8 +276,8 @@ class FinanceDailyMixSummaryService
                 cb.currency,
                 cb.cr_gl,
                 cb.lcy_balance,
-                COALESCE(seg.segment_code, 'OT') AS segment_code
-            ");
+                {$segCodeSql} AS segment_code
+            ", $segCodeBindings);
     }
 
     private function makePayload(

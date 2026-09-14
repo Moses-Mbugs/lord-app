@@ -18,6 +18,12 @@ class WeeklySegmentReportService
         '470321717', '470291487', '470317567', '470803302', '470251434', '470130430',
     ];
 
+    // Forces this CIF into Corporate / Regional Corporates regardless of its actual
+    // etibiseg2 / sub_segment_mappings classification (or lack of one).
+    private const CIF_SEGMENT_OVERRIDES = [
+        '470130430' => ['segment_code' => 'CB', 'sub_segment_name' => 'Regional Corporates'],
+    ];
+
     private const SEGMENT_MAP = [
         'CB'  => 'Corporate',
         'CM'  => 'Commercial',
@@ -289,15 +295,17 @@ class WeeklySegmentReportService
      */
     private function fetchCifMovementRows(string $start, string $end): array
     {
-        $exceptionPh = implode(',', array_fill(0, count(self::INCLUDED_EXCEPTION_CIFS), '?'));
+        $exceptionPh   = implode(',', array_fill(0, count(self::INCLUDED_EXCEPTION_CIFS), '?'));
+        $segCodeCase   = $this->segmentOverrideCaseSql('m.cif', "COALESCE(css.segment_code, 'OT')");
+        $subSegCase    = $this->segmentOverrideCaseSql('m.cif', "COALESCE(css.sub_segment_name, 'Unmapped')");
 
         $rows = DB::select("
             SELECT
                 m.cif,
                 m.customer_name,
                 m.branch_code,
-                COALESCE(css.segment_code, 'OT') AS business_segment_code,
-                COALESCE(css.sub_segment_name, 'Unmapped') AS sub_segment_name,
+                {$segCodeCase} AS business_segment_code,
+                {$subSegCase} AS sub_segment_name,
                 m.period_start  AS start_balance,
                 m.period_end    AS end_balance,
                 (m.period_end - m.period_start) AS movement
@@ -369,6 +377,8 @@ class WeeklySegmentReportService
             ) css ON css.cif = m.cif
             HAVING (m.period_end - m.period_start) <> 0
         ", array_merge(
+            $this->segmentOverrideBindings('segment_code'),
+            $this->segmentOverrideBindings('sub_segment_name'),
             [$start, $end, $start, $end],
             self::INCLUDED_EXCEPTION_CIFS,
             [self::EXCLUDED_CR_GL]
@@ -488,6 +498,28 @@ class WeeklySegmentReportService
         };
     }
 
+    /**
+     * SQL CASE expression that forces CIF_SEGMENT_OVERRIDES onto a segment/sub-segment
+     * value ahead of its normally-computed expression. $cifColumn is the column holding
+     * the CIF at the row grain this CASE is evaluated at (e.g. 'cb.cif' or 'm.cif').
+     */
+    private function segmentOverrideCaseSql(string $cifColumn, string $fallbackExpr): string
+    {
+        $whens = implode(' ', array_fill(0, count(self::CIF_SEGMENT_OVERRIDES), "WHEN {$cifColumn} = ? THEN ?"));
+        return "CASE {$whens} ELSE {$fallbackExpr} END";
+    }
+
+    /** @param 'segment_code'|'sub_segment_name' $field */
+    private function segmentOverrideBindings(string $field): array
+    {
+        $bindings = [];
+        foreach (self::CIF_SEGMENT_OVERRIDES as $cif => $override) {
+            $bindings[] = $cif;
+            $bindings[] = $override[$field];
+        }
+        return $bindings;
+    }
+
     private function querySegmentTotals(
         string $weekStart,
         string $weekEnd,
@@ -498,12 +530,13 @@ class WeeklySegmentReportService
         $dates       = array_values(array_unique([$weekStart, $weekEnd, $mtdStart, $ytdStart]));
         $datePh      = implode(',', array_fill(0, count($dates), '?'));
         $exceptionPh = implode(',', array_fill(0, count(self::INCLUDED_EXCEPTION_CIFS), '?'));
+        $segCodeCase = $this->segmentOverrideCaseSql('cb.cif', "COALESCE(s.segment_code, 'OT')");
 
         $currencyFilter = $this->currencyFilterSql($currencyType);
 
         return DB::select("
             SELECT
-                COALESCE(s.segment_code, 'OT') AS segment_code,
+                {$segCodeCase} AS segment_code,
                 SUM(CASE WHEN cb.balance_date = ? THEN GREATEST(cb.lcy_balance, 0) ELSE 0 END) AS weekly_start,
                 SUM(CASE WHEN cb.balance_date = ? THEN GREATEST(cb.lcy_balance, 0) ELSE 0 END) AS weekly_end,
                 SUM(CASE WHEN cb.balance_date = ? THEN GREATEST(cb.lcy_balance, 0) ELSE 0 END) AS mtd_start,
@@ -555,12 +588,14 @@ class WeeklySegmentReportService
                         AND (cb.cr_gl IS NULL OR cb.cr_gl <> ?)
                     )
               )
-            GROUP BY COALESCE(s.segment_code, 'OT')
+            GROUP BY {$segCodeCase}
         ", array_merge(
+            $this->segmentOverrideBindings('segment_code'),
             [$weekStart, $weekEnd, $mtdStart, $ytdStart],
             $dates,
             self::INCLUDED_EXCEPTION_CIFS,
-            [self::EXCLUDED_CR_GL]
+            [self::EXCLUDED_CR_GL],
+            $this->segmentOverrideBindings('segment_code')
         ));
     }
 
@@ -574,13 +609,15 @@ class WeeklySegmentReportService
         $dates       = array_values(array_unique([$weekStart, $weekEnd, $mtdStart, $ytdStart]));
         $datePh      = implode(',', array_fill(0, count($dates), '?'));
         $exceptionPh = implode(',', array_fill(0, count(self::INCLUDED_EXCEPTION_CIFS), '?'));
+        $segCodeCase = $this->segmentOverrideCaseSql('cb.cif', "COALESCE(cai.segment_code, 'OT')");
+        $subSegCase  = $this->segmentOverrideCaseSql('cb.cif', "COALESCE(cai.sub_segment_name, 'Unmapped')");
 
         $currencyFilter = $this->currencyFilterSql($currencyType);
 
         return DB::select("
             SELECT
-                COALESCE(cai.segment_code, 'OT') AS segment_code,
-                COALESCE(cai.sub_segment_name, 'Unmapped') AS sub_segment_name,
+                {$segCodeCase} AS segment_code,
+                {$subSegCase} AS sub_segment_name,
                 SUM(CASE WHEN cb.balance_date = ? THEN GREATEST(cb.lcy_balance, 0) ELSE 0 END) AS weekly_start,
                 SUM(CASE WHEN cb.balance_date = ? THEN GREATEST(cb.lcy_balance, 0) ELSE 0 END) AS weekly_end,
                 SUM(CASE WHEN cb.balance_date = ? THEN GREATEST(cb.lcy_balance, 0) ELSE 0 END) AS mtd_start,
@@ -651,13 +688,17 @@ class WeeklySegmentReportService
                     )
               )
             GROUP BY
-                COALESCE(cai.segment_code, 'OT'),
-                COALESCE(cai.sub_segment_name, 'Unmapped')
+                {$segCodeCase},
+                {$subSegCase}
         ", array_merge(
+            $this->segmentOverrideBindings('segment_code'),
+            $this->segmentOverrideBindings('sub_segment_name'),
             [$weekStart, $weekEnd, $mtdStart, $ytdStart],
             $dates,
             self::INCLUDED_EXCEPTION_CIFS,
-            [self::EXCLUDED_CR_GL]
+            [self::EXCLUDED_CR_GL],
+            $this->segmentOverrideBindings('segment_code'),
+            $this->segmentOverrideBindings('sub_segment_name')
         ));
     }
 
@@ -890,10 +931,11 @@ class WeeklySegmentReportService
         $dates       = array_values(array_unique([$ye, $m3, $m2, $m1, $w1Start, $w1End]));
         $datePh      = implode(',', array_fill(0, count($dates), '?'));
         $exceptionPh = implode(',', array_fill(0, count(self::INCLUDED_EXCEPTION_CIFS), '?'));
+        $segCodeCase = $this->segmentOverrideCaseSql('cb.cif', "COALESCE(s.segment_code, 'OT')");
 
         return DB::select("
             SELECT
-                COALESCE(s.segment_code, 'OT') AS segment_code,
+                {$segCodeCase} AS segment_code,
                 SUM(CASE WHEN cb.balance_date = ? THEN GREATEST(cb.lcy_balance, 0) ELSE 0 END) AS ye_balance,
                 SUM(CASE WHEN cb.balance_date = ? THEN GREATEST(cb.lcy_balance, 0) ELSE 0 END) AS m3_balance,
                 SUM(CASE WHEN cb.balance_date = ? THEN GREATEST(cb.lcy_balance, 0) ELSE 0 END) AS m2_balance,
@@ -947,12 +989,14 @@ class WeeklySegmentReportService
                         AND (cb.cr_gl IS NULL OR cb.cr_gl <> ?)
                     )
               )
-            GROUP BY COALESCE(s.segment_code, 'OT')
+            GROUP BY {$segCodeCase}
         ", array_merge(
+            $this->segmentOverrideBindings('segment_code'),
             [$ye, $m3, $m2, $m1, $w1Start, $w1End],
             $dates,
             self::INCLUDED_EXCEPTION_CIFS,
-            [self::EXCLUDED_CR_GL]
+            [self::EXCLUDED_CR_GL],
+            $this->segmentOverrideBindings('segment_code')
         ));
     }
 
@@ -976,11 +1020,13 @@ class WeeklySegmentReportService
         $dates       = array_values(array_unique([$ye, $m3, $m2, $m1, $w1Start, $w1End]));
         $datePh      = implode(',', array_fill(0, count($dates), '?'));
         $exceptionPh = implode(',', array_fill(0, count(self::INCLUDED_EXCEPTION_CIFS), '?'));
+        $segCodeCase = $this->segmentOverrideCaseSql('cb.cif', "COALESCE(cai.segment_code, 'OT')");
+        $subSegCase  = $this->segmentOverrideCaseSql('cb.cif', "COALESCE(cai.sub_segment_name, 'Unmapped')");
 
         return DB::select("
             SELECT
-                COALESCE(cai.segment_code, 'OT') AS segment_code,
-                COALESCE(cai.sub_segment_name, 'Unmapped') AS sub_segment_name,
+                {$segCodeCase} AS segment_code,
+                {$subSegCase} AS sub_segment_name,
                 SUM(CASE WHEN cb.balance_date = ? THEN GREATEST(cb.lcy_balance, 0) ELSE 0 END) AS ye_balance,
                 SUM(CASE WHEN cb.balance_date = ? THEN GREATEST(cb.lcy_balance, 0) ELSE 0 END) AS m3_balance,
                 SUM(CASE WHEN cb.balance_date = ? THEN GREATEST(cb.lcy_balance, 0) ELSE 0 END) AS m2_balance,
@@ -1053,13 +1099,17 @@ class WeeklySegmentReportService
                     )
               )
             GROUP BY
-                COALESCE(cai.segment_code, 'OT'),
-                COALESCE(cai.sub_segment_name, 'Unmapped')
+                {$segCodeCase},
+                {$subSegCase}
         ", array_merge(
+            $this->segmentOverrideBindings('segment_code'),
+            $this->segmentOverrideBindings('sub_segment_name'),
             [$ye, $m3, $m2, $m1, $w1Start, $w1End],
             $dates,
             self::INCLUDED_EXCEPTION_CIFS,
-            [self::EXCLUDED_CR_GL]
+            [self::EXCLUDED_CR_GL],
+            $this->segmentOverrideBindings('segment_code'),
+            $this->segmentOverrideBindings('sub_segment_name')
         ));
     }
 }

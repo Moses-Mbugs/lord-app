@@ -35,6 +35,28 @@ class TopMoversService
         '470130430',
     ];
 
+    // Forces this CIF into Corporate (CB) regardless of its actual etibiseg2 classification
+    // (or lack of one). Matches CIF_SEGMENT_OVERRIDES in WeeklySegmentReportService.
+    private const CIF_SEGMENT_OVERRIDES = [
+        '470130430' => 'CB',
+    ];
+
+    private function segmentOverrideCaseSql(string $cifColumn, string $fallbackExpr): string
+    {
+        $whens = implode(' ', array_fill(0, count(self::CIF_SEGMENT_OVERRIDES), "WHEN {$cifColumn} = ? THEN ?"));
+        return "CASE {$whens} ELSE {$fallbackExpr} END";
+    }
+
+    private function segmentOverrideBindings(): array
+    {
+        $bindings = [];
+        foreach (self::CIF_SEGMENT_OVERRIDES as $cif => $code) {
+            $bindings[] = $cif;
+            $bindings[] = $code;
+        }
+        return $bindings;
+    }
+
     /**
      * Build top movers between two dates.
      *
@@ -320,10 +342,11 @@ class TopMoversService
     private function fetchSegmentLcyFcyBreakdown(string $start, string $end): Collection
     {
         $exceptionPh = implode(',', array_fill(0, count(self::INCLUDED_EXCEPTION_CIFS), '?'));
+        $segCodeCase = $this->segmentOverrideCaseSql('cb.cif', "COALESCE(s.segment_code, 'OT')");
 
         $rows = DB::select("
             SELECT
-                COALESCE(s.segment_code, 'OT') AS segment_code,
+                {$segCodeCase} AS segment_code,
                 SUM(CASE WHEN cb.balance_date = ? AND UPPER(TRIM(cb.currency)) = 'KES'  THEN GREATEST(cb.lcy_balance, 0) ELSE 0 END) AS lcy_start,
                 SUM(CASE WHEN cb.balance_date = ? AND UPPER(TRIM(cb.currency)) = 'KES'  THEN GREATEST(cb.lcy_balance, 0) ELSE 0 END) AS lcy_end,
                 SUM(CASE WHEN cb.balance_date = ? AND UPPER(TRIM(cb.currency)) != 'KES' THEN GREATEST(cb.lcy_balance, 0) ELSE 0 END) AS fcy_start,
@@ -355,11 +378,13 @@ class TopMoversService
                     cb.cif IN ({$exceptionPh})
                     OR (UPPER(TRIM(cb.branch_code)) != 'P50' AND (cb.cr_gl IS NULL OR cb.cr_gl != ?))
               )
-            GROUP BY COALESCE(s.segment_code, 'OT')
+            GROUP BY {$segCodeCase}
         ", array_merge(
+            $this->segmentOverrideBindings(),
             [$start, $end, $start, $end, $start, $end],
             self::INCLUDED_EXCEPTION_CIFS,
-            [self::EXCLUDED_CR_GL]
+            [self::EXCLUDED_CR_GL],
+            $this->segmentOverrideBindings()
         ));
 
         return collect($rows)
