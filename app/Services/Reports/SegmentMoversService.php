@@ -150,7 +150,7 @@ class SegmentMoversService
                 GROUP BY x.cif
             ) s ON s.cif = m.cif
 
-            GROUP BY segment_code
+            GROUP BY 1
         ", array_merge(
             $this->segmentOverrideBindings(),
             [

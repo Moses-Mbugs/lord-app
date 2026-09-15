@@ -378,7 +378,7 @@ class TopMoversService
                     cb.cif IN ({$exceptionPh})
                     OR (UPPER(TRIM(cb.branch_code)) != 'P50' AND (cb.cr_gl IS NULL OR cb.cr_gl != ?))
               )
-            GROUP BY segment_code
+            GROUP BY 1
         ", array_merge(
             $this->segmentOverrideBindings(),
             [$start, $end, $start, $end, $start, $end],
