@@ -588,14 +588,13 @@ class WeeklySegmentReportService
                         AND (cb.cr_gl IS NULL OR cb.cr_gl <> ?)
                     )
               )
-            GROUP BY {$segCodeCase}
+            GROUP BY 1
         ", array_merge(
             $this->segmentOverrideBindings('segment_code'),
             [$weekStart, $weekEnd, $mtdStart, $ytdStart],
             $dates,
             self::INCLUDED_EXCEPTION_CIFS,
-            [self::EXCLUDED_CR_GL],
-            $this->segmentOverrideBindings('segment_code')
+            [self::EXCLUDED_CR_GL]
         ));
     }
 
@@ -687,18 +686,14 @@ class WeeklySegmentReportService
                         AND (cb.cr_gl IS NULL OR cb.cr_gl <> ?)
                     )
               )
-            GROUP BY
-                {$segCodeCase},
-                {$subSegCase}
+            GROUP BY 1, 2
         ", array_merge(
             $this->segmentOverrideBindings('segment_code'),
             $this->segmentOverrideBindings('sub_segment_name'),
             [$weekStart, $weekEnd, $mtdStart, $ytdStart],
             $dates,
             self::INCLUDED_EXCEPTION_CIFS,
-            [self::EXCLUDED_CR_GL],
-            $this->segmentOverrideBindings('segment_code'),
-            $this->segmentOverrideBindings('sub_segment_name')
+            [self::EXCLUDED_CR_GL]
         ));
     }
 
@@ -989,14 +984,13 @@ class WeeklySegmentReportService
                         AND (cb.cr_gl IS NULL OR cb.cr_gl <> ?)
                     )
               )
-            GROUP BY {$segCodeCase}
+            GROUP BY 1
         ", array_merge(
             $this->segmentOverrideBindings('segment_code'),
             [$ye, $m3, $m2, $m1, $w1Start, $w1End],
             $dates,
             self::INCLUDED_EXCEPTION_CIFS,
-            [self::EXCLUDED_CR_GL],
-            $this->segmentOverrideBindings('segment_code')
+            [self::EXCLUDED_CR_GL]
         ));
     }
 
@@ -1098,18 +1092,14 @@ class WeeklySegmentReportService
                         AND (cb.cr_gl IS NULL OR cb.cr_gl <> ?)
                     )
               )
-            GROUP BY
-                {$segCodeCase},
-                {$subSegCase}
+            GROUP BY 1, 2
         ", array_merge(
             $this->segmentOverrideBindings('segment_code'),
             $this->segmentOverrideBindings('sub_segment_name'),
             [$ye, $m3, $m2, $m1, $w1Start, $w1End],
             $dates,
             self::INCLUDED_EXCEPTION_CIFS,
-            [self::EXCLUDED_CR_GL],
-            $this->segmentOverrideBindings('segment_code'),
-            $this->segmentOverrideBindings('sub_segment_name')
+            [self::EXCLUDED_CR_GL]
         ));
     }
 }
