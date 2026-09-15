@@ -150,7 +150,7 @@ class SegmentMoversService
                 GROUP BY x.cif
             ) s ON s.cif = m.cif
 
-            GROUP BY {$segCodeCase}
+            GROUP BY segment_code
         ", array_merge(
             $this->segmentOverrideBindings(),
             [
@@ -162,8 +162,7 @@ class SegmentMoversService
             self::INCLUDED_EXCEPTION_CIFS,
             [
                 self::EXCLUDED_CR_GL,
-            ],
-            $this->segmentOverrideBindings()
+            ]
         ));
 
         if (empty($segmentRows)) {
