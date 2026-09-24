@@ -173,7 +173,14 @@ return [
             // 'ALLEKE-DEVSupport@ecobank.com',
             ],
 
+        // Test phase — sending to mmuigai@ecobank.com only. Expand once validated.
+        'rm_movers_to' => [
+            'mmuigai@ecobank.com',
+        ],
 
+        'rm_movers_cc' => [
+            // 'ALLEKE-ICT@ecobank.com',
+        ],
 
     ],
 
@@ -816,3 +823,30 @@ return [
 //       )
 // GROUP BY cb.cif
 // ORDER BY movement DESC;
+
+
+
+
+
+// query to get account details with segment and sub-segment for accounts opened in 2026
+// SELECT
+//     cai.branch_code,
+//     cai.f12_cif                                                    AS cif,
+//     cai.f12_ac_no                                                  AS account_number,
+//     cai.cust_ac_no,
+//     cai.ac_desc,
+//     cai.account_class,
+//     cai.acc_ofcr,
+//     cai.OFFICER_NAME,
+//     STR_TO_DATE(cai.ac_open_date, '%d-%b-%y')                      AS account_open_date,
+//     ssm.business                                                   AS segment,
+//     COALESCE(ssm.business_segment_name, ssm.business_seg_short)    AS sub_segment,
+//     cai.etibiseg2                                                  AS mis_code
+// FROM customer_accounts_imports cai
+// LEFT JOIN sub_segment_mappings ssm
+//        ON UPPER(TRIM(cai.etibiseg2)) = UPPER(TRIM(ssm.mis_code))
+// WHERE cai.f12_cif IS NOT NULL
+//   AND cai.ac_open_date IS NOT NULL
+//   AND TRIM(cai.ac_open_date) <> ''
+//   AND STR_TO_DATE(cai.ac_open_date, '%d-%b-%y') BETWEEN '2026-01-01' AND '2026-12-31'
+// ORDER BY cai.branch_code, account_open_date;
