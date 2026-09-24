@@ -111,30 +111,43 @@ class EmailRmMoversCommand extends Command
             $this->line("⚠ Fallback applied: using {$effectiveStart} → {$end} (requested was {$requestedStart} → {$end})");
         }
 
+        $loanData     = $this->fetchRmLoanData($effectiveStart, $end, $rmCodes);
+        $accountData  = $this->fetchAccountSnapshot($rmCodes);
+
         // Fill in every RM in the requested list with a zero row when it has no movement
         // (e.g. a brand new RM with no balances yet), keyed by rm_code -> known name (or the code itself).
         $rmRows = collect($rmCodes)
             ->mapWithKeys(fn ($code) => [$code => self::DEFAULT_RM_CODES[$code] ?? $code])
-            ->map(function ($name, $code) use ($rows) {
-                $row = $rows->get($code);
+            ->map(function ($name, $code) use ($rows, $loanData, $accountData) {
+                $row     = $rows->get($code);
+                $loan    = $loanData[$code] ?? ['open' => 0.0, 'close' => 0.0];
+                $account = $accountData[$code] ?? null;
 
                 return (object) [
-                    'rm_code'       => $code,
-                    'rm_name'       => $name,
-                    'start_balance' => $row ? (float) $row->start_balance : 0.0,
-                    'end_balance'   => $row ? (float) $row->end_balance : 0.0,
-                    'movement'      => $row ? (float) $row->movement : 0.0,
-                    'cif_count'     => $row ? (int) $row->cif_count : 0,
+                    'rm_code'         => $code,
+                    'rm_name'         => $name,
+                    'start_balance'   => $row ? (float) $row->start_balance : 0.0,
+                    'end_balance'     => $row ? (float) $row->end_balance : 0.0,
+                    'movement'        => $row ? (float) $row->movement : 0.0,
+                    'cif_count'       => $account ? (int) $account->total_customers : ($row ? (int) $row->cif_count : 0),
+                    'total_accounts'  => $account ? (int) $account->total_accounts : 0,
+                    'loan_open'       => (float) $loan['open'],
+                    'loan_close'      => (float) $loan['close'],
+                    'loan_movement'   => round((float) $loan['close'] - (float) $loan['open'], 2),
                 ];
             })
             ->sortBy('rm_name')
             ->values();
 
         $totals = (object) [
-            'start_balance' => (float) $rmRows->sum('start_balance'),
-            'end_balance'   => (float) $rmRows->sum('end_balance'),
-            'movement'      => (float) $rmRows->sum('movement'),
-            'cif_count'     => (int) $rmRows->sum('cif_count'),
+            'start_balance'  => (float) $rmRows->sum('start_balance'),
+            'end_balance'    => (float) $rmRows->sum('end_balance'),
+            'movement'       => (float) $rmRows->sum('movement'),
+            'cif_count'      => (int) $rmRows->sum('cif_count'),
+            'total_accounts' => (int) $rmRows->sum('total_accounts'),
+            'loan_open'      => (float) $rmRows->sum('loan_open'),
+            'loan_close'     => (float) $rmRows->sum('loan_close'),
+            'loan_movement'  => (float) $rmRows->sum('loan_movement'),
         ];
 
         $drilldown = $service->drilldownByRmCodes($effectiveStart, $end, $rmCodes, $drilldownLimit);
@@ -166,6 +179,107 @@ class EmailRmMoversCommand extends Command
             ->whereIn('rm_code', $rmCodes)
             ->get()
             ->keyBy(fn ($r) => strtoupper(trim((string) $r->rm_code)));
+    }
+
+    /**
+     * Performing loan book per RM (open / close), using nearest available as_at_date
+     * on or before each period date. Mirrors EmailBranchMoversCommand::fetchBranchLoanData,
+     * grouped by rm_officer instead of branch and scoped to the given RM codes.
+     *
+     * @return array<string, array{open: float, close: float}>
+     */
+    private function fetchRmLoanData(string $start, string $end, array $rmCodes): array
+    {
+        if (empty($rmCodes)) {
+            return [];
+        }
+
+        $loanStartDate = DB::table('loan_listings')
+            ->whereNotNull('as_at_date')->whereDate('as_at_date', '<=', $start)->max('as_at_date');
+        $loanEndDate = DB::table('loan_listings')
+            ->whereNotNull('as_at_date')->whereDate('as_at_date', '<=', $end)->max('as_at_date');
+
+        if (!$loanStartDate || !$loanEndDate || $loanStartDate === $loanEndDate) {
+            $latest = DB::table('loan_listings')
+                ->whereNotNull('as_at_date')
+                ->select(DB::raw('DATE(as_at_date) AS snap_date'))
+                ->distinct()
+                ->orderByDesc('snap_date')
+                ->limit(2)
+                ->pluck('snap_date');
+
+            if ($latest->count() < 2) {
+                return [];
+            }
+
+            $loanEndDate   = $latest->first();
+            $loanStartDate = $latest->last();
+        }
+
+        $dates = array_values(array_unique(array_filter([$loanStartDate, $loanEndDate])));
+
+        $rows = DB::table('loan_listings as ll')
+            ->joinSub(
+                DB::table('loan_listings')
+                    ->whereIn(DB::raw('DATE(as_at_date)'), $dates)
+                    ->whereRaw("UPPER(TRIM(COALESCE(business_segment,''))) != 'CORPORATE'")
+                    ->whereRaw("(TRIM(COALESCE(loan_status, '')) = '' OR loan_status IN ('NORM', 'Normal', 'OAEM', 'SUBS', 'Watch'))")
+                    ->whereIn('rm_officer', $rmCodes)
+                    ->select(DB::raw('DATE(as_at_date) AS snap_date'), 'related_account', DB::raw('MAX(id) AS max_id'))
+                    ->groupBy(DB::raw('DATE(as_at_date)'), 'related_account'),
+                'dedup',
+                'll.id',
+                '=',
+                'dedup.max_id'
+            )
+            ->selectRaw(
+                "ll.rm_officer AS rm_code,
+                 SUM(CASE WHEN DATE(ll.as_at_date) = ? THEN ll.loan_book_outstanding ELSE 0 END) AS loan_open,
+                 SUM(CASE WHEN DATE(ll.as_at_date) = ? THEN ll.loan_book_outstanding ELSE 0 END) AS loan_close",
+                [$loanStartDate, $loanEndDate]
+            )
+            ->groupBy('ll.rm_officer')
+            ->get();
+
+        $result = [];
+        foreach ($rows as $r) {
+            $code = strtoupper(trim((string) $r->rm_code));
+            if ($code === '') continue;
+            $result[$code] = ['open' => (float) $r->loan_open, 'close' => (float) $r->loan_close];
+        }
+
+        return $result;
+    }
+
+    /**
+     * Current portfolio snapshot per RM: distinct customers (CIF) and total accounts managed,
+     * from customer_accounts_imports.acc_ofcr. Not date-scoped — this table reflects the
+     * latest import, same convention as BuildRmWorkloadCommand's customer count.
+     *
+     * @return array<string, object{total_customers:int, total_accounts:int}>
+     */
+    private function fetchAccountSnapshot(array $rmCodes): array
+    {
+        if (empty($rmCodes)) {
+            return [];
+        }
+
+        return DB::table('customer_accounts_imports')
+            ->selectRaw("
+                UPPER(TRIM(acc_ofcr)) AS rm_code,
+                COUNT(DISTINCT TRIM(f12_cif)) AS total_customers,
+                COUNT(*) AS total_accounts
+            ")
+            ->whereNotNull('acc_ofcr')
+            ->whereRaw("TRIM(acc_ofcr) <> ''")
+            ->whereRaw(
+                'UPPER(TRIM(acc_ofcr)) IN (' . implode(',', array_fill(0, count($rmCodes), '?')) . ')',
+                $rmCodes
+            )
+            ->groupBy(DB::raw('UPPER(TRIM(acc_ofcr))'))
+            ->get()
+            ->keyBy(fn ($r) => strtoupper(trim((string) $r->rm_code)))
+            ->all();
     }
 
     private function resolveRmCodes(): array
