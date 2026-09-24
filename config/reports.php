@@ -188,7 +188,7 @@ return [
         // Falls back to rm_movers_to/_cc above if left empty, same convention as
         // weekly_branch_movers_to/_cc falling back to branch_movers_to/_cc.
         'weekly_rm_movers_to' => [
-            // 'mmuigai@ecobank.com',
+            'mmuigai@ecobank.com',
         ],
 
         'weekly_rm_movers_cc' => [
