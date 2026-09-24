@@ -189,8 +189,8 @@ return [
         // weekly_branch_movers_to/_cc falling back to branch_movers_to/_cc.
         'weekly_rm_movers_to' => [
             'mmuigai@ecobank.com',
-            // 'MWANJIRU@ecobank.com',
-            // 'hobiero@ecobank.com',
+            'MWANJIRU@ecobank.com',
+            'hobiero@ecobank.com',
         ],
 
         'weekly_rm_movers_cc' => [
