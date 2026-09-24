@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Console\Commands\Finance;
 
+use App\Exports\Finance\WeeklyRmMoversWorkbookExport;
 use App\Mail\WeeklyRmMoversReportMail;
 use App\Services\Reports\RmMoversService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Maatwebsite\Excel\Excel as ExcelWriter;
+use Maatwebsite\Excel\Facades\Excel;
 
 class EmailWeeklyRmMoversCommand extends Command
 {
@@ -160,9 +163,23 @@ class EmailWeeklyRmMoversCommand extends Command
 
         $mailable = new WeeklyRmMoversReportMail($weekEnd, $periods, $data, $limit);
 
+        $weekPeriod = $periods['week'];
+        $groupedDrilldown = $service->drilldownGroupedByRmCodes($weekPeriod['start'], $weekPeriod['end'], $rmCodes, $limit);
+
+        $excelName = "Weekly_RM_Movers_{$weekEnd}.xlsx";
+        $excelBinary = Excel::raw(
+            new WeeklyRmMoversWorkbookExport($weekEnd, $periods, $data, $rmCodes, self::portfolioNames(), $groupedDrilldown),
+            ExcelWriter::XLSX
+        );
+        $mailable->attachData(
+            $excelBinary,
+            $excelName,
+            ['mime' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
+        );
+
         Mail::to($to)->cc($cc)->send($mailable);
 
-        $this->info('Weekly RM movers email sent.');
+        $this->info('Weekly RM movers email sent (with Excel attachment).');
         $this->line('TO: ' . implode(', ', $to));
         $this->line('CC: ' . (empty($cc) ? '(none)' : implode(', ', $cc)));
         $this->line('RMs: ' . count($rmCodes));

@@ -47,6 +47,7 @@
 
     $depWtd          = (float) ($weekAll->movement    ?? 0);
     $depMtd          = (float) ($mtdAll->movement     ?? 0);
+    $depYtd          = (float) ($ytdAll->movement     ?? 0);
     $depClosingTotal = (float) ($weekAll->end_balance ?? 0);
 
     $ntbWtd = (int) ($weekAll->ntb_count ?? 0);
@@ -56,6 +57,7 @@
     $kpis = [
         ['label' => 'Deposits WTD',   'kind' => 'movement', 'value' => $depWtd,          'sub' => $fmtShort($weekStart) . ' → ' . $fmtShort($weekEnd)],
         ['label' => 'Deposits MTD',   'kind' => 'movement', 'value' => $depMtd,          'sub' => 'from ' . $fmtDate($mtdStart)],
+        ['label' => 'Deposits YTD',   'kind' => 'movement', 'value' => $depYtd,          'sub' => 'from ' . $fmtDate($ytdStart)],
         ['label' => 'Total Deposits', 'kind' => 'balance',  'value' => $depClosingTotal, 'sub' => 'as at ' . $fmtDate($weekEnd)],
         ['label' => 'NTB WTD',        'kind' => 'count',    'value' => $ntbWtd,          'sub' => $fmtShort($weekStart) . ' → ' . $fmtShort($weekEnd)],
         ['label' => 'NTB MTD',        'kind' => 'count',    'value' => $ntbMtd,          'sub' => 'from ' . $fmtDate($mtdStart)],
@@ -64,7 +66,7 @@
 
     $emptyRmRow = fn($code, $name) => [
         'code' => $code, 'name' => $name,
-        'dep_week' => 0, 'dep_mtd' => 0, 'dep_balance' => 0,
+        'dep_week' => 0, 'dep_mtd' => 0, 'dep_ytd' => 0, 'dep_balance' => 0,
         'loan_week' => 0, 'loan_mtd' => 0, 'loan_balance' => 0,
         'ntb_week' => 0, 'ntb_mtd' => 0, 'ntb_ytd' => 0,
     ];
@@ -94,6 +96,7 @@
         if (!isset($rmMap[$code])) {
             $rmMap[$code] = $emptyRmRow($code, (string) $r->rm_name);
         }
+        $rmMap[$code]['dep_ytd'] = (float) $r->movement;
         $rmMap[$code]['ntb_ytd'] = (int) $r->ntb_count;
     }
 
@@ -112,7 +115,8 @@
         $rmMap['ALL']['ntb_mtd']  = (int) ($mtdAll->ntb_count       ?? 0);
     }
     if ($ytdAll) {
-        $rmMap['ALL']['ntb_ytd'] = (int) ($ytdAll->ntb_count ?? 0);
+        $rmMap['ALL']['dep_ytd'] = (float) ($ytdAll->movement  ?? 0);
+        $rmMap['ALL']['ntb_ytd'] = (int) ($ytdAll->ntb_count   ?? 0);
     }
 
     // Sort by RM name, Total pinned last.
@@ -233,14 +237,14 @@
 
   <div style="overflow-x:auto;">
   <table width="100%" cellpadding="0" cellspacing="0"
-    style="width:100%;min-width:820px;border-collapse:separate;border-spacing:0;font-size:11px;border:1px solid #E2E8F0;border-radius:10px;overflow:hidden;background:#ffffff;mso-table-lspace:0pt;mso-table-rspace:0pt;">
+    style="width:100%;min-width:900px;border-collapse:separate;border-spacing:0;font-size:11px;border:1px solid #E2E8F0;border-radius:10px;overflow:hidden;background:#ffffff;mso-table-lspace:0pt;mso-table-rspace:0pt;">
     <thead>
       <tr>
         <th rowspan="2"
           style="padding:7px 10px;background:#F1F5F9;border-bottom:2px solid #CBD5E1;text-align:left;font-size:9px;font-weight:900;color:#475569;text-transform:uppercase;letter-spacing:0.7px;white-space:nowrap;border-right:1px solid #CBD5E1;width:20%;">
           RM
         </th>
-        <th colspan="3"
+        <th colspan="4"
           style="padding:6px 10px;background:#EFF6FF;border-bottom:1px solid #BFDBFE;text-align:center;font-size:9px;font-weight:900;color:#1D4ED8;text-transform:uppercase;letter-spacing:0.7px;border-right:2px solid #BFDBFE;">
           Deposits
         </th>
@@ -259,6 +263,9 @@
         </th>
         <th style="padding:6px 10px;background:#EFF6FF;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#1D4ED8;text-transform:uppercase;letter-spacing:0.6px;white-space:nowrap;">
           MTD Δ
+        </th>
+        <th style="padding:6px 10px;background:#EFF6FF;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#1D4ED8;text-transform:uppercase;letter-spacing:0.6px;white-space:nowrap;">
+          YTD Δ
         </th>
         <th style="padding:6px 10px;background:#EFF6FF;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#1D4ED8;text-transform:uppercase;letter-spacing:0.6px;white-space:nowrap;border-right:2px solid #BFDBFE;">
           Closing Bal
@@ -294,6 +301,7 @@
 
           $depWk   = (float) ($r['dep_week']    ?? 0);
           $depMtd  = (float) ($r['dep_mtd']     ?? 0);
+          $depYtd  = (float) ($r['dep_ytd']     ?? 0);
           $depBal  = (float) ($r['dep_balance'] ?? 0);
           $loanWk  = (float) ($r['loan_week']    ?? 0);
           $loanMtd = (float) ($r['loan_mtd']     ?? 0);
@@ -339,6 +347,9 @@
           </td>
           <td style="padding:7px 10px;border-bottom:{{ $border }};text-align:right;">
             <span style="{{ $mvStyle($depMtd) }}">{{ $fmtMv($depMtd) }}</span>
+          </td>
+          <td style="padding:7px 10px;border-bottom:{{ $border }};text-align:right;">
+            <span style="{{ $mvStyle($depYtd) }}">{{ $fmtMv($depYtd) }}</span>
           </td>
           <td style="padding:7px 10px;border-bottom:{{ $border }};text-align:right;border-right:2px solid #BFDBFE;font-family:ui-monospace,'Courier New',monospace;font-weight:700;color:#374151;">
             {{ $fmtBal($depBal) }}
@@ -486,7 +497,7 @@
     Deposits/Loans Δ = <span style="background:rgba(0,0,0,0.06);padding:2px 5px;border-radius:4px;font-family:ui-monospace,'Courier New',monospace;font-size:10px;">end_balance − start_balance</span> for each period; Closing Bal is the balance as at {{ $fmtDate($weekEnd) }}.
     MTD is measured from the last day of the previous month; YTD from 31 Dec of the previous year.
     NTB = distinct CIFs with a new account opened in that period, attributed to the RM on that account.
-    Performing Loans excludes Corporate segment; deduped per account per snapshot. Deposits and Loans are tracked WTD/MTD only (no YTD); NTB is tracked WTD/MTD/YTD.
+    Performing Loans excludes Corporate segment; deduped per account per snapshot. Deposits and NTB are tracked WTD/MTD/YTD; Loans are tracked WTD/MTD only (no YTD).
     P50 branch and GL 216220001 excluded from deposits, matching the daily RM Movers report. This report is scoped to a fixed RM portfolio list.
   </div>
 

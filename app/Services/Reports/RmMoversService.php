@@ -178,6 +178,85 @@ class RmMoversService
         ];
     }
 
+    /**
+     * Top N customer gainers/losers per RM (not merged across RMs like drilldownByRmCodes),
+     * for the Excel "per RM" breakdown — e.g. reports:email-rm-movers / -weekly-rm-movers.
+     *
+     * @return array<string, array{gainers: array, losers: array}> keyed by rm_code
+     */
+    public function drilldownGroupedByRmCodes(
+        string $start,
+        string $end,
+        array $rmCodes,
+        int $limit = 10
+    ): array {
+        $startDate = Carbon::parse($start)->toDateString();
+        $endDate   = Carbon::parse($end)->toDateString();
+
+        $this->guardTables();
+
+        $rmCodes = collect($rmCodes)
+            ->map(fn ($c) => strtoupper(trim((string) $c)))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($rmCodes)) {
+            return [];
+        }
+
+        $limit = max(1, min($limit, 1000));
+
+        $balanceSub = $this->balanceSubquery($startDate, $endDate);
+        $rmSub      = $this->rmSubquery();
+
+        $rows = DB::query()
+            ->fromSub($balanceSub, 'b')
+            ->joinSub($rmSub, 'rm', 'rm.cif', '=', 'b.cif')
+            ->select('b.cif', 'rm.rm_code', 'b.start_balance', 'b.end_balance')
+            ->whereIn('rm.rm_code', $rmCodes)
+            ->get();
+
+        $names = $this->customerNamesByCif(
+            $rows->pluck('cif')->map(fn ($c) => (string) $c)->all()
+        );
+
+        $byRm = $rows
+            ->map(function ($row) use ($names) {
+                $cif = (string) $row->cif;
+                $sb  = (float) $row->start_balance;
+                $eb  = (float) $row->end_balance;
+
+                return [
+                    'cif'           => $cif,
+                    'customer_name' => $names[$cif] ?? $cif,
+                    'rm_code'       => (string) $row->rm_code,
+                    'start_balance' => round($sb, 2),
+                    'end_balance'   => round($eb, 2),
+                    'movement'      => round($eb - $sb, 2),
+                ];
+            })
+            ->filter(fn ($r) => $r['movement'] != 0)
+            ->groupBy('rm_code');
+
+        $result = [];
+        foreach ($rmCodes as $code) {
+            $items = collect($byRm->get($code, []));
+
+            $result[$code] = [
+                'gainers' => $items->filter(fn ($r) => $r['movement'] > 0)
+                    ->sortByDesc(fn ($r) => $r['movement'])
+                    ->take($limit)->values()->all(),
+                'losers' => $items->filter(fn ($r) => $r['movement'] < 0)
+                    ->sortBy(fn ($r) => $r['movement'])
+                    ->take($limit)->values()->all(),
+            ];
+        }
+
+        return $result;
+    }
+
     private function fetchCifDrivers(
         string $startDate,
         string $endDate,

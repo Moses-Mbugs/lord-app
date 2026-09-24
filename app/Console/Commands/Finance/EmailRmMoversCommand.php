@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Console\Commands\Finance;
 
+use App\Exports\Finance\RmMoversWorkbookExport;
 use App\Mail\RmMoversReportMail;
 use App\Services\Reports\RmMoversService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Maatwebsite\Excel\Excel as ExcelWriter;
+use Maatwebsite\Excel\Facades\Excel;
 
 class EmailRmMoversCommand extends Command
 {
@@ -157,6 +160,7 @@ class EmailRmMoversCommand extends Command
         ];
 
         $drilldown = $service->drilldownByRmCodes($effectiveStart, $end, $rmCodes, $drilldownLimit);
+        $groupedDrilldown = $service->drilldownGroupedByRmCodes($effectiveStart, $end, $rmCodes, $drilldownLimit);
 
         $mailable = new RmMoversReportMail(
             $effectiveStart,
@@ -167,9 +171,20 @@ class EmailRmMoversCommand extends Command
             collect($drilldown['losers'])
         );
 
+        $excelName = "RM_Movers_{$effectiveStart}_{$end}.xlsx";
+        $excelBinary = Excel::raw(
+            new RmMoversWorkbookExport($effectiveStart, $end, $rmRows, $totals, $rmCodes, self::portfolio(), $groupedDrilldown),
+            ExcelWriter::XLSX
+        );
+        $mailable->attachData(
+            $excelBinary,
+            $excelName,
+            ['mime' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
+        );
+
         Mail::to($to)->cc($cc)->send($mailable);
 
-        $this->info('RM movers email sent.');
+        $this->info('RM movers email sent (with Excel attachment).');
         $this->line('TO: ' . implode(', ', $to));
         $this->line('CC: ' . (empty($cc) ? '(none)' : implode(', ', $cc)));
         $this->line("Period: {$effectiveStart} → {$end} | RMs: " . count($rmCodes));
