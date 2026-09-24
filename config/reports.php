@@ -176,6 +176,9 @@ return [
         // Test phase — sending to mmuigai@ecobank.com only. Expand once validated.
         'rm_movers_to' => [
             'mmuigai@ecobank.com',
+            'MWANJIRU@ecobank.com',
+            'hobiero@ecobank.com',
+            // '',
         ],
 
         'rm_movers_cc' => [
