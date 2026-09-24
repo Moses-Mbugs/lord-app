@@ -73,12 +73,12 @@ class EmailWeeklyRmMoversCommand extends Command
                 'label' => 'Weekly',
             ],
             'mtd' => [
-                'start' => $weekEndDate->copy()->startOfMonth()->subDay()->toDateString(),
+                'start' => $this->resolveMtdStart($weekEnd),
                 'end'   => $weekEnd,
                 'label' => 'MTD',
             ],
             'ytd' => [
-                'start' => $weekEndDate->copy()->startOfYear()->subDay()->toDateString(),
+                'start' => $this->resolveYtdStart($weekEnd),
                 'end'   => $weekEnd,
                 'label' => 'YTD',
             ],
@@ -205,6 +205,53 @@ class EmailWeeklyRmMoversCommand extends Command
             ->max('balance_date');
 
         return $d ? Carbon::parse((string) $d)->toDateString() : $target;
+    }
+
+    /**
+     * Latest balance_date in the previous calendar month — not just calendar
+     * startOfMonth()->subDay(), which can land on a date with no snapshot
+     * (weekend/holiday) and make RmMoversService::build() throw. Mirrors
+     * WeeklySegmentReportService::findMtdStart() / WeeklyLoanReportService's equivalent.
+     */
+    private function resolveMtdStart(string $weekEnd): string
+    {
+        $prevMonthEnd = Carbon::parse($weekEnd)->startOfMonth()->subDay();
+
+        $d = DB::table('customer_balances')
+            ->whereYear('balance_date', $prevMonthEnd->year)
+            ->whereMonth('balance_date', $prevMonthEnd->month)
+            ->max('balance_date');
+
+        if ($d) return Carbon::parse((string) $d)->toDateString();
+
+        $d2 = DB::table('customer_balances')
+            ->where('balance_date', '<', Carbon::parse($weekEnd)->startOfMonth()->toDateString())
+            ->max('balance_date');
+
+        return $d2 ? Carbon::parse((string) $d2)->toDateString() : $weekEnd;
+    }
+
+    /**
+     * Latest balance_date of the previous calendar year (e.g. 2025-12-30 if 31 Dec
+     * has no snapshot). Mirrors WeeklySegmentReportService::findYtdStart() /
+     * WeeklyLoanReportService's equivalent — same fix as resolveMtdStart above.
+     */
+    private function resolveYtdStart(string $weekEnd): string
+    {
+        $yearStart = Carbon::parse($weekEnd)->startOfYear()->toDateString();
+
+        $d = DB::table('customer_balances')
+            ->where('balance_date', '<', $yearStart)
+            ->max('balance_date');
+
+        if ($d) return Carbon::parse((string) $d)->toDateString();
+
+        $d2 = DB::table('customer_balances')
+            ->where('balance_date', '>=', $yearStart)
+            ->where('balance_date', '<', $weekEnd)
+            ->min('balance_date');
+
+        return $d2 ? Carbon::parse((string) $d2)->toDateString() : $weekEnd;
     }
 
     private function findLatestBalanceDate(): ?string
