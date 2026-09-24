@@ -119,11 +119,11 @@
         $rmMap['ALL']['ntb_ytd'] = (int) ($ytdAll->ntb_count   ?? 0);
     }
 
-    // Sort by RM name, Total pinned last.
+    // Rank by WTD deposit movement (best performer first), Total pinned last.
     uasort($rmMap, function($a, $b) {
         if ($a['code'] === 'ALL') return 1;
         if ($b['code'] === 'ALL') return -1;
-        return strcmp($a['name'], $b['name']);
+        return $b['dep_week'] <=> $a['dep_week'];
     });
 
     $topGainers = $weekData['topGainers']->take(5);
@@ -229,7 +229,7 @@
         <div style="width:4px;height:18px;background:linear-gradient(180deg,#00B4D8 0%,#0077B6 100%);border-radius:2px;"></div>
       </td>
       <td style="vertical-align:middle;">
-        <span style="font-size:13px;font-weight:800;color:#0F172A;letter-spacing:-0.2px;">RM Movement Summary</span>
+        <span style="font-size:13px;font-weight:800;color:#0F172A;letter-spacing:-0.2px;">RM Movement Summary — Ranked by Weekly Performance</span>
         <span style="font-size:11px;font-weight:500;color:#94A3B8;margin-left:8px;">· KES Equivalent</span>
       </td>
     </tr>
@@ -237,11 +237,15 @@
 
   <div style="overflow-x:auto;">
   <table width="100%" cellpadding="0" cellspacing="0"
-    style="width:100%;min-width:900px;border-collapse:separate;border-spacing:0;font-size:11px;border:1px solid #E2E8F0;border-radius:10px;overflow:hidden;background:#ffffff;mso-table-lspace:0pt;mso-table-rspace:0pt;">
+    style="width:100%;min-width:940px;border-collapse:separate;border-spacing:0;font-size:11px;border:1px solid #E2E8F0;border-radius:10px;overflow:hidden;background:#ffffff;mso-table-lspace:0pt;mso-table-rspace:0pt;">
     <thead>
       <tr>
         <th rowspan="2"
-          style="padding:7px 10px;background:#F1F5F9;border-bottom:2px solid #CBD5E1;text-align:left;font-size:9px;font-weight:900;color:#475569;text-transform:uppercase;letter-spacing:0.7px;white-space:nowrap;border-right:1px solid #CBD5E1;width:20%;">
+          style="padding:7px 10px;background:#F1F5F9;border-bottom:2px solid #CBD5E1;text-align:center;font-size:9px;font-weight:900;color:#475569;text-transform:uppercase;letter-spacing:0.7px;white-space:nowrap;border-right:1px solid #CBD5E1;width:5%;">
+          Rank
+        </th>
+        <th rowspan="2"
+          style="padding:7px 10px;background:#F1F5F9;border-bottom:2px solid #CBD5E1;text-align:left;font-size:9px;font-weight:900;color:#475569;text-transform:uppercase;letter-spacing:0.7px;white-space:nowrap;border-right:1px solid #CBD5E1;width:18%;">
           RM
         </th>
         <th colspan="4"
@@ -333,6 +337,20 @@
               : 'display:inline-block;padding:3px 7px;border-radius:6px;font-weight:900;font-size:10.5px;white-space:nowrap;background:#fecaca;color:#7f1d1d;border:1px solid #fca5a5;';
         @endphp
         <tr style="background:{{ $rowBg }};">
+          <td style="padding:7px 10px;border-bottom:{{ $border }};text-align:center;border-right:1px solid #E2E8F0;">
+            @if ($isTotal)
+              <span style="color:#94A3B8;">—</span>
+            @else
+              @php
+                $medal = ['#F59E0B', '#94A3B8', '#B45309'][$loop->iteration - 1] ?? null;
+              @endphp
+              <span style="display:inline-block;min-width:20px;padding:2px 6px;border-radius:999px;font-weight:900;font-size:10.5px;
+                background:{{ $medal ? $medal : '#F1F5F9' }};
+                color:{{ $medal ? '#ffffff' : '#475569' }};">
+                {{ $loop->iteration }}
+              </span>
+            @endif
+          </td>
           <td style="padding:7px 10px;border-bottom:{{ $border }};border-right:1px solid #E2E8F0;">
             <span title="{{ $r['name'] }}" style="display:inline-block;padding:2px 8px;border-radius:999px;max-width:170px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;
               background:{{ $isTotal ? '#E2E8F0' : '#EFF6FF' }};
@@ -498,6 +516,7 @@
     MTD is measured from the last day of the previous month; YTD from 31 Dec of the previous year.
     NTB = distinct CIFs with a new account opened in that period, attributed to the RM on that account.
     Performing Loans excludes Corporate segment; deduped per account per snapshot. Deposits and NTB are tracked WTD/MTD/YTD; Loans are tracked WTD/MTD only (no YTD).
+    Rank is by Deposits WTD Δ, highest first (Total row excluded from ranking).
     P50 branch and GL 216220001 excluded from deposits, matching the daily RM Movers report. This report is scoped to a fixed RM portfolio list.
   </div>
 

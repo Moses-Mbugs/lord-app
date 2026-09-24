@@ -60,12 +60,13 @@ class WeeklyRmMoversWorkbookExport implements WithMultipleSheets
 }
 
 /**
- * SHEET 1: RM Code, RM Name, Deposits (WTD Δ/MTD Δ/YTD Δ/Closing Bal),
- * Loans (WTD Δ/MTD Δ/Closing Bal), NTB (WTD/MTD/YTD), plus a Total row.
+ * SHEET 1: Rank (by Deposits WTD Δ, best first), RM Code, RM Name,
+ * Deposits (WTD Δ/MTD Δ/YTD Δ/Closing Bal), Loans (WTD Δ/MTD Δ/Closing Bal),
+ * NTB (WTD/MTD/YTD), plus a Total row (unranked).
  */
 class WeeklyRmSummarySheet implements FromArray, WithTitle, ShouldAutoSize, WithColumnFormatting, WithEvents
 {
-    private const NUM_COLS = 12;
+    private const NUM_COLS = 13;
 
     private array $boldRows   = [];
     private int   $headerRow  = 0;
@@ -122,7 +123,8 @@ class WeeklyRmSummarySheet implements FromArray, WithTitle, ShouldAutoSize, With
             }
         }
 
-        uasort($map, fn ($a, $b) => strcmp($a['name'], $b['name']));
+        // Rank by WTD deposit movement (best performer first).
+        uasort($map, fn ($a, $b) => $b['dep_week'] <=> $a['dep_week']);
 
         $rows   = [];
         $rowNum = 0;
@@ -145,16 +147,19 @@ class WeeklyRmSummarySheet implements FromArray, WithTitle, ShouldAutoSize, With
 
         $this->headerRow = ++$rowNum;
         $rows[] = [
-            'RM Code', 'RM Name',
+            'Rank', 'RM Code', 'RM Name',
             'Deposits WTD Δ', 'Deposits MTD Δ', 'Deposits YTD Δ', 'Deposits Closing Bal',
             'Loans WTD Δ', 'Loans MTD Δ', 'Loans Closing Bal',
             'NTB WTD', 'NTB MTD', 'NTB YTD',
         ];
         $this->boldRows[] = $this->headerRow;
 
+        $rank = 0;
         foreach ($map as $r) {
             ++$rowNum;
+            ++$rank;
             $rows[] = [
+                $rank,
                 (string) $r['code'],
                 (string) $r['name'],
                 (float)  $r['dep_week'],
@@ -171,13 +176,13 @@ class WeeklyRmSummarySheet implements FromArray, WithTitle, ShouldAutoSize, With
         }
         $this->lastRmRow = $rowNum;
 
-        // Total row
+        // Total row (excluded from ranking)
         $weekAll = $weekData['all'] ?? null;
         $mtdAll  = $mtdData['all']  ?? null;
         $ytdAll  = $ytdData['all']  ?? null;
         ++$rowNum;
         $rows[] = [
-            'ALL', 'Total',
+            '', 'ALL', 'Total',
             (float) ($weekAll->movement    ?? 0),
             (float) ($mtdAll->movement     ?? 0),
             (float) ($ytdAll->movement     ?? 0),
@@ -197,16 +202,16 @@ class WeeklyRmSummarySheet implements FromArray, WithTitle, ShouldAutoSize, With
     public function columnFormats(): array
     {
         return [
-            'C' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'D' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'E' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'F' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'G' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'H' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'I' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
-            'J' => NumberFormat::FORMAT_NUMBER,
+            'J' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'K' => NumberFormat::FORMAT_NUMBER,
             'L' => NumberFormat::FORMAT_NUMBER,
+            'M' => NumberFormat::FORMAT_NUMBER,
         ];
     }
 
@@ -219,58 +224,62 @@ class WeeklyRmSummarySheet implements FromArray, WithTitle, ShouldAutoSize, With
                 $hdr     = $this->headerRow;
                 $lastRow = $sheet->getHighestRow();
 
-                $sheet->mergeCells('A1:L1');
-                $sheet->getStyle('A1:L1')->applyFromArray([
+                $sheet->mergeCells('A1:M1');
+                $sheet->getStyle('A1:M1')->applyFromArray([
                     'font'      => ['bold' => true, 'size' => 14, 'color' => ['rgb' => 'FFFFFF']],
                     'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '002E4A']],
                     'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT],
                 ]);
                 $sheet->getRowDimension(1)->setRowHeight(26);
-                $sheet->mergeCells('A2:L2');
+                $sheet->mergeCells('A2:M2');
 
                 foreach ($this->boldRows as $r) {
-                    $sheet->getStyle("A{$r}:L{$r}")->getFont()->setBold(true);
+                    $sheet->getStyle("A{$r}:M{$r}")->getFont()->setBold(true);
                 }
 
-                $sheet->getStyle("A{$hdr}:L{$hdr}")->applyFromArray([
+                $sheet->getStyle("A{$hdr}:M{$hdr}")->applyFromArray([
                     'font'      => ['bold' => true, 'size' => 11, 'color' => ['rgb' => 'FFFFFF']],
                     'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1F3A5F']],
                     'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
                 ]);
-                $sheet->getStyle("A{$hdr}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+                $sheet->getStyle("A{$hdr}:C{$hdr}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+                $sheet->getStyle("C{$hdr}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
 
-                $sheet->getStyle("C{$hdr}:F{$hdr}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1D4ED8']]]);
-                $sheet->getStyle("G{$hdr}:I{$hdr}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '166534']]]);
-                $sheet->getStyle("J{$hdr}:L{$hdr}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'B45309']]]);
+                $sheet->getStyle("D{$hdr}:G{$hdr}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1D4ED8']]]);
+                $sheet->getStyle("H{$hdr}:J{$hdr}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '166534']]]);
+                $sheet->getStyle("K{$hdr}:M{$hdr}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'B45309']]]);
 
                 if ($this->lastRmRow > $hdr) {
                     for ($row = $hdr + 1; $row <= $this->lastRmRow; $row++) {
-                        foreach (['C', 'D', 'E', 'G', 'H'] as $col) {
+                        $sheet->getStyle("A{$row}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+                        $sheet->getStyle("A{$row}")->getFont()->setBold(true);
+
+                        foreach (['D', 'E', 'F', 'H', 'I'] as $col) {
                             $v = $sheet->getCell("{$col}{$row}")->getValue();
                             if (!is_numeric($v)) continue;
                             $vf = (float) $v;
                             if ($vf > 0)     $sheet->getStyle("{$col}{$row}")->getFont()->getColor()->setRGB('0B6E4F');
                             elseif ($vf < 0) $sheet->getStyle("{$col}{$row}")->getFont()->getColor()->setRGB('B00020');
                         }
-                        $sheet->getStyle("C{$row}:F{$row}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'EFF6FF']]]);
-                        $sheet->getStyle("G{$row}:I{$row}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F0FDF4']]]);
-                        $sheet->getStyle("J{$row}:L{$row}")->applyFromArray([
+                        $sheet->getStyle("D{$row}:G{$row}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'EFF6FF']]]);
+                        $sheet->getStyle("H{$row}:J{$row}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F0FDF4']]]);
+                        $sheet->getStyle("K{$row}:M{$row}")->applyFromArray([
                             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FFFBEB']],
                             'font' => ['color' => ['rgb' => '92400E']],
                         ]);
-                        $sheet->getStyle("F{$row}")->getFont()->getColor()->setRGB('374151');
-                        $sheet->getStyle("I{$row}")->getFont()->getColor()->setRGB('374151');
+                        $sheet->getStyle("G{$row}")->getFont()->getColor()->setRGB('374151');
+                        $sheet->getStyle("J{$row}")->getFont()->getColor()->setRGB('374151');
                     }
                 }
 
                 // Total row (last data row)
-                $sheet->getStyle("A{$lastRow}:L{$lastRow}")->applyFromArray([
+                $sheet->getStyle("A{$lastRow}:M{$lastRow}")->applyFromArray([
                     'font' => ['bold' => true, 'size' => 11],
                     'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'E2E8F0']],
                 ]);
 
                 if ($lastRow > $hdr) {
-                    $sheet->getStyle("A{$hdr}:L{$lastRow}")->getBorders()->getAllBorders()
+                    $sheet->getStyle("A{$hdr}:M{$lastRow}")->getBorders()->getAllBorders()
                         ->setBorderStyle(Border::BORDER_HAIR)->getColor()->setRGB('E2E8F0');
                 }
 
