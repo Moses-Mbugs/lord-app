@@ -25,11 +25,11 @@ class EmailRmMoversCommand extends Command
     protected $description = 'Email RM Movers report (deposit movement) for a fixed portfolio of RM sales codes, reading/building from rm_movers.';
 
     /**
-     * The RM portfolio this report is currently scoped to.
-     * Excludes James Kivinda Kinanga (KE1222) and Jane Nyawira (KE1296) — left the bank.
-     * Includes Joan Sang (KE1343) — new RM.
+     * Fallback RM portfolio, used only if config('reports.balances.rm_portfolio') is empty.
+     * The config array is the source of truth shared with EmailWeeklyRmMoversCommand —
+     * update it there when RMs join/leave, not here.
      */
-    private const DEFAULT_RM_CODES = [
+    public const DEFAULT_RM_CODES = [
         'KE0827' => 'Veronica Nasieku Lalarari',
         'KE1228' => 'James Chisakane Odera',
         'KE0539' => 'Lucy Kamede Lidahuli',
@@ -48,6 +48,12 @@ class EmailRmMoversCommand extends Command
         'KE1229' => 'Erick Ochieng Ouma',
         'KE1343' => 'Joan Sang',
     ];
+
+    public static function portfolio(): array
+    {
+        $configured = config('reports.balances.rm_portfolio', []);
+        return !empty($configured) ? $configured : self::DEFAULT_RM_CODES;
+    }
 
     public function handle(RmMoversService $service): int
     {
@@ -117,7 +123,7 @@ class EmailRmMoversCommand extends Command
         // Fill in every RM in the requested list with a zero row when it has no movement
         // (e.g. a brand new RM with no balances yet), keyed by rm_code -> known name (or the code itself).
         $rmRows = collect($rmCodes)
-            ->mapWithKeys(fn ($code) => [$code => self::DEFAULT_RM_CODES[$code] ?? $code])
+            ->mapWithKeys(fn ($code) => [$code => self::portfolio()[$code] ?? $code])
             ->map(function ($name, $code) use ($rows, $loanData, $accountData) {
                 $row     = $rows->get($code);
                 $loan    = $loanData[$code] ?? ['open' => 0.0, 'close' => 0.0];
@@ -287,7 +293,7 @@ class EmailRmMoversCommand extends Command
         $opt = (string) ($this->option('rms') ?? '');
 
         if (trim($opt) === '') {
-            return array_keys(self::DEFAULT_RM_CODES);
+            return array_keys(self::portfolio());
         }
 
         return collect(preg_split('/[,\s;]+/', $opt) ?: [])

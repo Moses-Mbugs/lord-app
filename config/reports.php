@@ -176,13 +176,47 @@ return [
         // Test phase — sending to mmuigai@ecobank.com only. Expand once validated.
         'rm_movers_to' => [
             'mmuigai@ecobank.com',
-            'MWANJIRU@ecobank.com',
-            'hobiero@ecobank.com',
+            // 'MWANJIRU@ecobank.com',
+            // 'hobiero@ecobank.com',
             // '',
         ],
 
         'rm_movers_cc' => [
             // 'ALLEKE-ICT@ecobank.com',
+        ],
+
+        // Falls back to rm_movers_to/_cc above if left empty, same convention as
+        // weekly_branch_movers_to/_cc falling back to branch_movers_to/_cc.
+        'weekly_rm_movers_to' => [
+            // 'mmuigai@ecobank.com',
+        ],
+
+        'weekly_rm_movers_cc' => [
+            // 'ALLEKE-ICT@ecobank.com',
+        ],
+
+        // Fixed RM portfolio tracked by reports:email-rm-movers and reports:email-weekly-rm-movers.
+        // Single source of truth for both commands — update here only when RMs join/leave.
+        // Excludes James Kivinda Kinanga (KE1222) and Jane Nyawira (KE1296) — left the bank.
+        // Includes Joan Sang (KE1343) — new RM.
+        'rm_portfolio' => [
+            'KE0827' => 'Veronica Nasieku Lalarari',
+            'KE1228' => 'James Chisakane Odera',
+            'KE0539' => 'Lucy Kamede Lidahuli',
+            'KE1189' => 'Edward Mwenda',
+            'KE1330' => 'Jenipher Dola',
+            'KE1285' => "Jackson Nyakang'o",
+            'KE1301' => 'Susan Odhiambo',
+            'KE0887' => 'John Njogu Waithaka',
+            'KE1187' => 'Betty Chelagat Keter',
+            'KE1318' => 'Edwin Araka',
+            'KE0445' => 'Jennifer Waithera Macharia',
+            'KE0949' => 'Monica Nyambura Gikonyo',
+            'KE1262' => 'Glory Kendi',
+            'KE0343' => 'Nancy Akoth Oywer',
+            'KE1286' => 'Viginia Wangui Waweru',
+            'KE1229' => 'Erick Ochieng Ouma',
+            'KE1343' => 'Joan Sang',
         ],
 
     ],

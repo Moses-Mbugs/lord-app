@@ -1,0 +1,525 @@
+{{-- resources/views/emails/finance/weekly_rm_movers_report.blade.php --}}
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+</head>
+<body style="margin:0;padding:0;background:#EAEEF2;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:#1a1f2e;-webkit-font-smoothing:antialiased;">
+
+@php
+    $weekPeriod = $periods['week'] ?? [];
+    $mtdPeriod  = $periods['mtd']  ?? [];
+    $ytdPeriod  = $periods['ytd']  ?? [];
+
+    $weekStart = $weekPeriod['start'] ?? '';
+    $mtdStart  = $mtdPeriod['start']  ?? '';
+    $ytdStart  = $ytdPeriod['start']  ?? '';
+
+    $weekData = $data['week'] ?? ['summary' => collect(), 'all' => null, 'topGainers' => collect(), 'topLosers' => collect()];
+    $mtdData  = $data['mtd']  ?? ['summary' => collect(), 'all' => null];
+    $ytdData  = $data['ytd']  ?? ['summary' => collect(), 'all' => null];
+
+    $fmtDate  = fn($d) => $d ? \Carbon\Carbon::parse($d)->format('d M Y') : '—';
+    $fmtShort = fn($d) => $d ? \Carbon\Carbon::parse($d)->format('d M')   : '—';
+
+    $abbr = function($v) {
+        $n = abs((float) $v);
+        $sign = (float) $v >= 0 ? '+' : '−';
+        if ($n >= 1_000_000_000) return $sign . number_format($n / 1_000_000_000, 2) . 'B';
+        if ($n >= 1_000_000)     return $sign . number_format($n / 1_000_000, 2)     . 'M';
+        if ($n >= 1_000)         return $sign . number_format($n / 1_000, 1)          . 'K';
+        return $sign . number_format((int) $n);
+    };
+
+    $abbrAbs = function($v) {
+        $n = abs((float) $v);
+        if ($n >= 1_000_000_000) return 'KES ' . number_format($n / 1_000_000_000, 2) . 'B';
+        if ($n >= 1_000_000)     return 'KES ' . number_format($n / 1_000_000, 2)     . 'M';
+        if ($n >= 1_000)         return 'KES ' . number_format($n / 1_000, 1)          . 'K';
+        return 'KES ' . number_format((int) $n);
+    };
+
+    $weekAll = $weekData['all'] ?? null;
+    $mtdAll  = $mtdData['all']  ?? null;
+    $ytdAll  = $ytdData['all']  ?? null;
+
+    $depWtd          = (float) ($weekAll->movement    ?? 0);
+    $depMtd          = (float) ($mtdAll->movement     ?? 0);
+    $depClosingTotal = (float) ($weekAll->end_balance ?? 0);
+
+    $ntbWtd = (int) ($weekAll->ntb_count ?? 0);
+    $ntbMtd = (int) ($mtdAll->ntb_count  ?? 0);
+    $ntbYtd = (int) ($ytdAll->ntb_count  ?? 0);
+
+    $kpis = [
+        ['label' => 'Deposits WTD',   'kind' => 'movement', 'value' => $depWtd,          'sub' => $fmtShort($weekStart) . ' → ' . $fmtShort($weekEnd)],
+        ['label' => 'Deposits MTD',   'kind' => 'movement', 'value' => $depMtd,          'sub' => 'from ' . $fmtDate($mtdStart)],
+        ['label' => 'Total Deposits', 'kind' => 'balance',  'value' => $depClosingTotal, 'sub' => 'as at ' . $fmtDate($weekEnd)],
+        ['label' => 'NTB WTD',        'kind' => 'count',    'value' => $ntbWtd,          'sub' => $fmtShort($weekStart) . ' → ' . $fmtShort($weekEnd)],
+        ['label' => 'NTB MTD',        'kind' => 'count',    'value' => $ntbMtd,          'sub' => 'from ' . $fmtDate($mtdStart)],
+        ['label' => 'NTB YTD',        'kind' => 'count',    'value' => $ntbYtd,          'sub' => 'from ' . $fmtDate($ytdStart)],
+    ];
+
+    $emptyRmRow = fn($code, $name) => [
+        'code' => $code, 'name' => $name,
+        'dep_week' => 0, 'dep_mtd' => 0, 'dep_balance' => 0,
+        'loan_week' => 0, 'loan_mtd' => 0, 'loan_balance' => 0,
+        'ntb_week' => 0, 'ntb_mtd' => 0, 'ntb_ytd' => 0,
+    ];
+
+    // Build combined RM map keyed by rm_code for the multi-period table
+    $rmMap = [];
+    foreach ($weekData['summary'] as $r) {
+        $code = (string) $r->rm_code;
+        $rmMap[$code] = $emptyRmRow($code, (string) $r->rm_name);
+        $rmMap[$code]['dep_week']    = (float) $r->movement;
+        $rmMap[$code]['dep_balance'] = (float) $r->end_balance;
+        $rmMap[$code]['loan_week']   = (float) $r->loan_movement;
+        $rmMap[$code]['loan_balance']= (float) $r->loan_close;
+        $rmMap[$code]['ntb_week']    = (int) $r->ntb_count;
+    }
+    foreach ($mtdData['summary'] as $r) {
+        $code = (string) $r->rm_code;
+        if (!isset($rmMap[$code])) {
+            $rmMap[$code] = $emptyRmRow($code, (string) $r->rm_name);
+        }
+        $rmMap[$code]['dep_mtd']  = (float) $r->movement;
+        $rmMap[$code]['loan_mtd'] = (float) $r->loan_movement;
+        $rmMap[$code]['ntb_mtd']  = (int) $r->ntb_count;
+    }
+    foreach ($ytdData['summary'] as $r) {
+        $code = (string) $r->rm_code;
+        if (!isset($rmMap[$code])) {
+            $rmMap[$code] = $emptyRmRow($code, (string) $r->rm_name);
+        }
+        $rmMap[$code]['ntb_ytd'] = (int) $r->ntb_count;
+    }
+
+    // Total row, built from each period's separately-tracked 'all' aggregate.
+    $rmMap['ALL'] = $emptyRmRow('ALL', 'Total');
+    if ($weekAll) {
+        $rmMap['ALL']['dep_week']    = (float) ($weekAll->movement    ?? 0);
+        $rmMap['ALL']['dep_balance'] = (float) ($weekAll->end_balance ?? 0);
+        $rmMap['ALL']['loan_week']   = (float) ($weekAll->loan_movement ?? 0);
+        $rmMap['ALL']['loan_balance']= (float) ($weekAll->loan_close    ?? 0);
+        $rmMap['ALL']['ntb_week']    = (int) ($weekAll->ntb_count       ?? 0);
+    }
+    if ($mtdAll) {
+        $rmMap['ALL']['dep_mtd']  = (float) ($mtdAll->movement      ?? 0);
+        $rmMap['ALL']['loan_mtd'] = (float) ($mtdAll->loan_movement ?? 0);
+        $rmMap['ALL']['ntb_mtd']  = (int) ($mtdAll->ntb_count       ?? 0);
+    }
+    if ($ytdAll) {
+        $rmMap['ALL']['ntb_ytd'] = (int) ($ytdAll->ntb_count ?? 0);
+    }
+
+    // Sort by RM name, Total pinned last.
+    uasort($rmMap, function($a, $b) {
+        if ($a['code'] === 'ALL') return 1;
+        if ($b['code'] === 'ALL') return -1;
+        return strcmp($a['name'], $b['name']);
+    });
+
+    $topGainers = $weekData['topGainers']->take(5);
+    $topLosers  = $weekData['topLosers']->take(5);
+@endphp
+
+<div style="max-width:1100px;margin:0 auto;padding:24px 14px;">
+<div style="background:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.10),0 2px 6px rgba(0,0,0,0.06);border:1px solid #D9E2EC;">
+
+{{-- ═══════════════════════ HEADER ═══════════════════════ --}}
+<table width="100%" cellpadding="0" cellspacing="0" style="width:100%;mso-table-lspace:0pt;mso-table-rspace:0pt;" bgcolor="#002E4A">
+  <tr>
+    <td style="padding:28px 32px 26px;background:linear-gradient(140deg,#002E4A 0%,#00476A 55%,#005E8A 100%);" bgcolor="#002E4A">
+
+      <div style="font-size:10px;font-weight:800;color:rgba(255,255,255,0.45);letter-spacing:2.5px;text-transform:uppercase;margin-bottom:8px;">
+        ECOBANK KENYA
+      </div>
+
+      <table width="100%" cellpadding="0" cellspacing="0" style="mso-table-lspace:0pt;mso-table-rspace:0pt;">
+        <tr>
+          <td style="vertical-align:top;">
+            <div style="font-size:26px;font-weight:900;color:#ffffff;letter-spacing:-0.6px;line-height:1.1;">
+              Weekly RM Movements</div>
+            <div style="font-size:12px;font-weight:500;color:rgba(255,255,255,0.55);margin-top:5px;letter-spacing:0.2px;">
+              Deposits &bull; Performing Loans &bull; NTB &nbsp;·&nbsp; Fixed RM Portfolio
+            </div>
+          </td>
+          <td style="vertical-align:top;text-align:right;white-space:nowrap;">
+            <div style="display:inline-block;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.22);border-radius:10px;padding:8px 16px;">
+              <div style="font-size:9.5px;font-weight:700;color:rgba(255,255,255,0.55);text-transform:uppercase;letter-spacing:1px;">Week ending</div>
+              <div style="font-size:16px;font-weight:900;color:#ffffff;margin-top:1px;">{{ $fmtDate($weekEnd) }}</div>
+            </div>
+          </td>
+        </tr>
+      </table>
+
+      <div style="margin-top:16px;">
+        <span style="display:inline-block;padding:5px 13px;border-radius:999px;font-size:10.5px;font-weight:700;color:#ffffff;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);margin-right:7px;white-space:nowrap;">
+          Week &nbsp;{{ $fmtShort($weekStart) }} → {{ $fmtShort($weekEnd) }}
+        </span>
+        <span style="display:inline-block;padding:5px 13px;border-radius:999px;font-size:10.5px;font-weight:700;color:#ffffff;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);margin-right:7px;white-space:nowrap;">
+          MTD from &nbsp;{{ $fmtDate($mtdStart) }}
+        </span>
+        <span style="display:inline-block;padding:5px 13px;border-radius:999px;font-size:10.5px;font-weight:700;color:#ffffff;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);white-space:nowrap;">
+          YTD from &nbsp;{{ $fmtDate($ytdStart) }}
+        </span>
+      </div>
+
+    </td>
+  </tr>
+</table>
+{{-- ═══════════════════════ END HEADER ═══════════════════════ --}}
+
+{{-- ═══════════════════════ KPI STRIP ═══════════════════════ --}}
+<table width="100%" cellpadding="0" cellspacing="0" style="width:100%;mso-table-lspace:0pt;mso-table-rspace:0pt;border-bottom:1px solid #E2E8F0;" bgcolor="#F8FAFC">
+  <tr>
+    @foreach ($kpis as $i => $kpi)
+      @php
+        $kind   = $kpi['kind'] ?? 'movement';
+        $mv     = (float) $kpi['value'];
+        $isGain = $mv >= 0;
+
+        if ($kind === 'movement') {
+            $mvColor = $isGain ? '#15803D' : '#BE123C';
+            $mvBg    = $isGain ? '#F0FDF4' : '#FFF1F2';
+            $mvBd    = $isGain ? '#BBF7D0' : '#FECDD3';
+            $numText = $abbr($mv);
+        } elseif ($kind === 'balance') {
+            $mvColor = '#0F172A';
+            $mvBg    = '#F1F5F9';
+            $mvBd    = '#E2E8F0';
+            $numText = $abbrAbs($mv);
+        } else {
+            $mvColor = '#B45309';
+            $mvBg    = '#FFFBEB';
+            $mvBd    = '#FDE68A';
+            $numText = number_format((int) $mv);
+        }
+
+        $isLast  = $i === count($kpis) - 1;
+        $tdWidth = round(100 / count($kpis), 4);
+      @endphp
+      <td style="padding:16px 18px;{{ !$isLast ? 'border-right:1px solid #E2E8F0;' : '' }}vertical-align:top;background:#F8FAFC;width:{{ $tdWidth }}%;" bgcolor="#F8FAFC">
+        <div style="font-size:9px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;white-space:nowrap;">
+          {{ $kpi['label'] }}
+        </div>
+        <div style="display:inline-block;padding:4px 9px;border-radius:8px;background:{{ $mvBg }};border:1px solid {{ $mvBd }};">
+          <span style="font-size:16px;font-weight:900;color:{{ $mvColor }};font-family:'Courier New',ui-monospace,monospace;letter-spacing:-0.5px;">{{ $numText }}</span>
+        </div>
+        <div style="font-size:9.5px;color:#94A3B8;margin-top:5px;white-space:nowrap;">{{ $kpi['sub'] }}</div>
+      </td>
+    @endforeach
+  </tr>
+</table>
+{{-- ═══════════════════════ END KPI STRIP ═══════════════════════ --}}
+
+{{-- ═══════════════════════ TABLE SECTION ═══════════════════════ --}}
+<div style="padding:22px 28px 30px;">
+
+  <table cellpadding="0" cellspacing="0" style="mso-table-lspace:0pt;mso-table-rspace:0pt;margin-bottom:14px;">
+    <tr>
+      <td style="padding-right:10px;vertical-align:middle;">
+        <div style="width:4px;height:18px;background:linear-gradient(180deg,#00B4D8 0%,#0077B6 100%);border-radius:2px;"></div>
+      </td>
+      <td style="vertical-align:middle;">
+        <span style="font-size:13px;font-weight:800;color:#0F172A;letter-spacing:-0.2px;">RM Movement Summary</span>
+        <span style="font-size:11px;font-weight:500;color:#94A3B8;margin-left:8px;">· KES Equivalent</span>
+      </td>
+    </tr>
+  </table>
+
+  <div style="overflow-x:auto;">
+  <table width="100%" cellpadding="0" cellspacing="0"
+    style="width:100%;min-width:820px;border-collapse:separate;border-spacing:0;font-size:11px;border:1px solid #E2E8F0;border-radius:10px;overflow:hidden;background:#ffffff;mso-table-lspace:0pt;mso-table-rspace:0pt;">
+    <thead>
+      <tr>
+        <th rowspan="2"
+          style="padding:7px 10px;background:#F1F5F9;border-bottom:2px solid #CBD5E1;text-align:left;font-size:9px;font-weight:900;color:#475569;text-transform:uppercase;letter-spacing:0.7px;white-space:nowrap;border-right:1px solid #CBD5E1;width:20%;">
+          RM
+        </th>
+        <th colspan="3"
+          style="padding:6px 10px;background:#EFF6FF;border-bottom:1px solid #BFDBFE;text-align:center;font-size:9px;font-weight:900;color:#1D4ED8;text-transform:uppercase;letter-spacing:0.7px;border-right:2px solid #BFDBFE;">
+          Deposits
+        </th>
+        <th colspan="3"
+          style="padding:6px 10px;background:#F0FDF4;border-bottom:1px solid #BBF7D0;text-align:center;font-size:9px;font-weight:900;color:#15803D;text-transform:uppercase;letter-spacing:0.7px;border-right:2px solid #BBF7D0;">
+          Loans
+        </th>
+        <th colspan="3"
+          style="padding:6px 10px;background:#FFFBEB;border-bottom:1px solid #FDE68A;text-align:center;font-size:9px;font-weight:900;color:#B45309;text-transform:uppercase;letter-spacing:0.7px;">
+          NTB
+        </th>
+      </tr>
+      <tr>
+        <th style="padding:6px 10px;background:#EFF6FF;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#1D4ED8;text-transform:uppercase;letter-spacing:0.6px;white-space:nowrap;border-left:1px solid #BFDBFE;">
+          WTD Δ
+        </th>
+        <th style="padding:6px 10px;background:#EFF6FF;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#1D4ED8;text-transform:uppercase;letter-spacing:0.6px;white-space:nowrap;">
+          MTD Δ
+        </th>
+        <th style="padding:6px 10px;background:#EFF6FF;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#1D4ED8;text-transform:uppercase;letter-spacing:0.6px;white-space:nowrap;border-right:2px solid #BFDBFE;">
+          Closing Bal
+        </th>
+        <th style="padding:6px 10px;background:#F0FDF4;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#15803D;text-transform:uppercase;letter-spacing:0.6px;white-space:nowrap;border-left:1px solid #BBF7D0;">
+          WTD Δ
+        </th>
+        <th style="padding:6px 10px;background:#F0FDF4;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#15803D;text-transform:uppercase;letter-spacing:0.6px;white-space:nowrap;">
+          MTD Δ
+        </th>
+        <th style="padding:6px 10px;background:#F0FDF4;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#15803D;text-transform:uppercase;letter-spacing:0.6px;white-space:nowrap;border-right:2px solid #BBF7D0;">
+          Closing Bal
+        </th>
+        <th style="padding:6px 10px;background:#FFFBEB;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#B45309;text-transform:uppercase;letter-spacing:0.6px;white-space:nowrap;border-left:1px solid #FDE68A;">
+          WTD
+        </th>
+        <th style="padding:6px 10px;background:#FFFBEB;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#B45309;text-transform:uppercase;letter-spacing:0.6px;white-space:nowrap;">
+          MTD
+        </th>
+        <th style="padding:6px 10px;background:#FFFBEB;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;color:#B45309;text-transform:uppercase;letter-spacing:0.6px;white-space:nowrap;">
+          YTD
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      @foreach ($rmMap as $rCode => $r)
+        @php
+          $isTotal  = $rCode === 'ALL';
+          $isEven   = $loop->iteration % 2 === 0;
+          $rowBg    = $isTotal ? '#F1F5F9' : ($isEven ? '#F8FAFC' : '#ffffff');
+          $isLast   = $loop->last;
+          $border   = $isLast ? 'none' : '1px solid #E2E8F0';
+
+          $depWk   = (float) ($r['dep_week']    ?? 0);
+          $depMtd  = (float) ($r['dep_mtd']     ?? 0);
+          $depBal  = (float) ($r['dep_balance'] ?? 0);
+          $loanWk  = (float) ($r['loan_week']    ?? 0);
+          $loanMtd = (float) ($r['loan_mtd']     ?? 0);
+          $loanBal = (float) ($r['loan_balance'] ?? 0);
+          $ntbWk  = (int) ($r['ntb_week'] ?? 0);
+          $ntbMtd = (int) ($r['ntb_mtd']  ?? 0);
+          $ntbYtd = (int) ($r['ntb_ytd']  ?? 0);
+
+          $fmtMv = function($v) {
+              $n    = abs((float) $v);
+              $sign = (float) $v >= 0 ? '▲' : '▼';
+              if ($n >= 1_000_000_000) return $sign . ' ' . number_format($n / 1_000_000_000, 2) . 'B';
+              if ($n >= 1_000_000)     return $sign . ' ' . number_format($n / 1_000_000, 2)     . 'M';
+              if ($n >= 1_000)         return $sign . ' ' . number_format($n / 1_000, 1)          . 'K';
+              return $sign . ' ' . number_format((int) $n);
+          };
+          $fmtBal = function($v) {
+              $n = abs((float) $v);
+              if ($n >= 1_000_000_000) return number_format($n / 1_000_000_000, 2) . 'B';
+              if ($n >= 1_000_000)     return number_format($n / 1_000_000, 2)     . 'M';
+              return number_format((int) $n);
+          };
+
+          $mvStyle = fn($v) => (float)$v >= 0
+              ? 'display:inline-block;padding:3px 7px;border-radius:6px;font-weight:900;font-size:10.5px;white-space:nowrap;background:#f4fad4;color:#4a6a1a;border:1px solid #d0e06b;'
+              : 'display:inline-block;padding:3px 7px;border-radius:6px;font-weight:900;font-size:10.5px;white-space:nowrap;background:#fff0f0;color:#a11818;border:1px solid #ffb3b3;';
+          $loanMvStyle = fn($v) => (float)$v >= 0
+              ? 'display:inline-block;padding:3px 7px;border-radius:6px;font-weight:900;font-size:10.5px;white-space:nowrap;background:#bbf7d0;color:#14532d;border:1px solid #86efac;'
+              : 'display:inline-block;padding:3px 7px;border-radius:6px;font-weight:900;font-size:10.5px;white-space:nowrap;background:#fecaca;color:#7f1d1d;border:1px solid #fca5a5;';
+        @endphp
+        <tr style="background:{{ $rowBg }};">
+          <td style="padding:7px 10px;border-bottom:{{ $border }};border-right:1px solid #E2E8F0;">
+            <span title="{{ $r['name'] }}" style="display:inline-block;padding:2px 8px;border-radius:999px;max-width:170px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;
+              background:{{ $isTotal ? '#E2E8F0' : '#EFF6FF' }};
+              border:1px solid {{ $isTotal ? '#CBD5E1' : '#BFDBFE' }};
+              color:{{ $isTotal ? '#334155' : '#1D4ED8' }};
+              font-weight:900;font-size:10px;letter-spacing:0.3px;{{ $isTotal ? 'text-transform:uppercase;' : '' }}">
+              {{ $isTotal ? 'TOTAL' : $r['name'] }}
+            </span>
+          </td>
+          <td style="padding:7px 10px;border-bottom:{{ $border }};text-align:right;border-left:1px solid #BFDBFE;">
+            <span style="{{ $mvStyle($depWk) }}">{{ $fmtMv($depWk) }}</span>
+          </td>
+          <td style="padding:7px 10px;border-bottom:{{ $border }};text-align:right;">
+            <span style="{{ $mvStyle($depMtd) }}">{{ $fmtMv($depMtd) }}</span>
+          </td>
+          <td style="padding:7px 10px;border-bottom:{{ $border }};text-align:right;border-right:2px solid #BFDBFE;font-family:ui-monospace,'Courier New',monospace;font-weight:700;color:#374151;">
+            {{ $fmtBal($depBal) }}
+          </td>
+          <td style="padding:7px 10px;border-bottom:{{ $border }};background:{{ $isEven ? '#F0FDF4' : '#ECFDF5' }};text-align:right;">
+            <span style="{{ $loanMvStyle($loanWk) }}">{{ $fmtMv($loanWk) }}</span>
+          </td>
+          <td style="padding:7px 10px;border-bottom:{{ $border }};background:{{ $isEven ? '#F0FDF4' : '#ECFDF5' }};text-align:right;">
+            <span style="{{ $loanMvStyle($loanMtd) }}">{{ $fmtMv($loanMtd) }}</span>
+          </td>
+          <td style="padding:7px 10px;border-bottom:{{ $border }};background:{{ $isEven ? '#F0FDF4' : '#ECFDF5' }};text-align:right;border-right:2px solid #BBF7D0;font-family:ui-monospace,'Courier New',monospace;font-weight:700;color:#374151;">
+            {{ $fmtBal($loanBal) }}
+          </td>
+          <td style="padding:7px 10px;border-bottom:{{ $border }};background:{{ $isEven ? '#FFFBEB' : '#FEFCE8' }};text-align:right;font-weight:700;font-family:ui-monospace,'Courier New',monospace;color:#92400E;">
+            {{ number_format($ntbWk) }}
+          </td>
+          <td style="padding:7px 10px;border-bottom:{{ $border }};background:{{ $isEven ? '#FFFBEB' : '#FEFCE8' }};text-align:right;font-weight:700;font-family:ui-monospace,'Courier New',monospace;color:#92400E;">
+            {{ number_format($ntbMtd) }}
+          </td>
+          <td style="padding:7px 10px;border-bottom:{{ $border }};background:{{ $isEven ? '#FFFBEB' : '#FEFCE8' }};text-align:right;font-weight:700;font-family:ui-monospace,'Courier New',monospace;color:#92400E;">
+            {{ number_format($ntbYtd) }}
+          </td>
+        </tr>
+      @endforeach
+    </tbody>
+  </table>
+  </div>
+
+  {{-- ── Top Weekly Movers (customers, deposits) ──────────────────────── --}}
+  @if ($topGainers->isNotEmpty() || $topLosers->isNotEmpty())
+  <div style="margin-top:32px;">
+
+    <table cellpadding="0" cellspacing="0" style="mso-table-lspace:0pt;mso-table-rspace:0pt;margin-bottom:14px;">
+      <tr>
+        <td style="padding-right:10px;vertical-align:middle;">
+          <div style="width:4px;height:18px;background:linear-gradient(180deg,#F59E0B 0%,#B45309 100%);border-radius:2px;"></div>
+        </td>
+        <td style="vertical-align:middle;">
+          <span style="font-size:13px;font-weight:800;color:#0F172A;letter-spacing:-0.2px;">Top Weekly Deposit Movers</span>
+          <span style="font-size:11px;font-weight:500;color:#94A3B8;margin-left:8px;">· customers, {{ $fmtDate($weekStart) }} → {{ $fmtDate($weekEnd) }}</span>
+        </td>
+      </tr>
+    </table>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="width:100%;mso-table-lspace:0pt;mso-table-rspace:0pt;">
+      <tr>
+        <td style="width:49%;vertical-align:top;padding-right:8px;">
+          <table width="100%" cellpadding="0" cellspacing="0"
+            style="width:100%;border-collapse:separate;border-spacing:0;font-size:11px;border:1px solid #BBF7D0;border-radius:10px;overflow:hidden;background:#ffffff;mso-table-lspace:0pt;mso-table-rspace:0pt;">
+            <thead>
+              <tr>
+                <th colspan="3" style="padding:8px 12px;background:#166534;text-align:left;font-size:10px;font-weight:900;color:#ffffff;text-transform:uppercase;letter-spacing:0.8px;">
+                  ▲ Top Gainers
+                </th>
+              </tr>
+              <tr>
+                <th style="padding:6px 10px;background:#F0FDF4;border-bottom:1px solid #BBF7D0;font-size:9px;font-weight:900;color:#15803D;text-transform:uppercase;letter-spacing:0.6px;width:8%;">#</th>
+                <th style="padding:6px 10px;background:#F0FDF4;border-bottom:1px solid #BBF7D0;font-size:9px;font-weight:900;color:#15803D;text-transform:uppercase;letter-spacing:0.6px;text-align:left;">Customer / RM</th>
+                <th style="padding:6px 10px;background:#F0FDF4;border-bottom:1px solid #BBF7D0;font-size:9px;font-weight:900;color:#15803D;text-transform:uppercase;letter-spacing:0.6px;text-align:right;">Movement</th>
+              </tr>
+            </thead>
+            <tbody>
+              @forelse ($topGainers as $i => $r)
+                @php
+                  $r   = (object) $r;
+                  $mv  = (float)($r->movement ?? 0);
+                  $n   = abs($mv);
+                  $str = $n >= 1_000_000_000 ? number_format($n/1_000_000_000,2).'B'
+                       : ($n >= 1_000_000    ? number_format($n/1_000_000,2).'M'
+                       : ($n >= 1_000        ? number_format($n/1_000,1).'K'
+                       : number_format((int)$n)));
+                  $rowBg = $i % 2 === 0 ? '#ffffff' : '#F0FDF4';
+                  $isLast = $loop->last;
+                @endphp
+                <tr style="background:{{ $rowBg }};">
+                  <td style="padding:7px 10px;text-align:center;font-weight:900;color:#15803D;{{ !$isLast ? 'border-bottom:1px solid #DCFCE7;' : '' }}">{{ $i + 1 }}</td>
+                  <td style="padding:7px 10px;font-weight:700;color:#1F3A5F;{{ !$isLast ? 'border-bottom:1px solid #DCFCE7;' : '' }}">
+                    <span title="{{ $r->customer_name ?? $r->cif ?? '—' }}" style="display:inline-block;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;">{{ $r->customer_name ?? $r->cif ?? '—' }}</span>
+                    <span style="color:#94A3B8;font-weight:600;"> · {{ $r->rm_code ?? '—' }}</span>
+                  </td>
+                  <td style="padding:7px 10px;text-align:right;{{ !$isLast ? 'border-bottom:1px solid #DCFCE7;' : '' }}">
+                    <span style="display:inline-block;padding:3px 8px;border-radius:6px;font-weight:900;font-size:10.5px;background:#bbf7d0;color:#14532d;border:1px solid #86efac;">▲ {{ $str }}</span>
+                  </td>
+                </tr>
+              @empty
+                <tr><td colspan="3" style="padding:12px;text-align:center;color:#94A3B8;font-size:11px;">No data</td></tr>
+              @endforelse
+            </tbody>
+          </table>
+        </td>
+
+        <td style="width:49%;vertical-align:top;padding-left:8px;">
+          <table width="100%" cellpadding="0" cellspacing="0"
+            style="width:100%;border-collapse:separate;border-spacing:0;font-size:11px;border:1px solid #FECACA;border-radius:10px;overflow:hidden;background:#ffffff;mso-table-lspace:0pt;mso-table-rspace:0pt;">
+            <thead>
+              <tr>
+                <th colspan="3" style="padding:8px 12px;background:#991B1B;text-align:left;font-size:10px;font-weight:900;color:#ffffff;text-transform:uppercase;letter-spacing:0.8px;">
+                  ▼ Top Losers
+                </th>
+              </tr>
+              <tr>
+                <th style="padding:6px 10px;background:#FFF5F5;border-bottom:1px solid #FECACA;font-size:9px;font-weight:900;color:#B91C1C;text-transform:uppercase;letter-spacing:0.6px;width:8%;">#</th>
+                <th style="padding:6px 10px;background:#FFF5F5;border-bottom:1px solid #FECACA;font-size:9px;font-weight:900;color:#B91C1C;text-transform:uppercase;letter-spacing:0.6px;text-align:left;">Customer / RM</th>
+                <th style="padding:6px 10px;background:#FFF5F5;border-bottom:1px solid #FECACA;font-size:9px;font-weight:900;color:#B91C1C;text-transform:uppercase;letter-spacing:0.6px;text-align:right;">Movement</th>
+              </tr>
+            </thead>
+            <tbody>
+              @forelse ($topLosers as $i => $r)
+                @php
+                  $r   = (object) $r;
+                  $mv  = (float)($r->movement ?? 0);
+                  $n   = abs($mv);
+                  $str = $n >= 1_000_000_000 ? number_format($n/1_000_000_000,2).'B'
+                       : ($n >= 1_000_000    ? number_format($n/1_000_000,2).'M'
+                       : ($n >= 1_000        ? number_format($n/1_000,1).'K'
+                       : number_format((int)$n)));
+                  $rowBg = $i % 2 === 0 ? '#ffffff' : '#FFF5F5';
+                  $isLast = $loop->last;
+                @endphp
+                <tr style="background:{{ $rowBg }};">
+                  <td style="padding:7px 10px;text-align:center;font-weight:900;color:#B91C1C;{{ !$isLast ? 'border-bottom:1px solid #FECACA;' : '' }}">{{ $i + 1 }}</td>
+                  <td style="padding:7px 10px;font-weight:700;color:#1F3A5F;{{ !$isLast ? 'border-bottom:1px solid #FECACA;' : '' }}">
+                    <span title="{{ $r->customer_name ?? $r->cif ?? '—' }}" style="display:inline-block;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;">{{ $r->customer_name ?? $r->cif ?? '—' }}</span>
+                    <span style="color:#94A3B8;font-weight:600;"> · {{ $r->rm_code ?? '—' }}</span>
+                  </td>
+                  <td style="padding:7px 10px;text-align:right;{{ !$isLast ? 'border-bottom:1px solid #FECACA;' : '' }}">
+                    <span style="display:inline-block;padding:3px 8px;border-radius:6px;font-weight:900;font-size:10.5px;background:#fecaca;color:#7f1d1d;border:1px solid #fca5a5;">▼ {{ $str }}</span>
+                  </td>
+                </tr>
+              @empty
+                <tr><td colspan="3" style="padding:12px;text-align:center;color:#94A3B8;font-size:11px;">No data</td></tr>
+              @endforelse
+            </tbody>
+          </table>
+        </td>
+      </tr>
+    </table>
+
+  </div>
+  @endif
+
+  {{-- ── Notes ──────────────────────── --}}
+  <div style="margin-top:20px;font-size:10.5px;color:#64748B;padding:10px 14px;background:#F8FAFC;border:1px solid #E2E8F0;border-left:4px solid #005B82;border-radius:8px;line-height:1.6;">
+    <strong style="color:#1F3A5F;font-weight:900;">Notes:</strong>
+    Deposits/Loans Δ = <span style="background:rgba(0,0,0,0.06);padding:2px 5px;border-radius:4px;font-family:ui-monospace,'Courier New',monospace;font-size:10px;">end_balance − start_balance</span> for each period; Closing Bal is the balance as at {{ $fmtDate($weekEnd) }}.
+    MTD is measured from the last day of the previous month; YTD from 31 Dec of the previous year.
+    NTB = distinct CIFs with a new account opened in that period, attributed to the RM on that account.
+    Performing Loans excludes Corporate segment; deduped per account per snapshot. Deposits and Loans are tracked WTD/MTD only (no YTD); NTB is tracked WTD/MTD/YTD.
+    P50 branch and GL 216220001 excluded from deposits, matching the daily RM Movers report. This report is scoped to a fixed RM portfolio list.
+  </div>
+
+</div>
+{{-- ═══════════════════════ END TABLE SECTION ═══════════════════════ --}}
+
+{{-- ═══════════════════════ FOOTER ═══════════════════════ --}}
+<table width="100%" cellpadding="0" cellspacing="0" style="width:100%;mso-table-lspace:0pt;mso-table-rspace:0pt;border-top:2px solid #E2E8F0;" bgcolor="#F8FAFC">
+  <tr>
+    <td style="padding:14px 32px;background:#F8FAFC;" bgcolor="#F8FAFC">
+      <table width="100%" cellpadding="0" cellspacing="0" style="mso-table-lspace:0pt;mso-table-rspace:0pt;">
+        <tr>
+          <td style="vertical-align:middle;">
+            <span style="font-size:11px;color:#94A3B8;">
+              <strong style="color:#334155;font-weight:800;font-size:12px;">Ecobank Kenya</strong>
+              <span style="color:#CBD5E1;margin:0 6px;">·</span>
+              <span>Automated Finance Reports</span>
+              <span style="color:#CBD5E1;margin:0 6px;">·</span>
+              <span>Weekly RM Movements</span>
+            </span>
+          </td>
+          <td style="vertical-align:middle;text-align:right;">
+            <span style="font-size:10.5px;color:#94A3B8;">Generated {{ now()->timezone(config('app.timezone', 'Africa/Nairobi'))->format('d M Y, H:i') }} EAT</span>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+{{-- ═══════════════════════ END FOOTER ═══════════════════════ --}}
+
+</div>
+</div>
+
+</body>
+</html>
