@@ -197,28 +197,31 @@ return [
             // 'ALLEKE-ICT@ecobank.com',
         ],
 
-        // Fixed RM portfolio tracked by reports:email-rm-movers and reports:email-weekly-rm-movers.
-        // Single source of truth for both commands — update here only when RMs join/leave.
+        // Fixed RM portfolio tracked by reports:email-rm-movers, reports:email-weekly-rm-movers,
+        // reports:email-rm-loan-movers and reports:email-weekly-rm-loan-movers.
+        // Single source of truth for all four commands — update here only when RMs join/leave
+        // or move segment. 'segment' is the Job Unit (Premier/Advantage/Direct) — each of the
+        // four reports is split and emailed per segment.
         // Excludes James Kivinda Kinanga (KE1222) and Jane Nyawira (KE1296) — left the bank.
         // Includes Joan Sang (KE1343) — new RM.
         'rm_portfolio' => [
-            'KE0827' => 'Veronica Nasieku Lalarari',
-            'KE1228' => 'James Chisakane Odera',
-            'KE0539' => 'Lucy Kamede Lidahuli',
-            'KE1189' => 'Edward Mwenda',
-            'KE1330' => 'Jenipher Dola',
-            'KE1285' => "Jackson Nyakang'o",
-            'KE1301' => 'Susan Odhiambo',
-            'KE0887' => 'John Njogu Waithaka',
-            'KE1187' => 'Betty Chelagat Keter',
-            'KE1318' => 'Edwin Araka',
-            'KE0445' => 'Jennifer Waithera Macharia',
-            'KE0949' => 'Monica Nyambura Gikonyo',
-            'KE1262' => 'Glory Kendi',
-            'KE0343' => 'Nancy Akoth Oywer',
-            'KE1286' => 'Viginia Wangui Waweru',
-            'KE1229' => 'Erick Ochieng Ouma',
-            'KE1343' => 'Joan Sang',
+            'KE0827' => ['name' => 'Veronica Nasieku Lalarari',      'segment' => 'Premier'],
+            'KE1228' => ['name' => 'James Chisakane Odera',          'segment' => 'Premier'],
+            'KE0539' => ['name' => 'Lucy Kamede Lidahuli',           'segment' => 'Premier'],
+            'KE1189' => ['name' => 'Edward Mwenda',                  'segment' => 'Premier'],
+            'KE1330' => ['name' => 'Jenipher Dola',                  'segment' => 'Premier'],
+            'KE1301' => ['name' => 'Susan Odhiambo',                 'segment' => 'Premier'],
+            'KE1285' => ['name' => "Jackson Nyakang'o",              'segment' => 'Advantage'],
+            'KE1343' => ['name' => 'Joan Sang',                      'segment' => 'Advantage'],
+            'KE0887' => ['name' => 'John Njogu Waithaka',            'segment' => 'Direct'],
+            'KE1187' => ['name' => 'Betty Chelagat Keter',           'segment' => 'Direct'],
+            'KE1318' => ['name' => 'Edwin Araka',                    'segment' => 'Direct'],
+            'KE0445' => ['name' => 'Jennifer Waithera Macharia',     'segment' => 'Direct'],
+            'KE0949' => ['name' => 'Monica Nyambura Gikonyo',        'segment' => 'Direct'],
+            'KE1262' => ['name' => 'Glory Kendi',                    'segment' => 'Direct'],
+            'KE0343' => ['name' => 'Nancy Akoth Oywer',              'segment' => 'Direct'],
+            'KE1286' => ['name' => 'Viginia Wangui Waweru',          'segment' => 'Direct'],
+            'KE1229' => ['name' => 'Erick Ochieng Ouma',             'segment' => 'Direct'],
         ],
 
         // Test phase — sending to mmuigai@ecobank.com only. Expand once validated.

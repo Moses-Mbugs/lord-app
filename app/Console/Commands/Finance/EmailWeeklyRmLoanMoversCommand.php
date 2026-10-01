@@ -7,6 +7,7 @@ namespace App\Console\Commands\Finance;
 use App\Exports\Finance\WeeklyRmLoanMoversWorkbookExport;
 use App\Mail\WeeklyRmLoanMoversReportMail;
 use App\Services\Reports\RmLoanMoversService;
+use App\Services\Reports\RmPortfolioService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -21,10 +22,11 @@ class EmailWeeklyRmLoanMoversCommand extends Command
         {--to= : Override TO recipients (comma/semicolon/space separated)}
         {--cc= : Override CC recipients (comma/semicolon/space separated)}
         {--rms= : Override RM sales codes (comma/semicolon/space separated); defaults to reports.balances.rm_portfolio}
+        {--segment= : Restrict to one Job Unit segment (Premier|Advantage|Direct); defaults to all segments present, one email each}
         {--limit=10 : Top N loan account gainers/losers for the Weekly period}
     ';
 
-    protected $description = 'Email Weekly RM Loan Movers report: Loans (WTD/MTD/YTD) per RM, ranked by weekly performance. Performing book only; Corporate segment and Staff loans (linecode) excluded.';
+    protected $description = 'Email Weekly RM Loan Movers report: Loans (WTD/MTD/YTD) per RM, ranked by weekly performance, one email per Job Unit segment (Premier/Advantage/Direct). Performing book only; Corporate segment and Staff loans (linecode) excluded.';
 
     public function handle(RmLoanMoversService $service): int
     {
@@ -40,7 +42,7 @@ class EmailWeeklyRmLoanMoversCommand extends Command
         $rmCodes = $this->resolveRmCodes();
 
         if (empty($rmCodes)) {
-            $this->error('No RM codes resolved. Set reports.balances.rm_portfolio or pass --rms=');
+            $this->error('No RM codes resolved for the given --rms/--segment filters.');
             return self::FAILURE;
         }
 
@@ -65,7 +67,6 @@ class EmailWeeklyRmLoanMoversCommand extends Command
                 config('reports.balances.rm_loan_movers_cc', [])
             ));
 
-        $weekEndDate = Carbon::parse($weekEnd);
         $periods = [
             'week' => ['start' => $this->resolveWeekStart($weekEnd), 'end' => $weekEnd, 'label' => 'Weekly'],
             'mtd'  => ['start' => $this->resolveMtdStart($weekEnd),  'end' => $weekEnd, 'label' => 'MTD'],
@@ -77,27 +78,58 @@ class EmailWeeklyRmLoanMoversCommand extends Command
         $this->line("  MTD       : {$periods['mtd']['start']} → {$weekEnd}");
         $this->line("  YTD       : {$periods['ytd']['start']} → {$weekEnd}");
 
-        $portfolio = EmailRmMoversCommand::portfolio();
-        $snapshot  = $service->loanAccountSnapshotPerRm($rmCodes);
+        $snapshot = $service->loanAccountSnapshotPerRm($rmCodes);
 
-        $data = [];
+        // Build the full-portfolio summary once per period; each segment below just filters it.
+        $fullSummaryByPeriod = [];
         foreach ($periods as $key => $period) {
             $loanBook = $service->loanBookPerRm($period['start'], $period['end'], $rmCodes);
 
-            $summary = collect($rmCodes)->map(function ($code) use ($loanBook, $snapshot, $portfolio) {
+            $summary = collect($rmCodes)->map(function ($code) use ($loanBook, $snapshot) {
                 $loan = $loanBook[$code] ?? ['open' => 0.0, 'close' => 0.0];
                 $snap = $snapshot[$code] ?? ['account_count' => 0, 'customer_count' => 0];
 
                 return (object) [
                     'rm_code'        => $code,
-                    'rm_name'        => $portfolio[$code] ?? $code,
+                    'rm_name'        => RmPortfolioService::name($code),
                     'account_count'  => (int) $snap['account_count'],
                     'customer_count' => (int) $snap['customer_count'],
                     'loan_open'      => (float) $loan['open'],
                     'loan_close'     => (float) $loan['close'],
                     'loan_movement'  => round((float) $loan['close'] - (float) $loan['open'], 2),
                 ];
-            })->values();
+            })->keyBy('rm_code');
+
+            $fullSummaryByPeriod[$key] = $summary;
+        }
+
+        $segments = RmPortfolioService::groupBySegment($rmCodes);
+        $sentAny  = false;
+
+        foreach ($segments as $segment => $segmentCodes) {
+            $sent = $this->sendSegment(
+                $segment, $segmentCodes, $weekEnd, $periods, $fullSummaryByPeriod, $limit, $service, $to, $cc
+            );
+            $sentAny = $sentAny || $sent;
+        }
+
+        return $sentAny ? self::SUCCESS : self::FAILURE;
+    }
+
+    private function sendSegment(
+        string $segment,
+        array $segmentCodes,
+        string $weekEnd,
+        array $periods,
+        array $fullSummaryByPeriod,
+        int $limit,
+        RmLoanMoversService $service,
+        array $to,
+        array $cc
+    ): bool {
+        $data = [];
+        foreach ($periods as $key => $period) {
+            $summary = $fullSummaryByPeriod[$key]->only($segmentCodes)->values();
 
             $all = (object) [
                 'account_count'  => (int) $summary->sum('account_count'),
@@ -111,7 +143,7 @@ class EmailWeeklyRmLoanMoversCommand extends Command
         }
 
         $weekPeriod = $periods['week'];
-        $groupedDrilldown = $service->accountMoversGroupedByRmCodes($weekPeriod['start'], $weekPeriod['end'], $rmCodes, $limit);
+        $groupedDrilldown = $service->accountMoversGroupedByRmCodes($weekPeriod['start'], $weekPeriod['end'], $segmentCodes, $limit);
 
         $flattened = collect($groupedDrilldown)->flatMap(function ($g, $code) {
             return collect($g['gainers'] ?? [])->merge($g['losers'] ?? [])
@@ -123,11 +155,11 @@ class EmailWeeklyRmLoanMoversCommand extends Command
         $data['week']['topLosers'] = $flattened->filter(fn ($r) => $r['movement'] < 0)
             ->sortBy(fn ($r) => $r['movement'])->take($limit)->values();
 
-        $mailable = new WeeklyRmLoanMoversReportMail($weekEnd, $periods, $data);
+        $mailable = new WeeklyRmLoanMoversReportMail($weekEnd, $periods, $data, $segment);
 
-        $excelName = "Weekly_RM_Loan_Movers_{$weekEnd}.xlsx";
+        $excelName = "Weekly_RM_Loan_Movers_{$segment}_{$weekEnd}.xlsx";
         $excelBinary = Excel::raw(
-            new WeeklyRmLoanMoversWorkbookExport($weekEnd, $periods, $data, $rmCodes, $portfolio, $groupedDrilldown),
+            new WeeklyRmLoanMoversWorkbookExport($weekEnd, $periods, $data, $segmentCodes, RmPortfolioService::names(), $groupedDrilldown),
             ExcelWriter::XLSX
         );
         $mailable->attachData(
@@ -138,28 +170,36 @@ class EmailWeeklyRmLoanMoversCommand extends Command
 
         Mail::to($to)->cc($cc)->send($mailable);
 
-        $this->info('Weekly RM loan movers email sent (with Excel attachment).');
-        $this->line('TO: ' . implode(', ', $to));
-        $this->line('CC: ' . (empty($cc) ? '(none)' : implode(', ', $cc)));
-        $this->line('RMs: ' . count($rmCodes));
+        $this->info("[{$segment}] Weekly RM loan movers email sent (with Excel attachment).");
+        $this->line("[{$segment}] TO: " . implode(', ', $to));
+        $this->line("[{$segment}] CC: " . (empty($cc) ? '(none)' : implode(', ', $cc)));
+        $this->line("[{$segment}] RMs: " . count($segmentCodes));
 
-        return self::SUCCESS;
+        return true;
     }
 
     private function resolveRmCodes(): array
     {
         $opt = (string) ($this->option('rms') ?? '');
 
-        if (trim($opt) === '') {
-            return array_keys(EmailRmMoversCommand::portfolio());
+        $codes = trim($opt) === ''
+            ? RmPortfolioService::codes()
+            : collect(preg_split('/[,\s;]+/', $opt) ?: [])
+                ->map(fn ($c) => strtoupper(trim((string) $c)))
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+
+        $segmentOpt = trim((string) ($this->option('segment') ?? ''));
+        if ($segmentOpt === '') {
+            return $codes;
         }
 
-        return collect(preg_split('/[,\s;]+/', $opt) ?: [])
-            ->map(fn ($c) => strtoupper(trim((string) $c)))
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
+        return array_values(array_filter(
+            $codes,
+            fn ($code) => strcasecmp(RmPortfolioService::segment($code), $segmentOpt) === 0
+        ));
     }
 
     /** Latest balance_date on or before (weekEnd − 7 days) — same anchor as the other weekly reports. */

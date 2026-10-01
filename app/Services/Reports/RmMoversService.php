@@ -334,6 +334,14 @@ class RmMoversService
                             });
                     });
             })
+            ->whereNotExists(function ($query) {
+                // Staff accounts (customer_accounts_imports.account_class = KECATF) are
+                // excluded from RM deposit figures, matching the loan-side staff exclusion.
+                $query->selectRaw('1')
+                    ->from('customer_accounts_imports as cai_staff')
+                    ->whereColumn('cai_staff.cust_ac_no', 'cb.cust_ac_no')
+                    ->whereRaw("UPPER(TRIM(COALESCE(cai_staff.account_class, ''))) = 'KECATF'");
+            })
             ->groupBy(DB::raw('TRIM(cb.cif)'));
     }
 

@@ -120,7 +120,12 @@
       <table width="100%" cellpadding="0" cellspacing="0" style="mso-table-lspace:0pt;mso-table-rspace:0pt;">
         <tr>
           <td style="vertical-align:top;">
-            <div style="font-size:26px;font-weight:900;color:#ffffff;letter-spacing:-0.6px;line-height:1.1;">Weekly RM Loan Movements</div>
+            <div style="font-size:26px;font-weight:900;color:#ffffff;letter-spacing:-0.6px;line-height:1.1;">
+              Weekly RM Loan Movements
+              @isset($segment)
+                <span style="font-size:16px;font-weight:800;color:#BED600;">— {{ $segment }}</span>
+              @endisset
+            </div>
             <div style="font-size:12px;font-weight:500;color:rgba(255,255,255,0.55);margin-top:5px;letter-spacing:0.2px;">
               Loan portfolio performance &nbsp;·&nbsp; Performing book, Corporate &amp; Staff loans excluded
             </div>

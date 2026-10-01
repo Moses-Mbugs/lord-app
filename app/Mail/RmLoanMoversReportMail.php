@@ -19,12 +19,15 @@ class RmLoanMoversReportMail extends Mailable
         public Collection $rmRows,
         public object $totals,
         public Collection $topGainers = new Collection(),
-        public Collection $topLosers = new Collection()
+        public Collection $topLosers = new Collection(),
+        public ?string $segment = null
     ) {}
 
     public function build()
     {
-        return $this->subject("RM Loan Movers Report {$this->start} → {$this->end}")
+        $segmentLabel = $this->segment ? " — {$this->segment}" : '';
+
+        return $this->subject("RM Loan Movers Report{$segmentLabel} {$this->start} → {$this->end}")
             ->view('emails.finance.rm_loan_movers_report')
             ->with([
                 'start'      => $this->start,
@@ -33,6 +36,7 @@ class RmLoanMoversReportMail extends Mailable
                 'totals'     => $this->totals,
                 'topGainers' => $this->topGainers,
                 'topLosers'  => $this->topLosers,
+                'segment'    => $this->segment,
             ]);
     }
 }

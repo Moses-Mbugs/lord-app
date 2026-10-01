@@ -38,6 +38,9 @@
                             <td style="vertical-align:middle;">
                                 <div style="font-size:18px; font-weight:900; letter-spacing:-0.2px; margin:0 0 4px 0; color:#ffffff;">
                                     RM Movers Report
+                                    @isset($segment)
+                                        <span style="font-size:12px; font-weight:800; color:#BED600;">— {{ $segment }}</span>
+                                    @endisset
                                 </div>
                                 <div style="font-size:11px; font-weight:600; color:#ccecf7;">
                                     Relationship Manager portfolio, deposit &amp; loan movement — Finance Analytics

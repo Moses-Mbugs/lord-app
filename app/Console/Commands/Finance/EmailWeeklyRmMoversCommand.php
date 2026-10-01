@@ -8,8 +8,10 @@ use App\Exports\Finance\WeeklyRmMoversWorkbookExport;
 use App\Mail\WeeklyRmMoversReportMail;
 use App\Services\Reports\RmLoanMoversService;
 use App\Services\Reports\RmMoversService;
+use App\Services\Reports\RmPortfolioService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Maatwebsite\Excel\Excel as ExcelWriter;
@@ -22,11 +24,12 @@ class EmailWeeklyRmMoversCommand extends Command
         {--to= : Override TO recipients (comma/semicolon/space separated)}
         {--cc= : Override CC recipients (comma/semicolon/space separated)}
         {--rms= : Override RM sales codes (comma/semicolon/space separated); defaults to reports.balances.rm_portfolio}
+        {--segment= : Restrict to one Job Unit segment (Premier|Advantage|Direct); defaults to all segments present, one email each}
         {--limit=10 : Top N customer gainers/losers for the Weekly period}
         {--auto-build : Build rm_movers for each period if data is not already stored}
     ';
 
-    protected $description = 'Email Weekly RM Movers report: Deposits (WTD/MTD), Loans (WTD/MTD), and NTB (WTD/MTD/YTD) per RM — same convention as reports:email-weekly-branch-movers.';
+    protected $description = 'Email Weekly RM Movers report: Deposits (WTD/MTD), Loans (WTD/MTD), and NTB (WTD/MTD/YTD) per RM, one email per Job Unit segment (Premier/Advantage/Direct).';
 
     public function handle(RmMoversService $service, RmLoanMoversService $loanService): int
     {
@@ -43,7 +46,7 @@ class EmailWeeklyRmMoversCommand extends Command
         $rmCodes   = $this->resolveRmCodes();
 
         if (empty($rmCodes)) {
-            $this->error('No RM codes resolved. Set reports.balances.rm_portfolio or pass --rms=');
+            $this->error('No RM codes resolved for the given --rms/--segment filters.');
             return self::FAILURE;
         }
 
@@ -69,23 +72,10 @@ class EmailWeeklyRmMoversCommand extends Command
             ));
 
         // Deposits: WTD/MTD only. Loans: WTD/MTD only. NTB: WTD/MTD/YTD. Same convention as branches.
-        $weekEndDate = Carbon::parse($weekEnd);
         $periods = [
-            'week' => [
-                'start' => $this->resolveWeekStart($weekEnd),
-                'end'   => $weekEnd,
-                'label' => 'Weekly',
-            ],
-            'mtd' => [
-                'start' => $this->resolveMtdStart($weekEnd),
-                'end'   => $weekEnd,
-                'label' => 'MTD',
-            ],
-            'ytd' => [
-                'start' => $this->resolveYtdStart($weekEnd),
-                'end'   => $weekEnd,
-                'label' => 'YTD',
-            ],
+            'week' => ['start' => $this->resolveWeekStart($weekEnd), 'end' => $weekEnd, 'label' => 'Weekly'],
+            'mtd'  => ['start' => $this->resolveMtdStart($weekEnd),  'end' => $weekEnd, 'label' => 'MTD'],
+            'ytd'  => ['start' => $this->resolveYtdStart($weekEnd),  'end' => $weekEnd, 'label' => 'YTD'],
         ];
 
         $this->line("Week ending : {$weekEnd}");
@@ -93,7 +83,9 @@ class EmailWeeklyRmMoversCommand extends Command
         $this->line("  MTD       : {$periods['mtd']['start']} → {$weekEnd}");
         $this->line("  YTD       : {$periods['ytd']['start']} → {$weekEnd}");
 
-        $data = [];
+        // Build the full-portfolio summary once per period (covers every requested RM code);
+        // each segment below just filters this down rather than re-fetching.
+        $fullSummaryByPeriod = [];
         foreach ($periods as $key => $period) {
             $rows = $this->fetchRmRows($period['start'], $period['end'], $rmCodes);
 
@@ -116,14 +108,13 @@ class EmailWeeklyRmMoversCommand extends Command
             $loanByRm = $loanService->loanBookPerRm($period['start'], $period['end'], $rmCodes);
             $ntbByRm  = $this->fetchRmNtbCounts($period['start'], $period['end'], $rmCodes);
 
-            $portfolio = self::portfolioNames();
-            $summary = collect($rmCodes)->map(function ($code) use ($rows, $loanByRm, $ntbByRm, $portfolio) {
+            $summary = collect($rmCodes)->map(function ($code) use ($rows, $loanByRm, $ntbByRm) {
                 $row  = $rows->get($code);
                 $loan = $loanByRm[$code] ?? ['open' => 0.0, 'close' => 0.0];
 
                 return (object) [
                     'rm_code'       => $code,
-                    'rm_name'       => $portfolio[$code] ?? $code,
+                    'rm_name'       => RmPortfolioService::name($code),
                     'start_balance' => $row ? (float) $row->start_balance : 0.0,
                     'end_balance'   => $row ? (float) $row->end_balance : 0.0,
                     'movement'      => $row ? (float) $row->movement : 0.0,
@@ -133,9 +124,39 @@ class EmailWeeklyRmMoversCommand extends Command
                     'loan_movement' => round((float) $loan['close'] - (float) $loan['open'], 2),
                     'ntb_count'     => (int) ($ntbByRm[$code] ?? 0),
                 ];
-            })->values();
+            })->keyBy('rm_code');
 
-            // Aggregate 'ALL' row: sums for balances/loans, distinct-CIF NTB across the whole list.
+            $fullSummaryByPeriod[$key] = $summary;
+        }
+
+        $segments = RmPortfolioService::groupBySegment($rmCodes);
+        $sentAny  = false;
+
+        foreach ($segments as $segment => $segmentCodes) {
+            $sent = $this->sendSegment(
+                $segment, $segmentCodes, $weekEnd, $periods, $fullSummaryByPeriod, $limit, $service, $to, $cc
+            );
+            $sentAny = $sentAny || $sent;
+        }
+
+        return $sentAny ? self::SUCCESS : self::FAILURE;
+    }
+
+    private function sendSegment(
+        string $segment,
+        array $segmentCodes,
+        string $weekEnd,
+        array $periods,
+        array $fullSummaryByPeriod,
+        int $limit,
+        RmMoversService $service,
+        array $to,
+        array $cc
+    ): bool {
+        $data = [];
+        foreach ($periods as $key => $period) {
+            $summary = $fullSummaryByPeriod[$key]->only($segmentCodes)->values();
+
             $all = (object) [
                 'rm_code'       => 'ALL',
                 'rm_name'       => 'Total',
@@ -146,30 +167,24 @@ class EmailWeeklyRmMoversCommand extends Command
                 'loan_open'     => (float) $summary->sum('loan_open'),
                 'loan_close'    => (float) $summary->sum('loan_close'),
                 'loan_movement' => (float) $summary->sum('loan_movement'),
-                'ntb_count'     => (int) ($ntbByRm['ALL'] ?? 0),
+                'ntb_count'     => (int) $summary->sum('ntb_count'),
             ];
 
-            $drilldown = $key === 'week'
-                ? $service->drilldownByRmCodes($period['start'], $period['end'], $rmCodes, $limit)
-                : ['gainers' => [], 'losers' => []];
-
-            $data[$key] = [
-                'period'     => $period,
-                'summary'    => $summary,
-                'all'        => $all,
-                'topGainers' => collect($drilldown['gainers']),
-                'topLosers'  => collect($drilldown['losers']),
-            ];
+            $data[$key] = ['period' => $period, 'summary' => $summary, 'all' => $all];
         }
 
-        $mailable = new WeeklyRmMoversReportMail($weekEnd, $periods, $data, $limit);
-
         $weekPeriod = $periods['week'];
-        $groupedDrilldown = $service->drilldownGroupedByRmCodes($weekPeriod['start'], $weekPeriod['end'], $rmCodes, $limit);
+        $drilldown = $service->drilldownByRmCodes($weekPeriod['start'], $weekPeriod['end'], $segmentCodes, $limit);
+        $data['week']['topGainers'] = collect($drilldown['gainers']);
+        $data['week']['topLosers']  = collect($drilldown['losers']);
 
-        $excelName = "Weekly_RM_Movers_{$weekEnd}.xlsx";
+        $mailable = new WeeklyRmMoversReportMail($weekEnd, $periods, $data, $limit, $segment);
+
+        $groupedDrilldown = $service->drilldownGroupedByRmCodes($weekPeriod['start'], $weekPeriod['end'], $segmentCodes, $limit);
+
+        $excelName = "Weekly_RM_Movers_{$segment}_{$weekEnd}.xlsx";
         $excelBinary = Excel::raw(
-            new WeeklyRmMoversWorkbookExport($weekEnd, $periods, $data, $rmCodes, self::portfolioNames(), $groupedDrilldown),
+            new WeeklyRmMoversWorkbookExport($weekEnd, $periods, $data, $segmentCodes, RmPortfolioService::names(), $groupedDrilldown),
             ExcelWriter::XLSX
         );
         $mailable->attachData(
@@ -180,33 +195,36 @@ class EmailWeeklyRmMoversCommand extends Command
 
         Mail::to($to)->cc($cc)->send($mailable);
 
-        $this->info('Weekly RM movers email sent (with Excel attachment).');
-        $this->line('TO: ' . implode(', ', $to));
-        $this->line('CC: ' . (empty($cc) ? '(none)' : implode(', ', $cc)));
-        $this->line('RMs: ' . count($rmCodes));
+        $this->info("[{$segment}] Weekly RM movers email sent (with Excel attachment).");
+        $this->line("[{$segment}] TO: " . implode(', ', $to));
+        $this->line("[{$segment}] CC: " . (empty($cc) ? '(none)' : implode(', ', $cc)));
+        $this->line("[{$segment}] RMs: " . count($segmentCodes));
 
-        return self::SUCCESS;
-    }
-
-    private static function portfolioNames(): array
-    {
-        return EmailRmMoversCommand::portfolio();
+        return true;
     }
 
     private function resolveRmCodes(): array
     {
         $opt = (string) ($this->option('rms') ?? '');
 
-        if (trim($opt) === '') {
-            return array_keys(self::portfolioNames());
+        $codes = trim($opt) === ''
+            ? RmPortfolioService::codes()
+            : collect(preg_split('/[,\s;]+/', $opt) ?: [])
+                ->map(fn ($c) => strtoupper(trim((string) $c)))
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+
+        $segmentOpt = trim((string) ($this->option('segment') ?? ''));
+        if ($segmentOpt === '') {
+            return $codes;
         }
 
-        return collect(preg_split('/[,\s;]+/', $opt) ?: [])
-            ->map(fn ($c) => strtoupper(trim((string) $c)))
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
+        return array_values(array_filter(
+            $codes,
+            fn ($code) => strcasecmp(RmPortfolioService::segment($code), $segmentOpt) === 0
+        ));
     }
 
     /**
@@ -281,7 +299,7 @@ class EmailWeeklyRmMoversCommand extends Command
         return $date ? Carbon::parse((string) $date)->toDateString() : null;
     }
 
-    private function fetchRmRows(string $start, string $end, array $rmCodes): \Illuminate\Support\Collection
+    private function fetchRmRows(string $start, string $end, array $rmCodes): Collection
     {
         return DB::table('rm_movers')
             ->whereDate('start_date', $start)
@@ -294,7 +312,8 @@ class EmailWeeklyRmMoversCommand extends Command
     /**
      * NTB — distinct CIFs with a new account opened in (start, end] — per RM, plus 'ALL'
      * (distinct across the whole RM list, not a sum of the per-RM counts, in case the same
-     * CIF opened accounts under more than one RM in the period).
+     * CIF opened accounts under more than one RM in the period). Staff accounts
+     * (account_class = KECATF) are excluded.
      *
      * Mirrors EmailWeeklyBranchMoversCommand::fetchBranchNtbCounts exactly, grouped by
      * acc_ofcr instead of branch_code and scoped to the given RM codes. ac_open_date is
@@ -312,6 +331,7 @@ class EmailWeeklyRmMoversCommand extends Command
             ->whereNotNull('ac_open_date')
             ->whereRaw("TRIM(acc_ofcr) <> ''")
             ->whereRaw("TRIM(ac_open_date) <> ''")
+            ->whereRaw("UPPER(TRIM(COALESCE(account_class, ''))) <> 'KECATF'")
             ->whereIn(DB::raw('UPPER(TRIM(acc_ofcr))'), $rmCodes)
             ->whereRaw("STR_TO_DATE(ac_open_date, '%d-%b-%y') > ?", [$start])
             ->whereRaw("STR_TO_DATE(ac_open_date, '%d-%b-%y') <= ?", [$end]);

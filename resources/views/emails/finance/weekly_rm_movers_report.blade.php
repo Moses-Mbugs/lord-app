@@ -146,7 +146,11 @@
         <tr>
           <td style="vertical-align:top;">
             <div style="font-size:26px;font-weight:900;color:#ffffff;letter-spacing:-0.6px;line-height:1.1;">
-              Weekly RM Movements</div>
+              Weekly RM Movements
+              @isset($segment)
+                <span style="font-size:16px;font-weight:800;color:#BED600;">— {{ $segment }}</span>
+              @endisset
+            </div>
             <div style="font-size:12px;font-weight:500;color:rgba(255,255,255,0.55);margin-top:5px;letter-spacing:0.2px;">
               Deposits &bull; Performing Loans &bull; NTB &nbsp;·&nbsp; Fixed RM Portfolio
             </div>

@@ -8,8 +8,10 @@ use App\Exports\Finance\RmMoversWorkbookExport;
 use App\Mail\RmMoversReportMail;
 use App\Services\Reports\RmLoanMoversService;
 use App\Services\Reports\RmMoversService;
+use App\Services\Reports\RmPortfolioService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Maatwebsite\Excel\Excel as ExcelWriter;
@@ -23,41 +25,11 @@ class EmailRmMoversCommand extends Command
         {--to= : Override TO recipients (comma/semicolon/space separated)}
         {--cc= : Override CC recipients (comma/semicolon/space separated)}
         {--rms= : Override RM sales codes (comma/semicolon/space separated); defaults to the tracked portfolio list}
+        {--segment= : Restrict to one Job Unit segment (Premier|Advantage|Direct); defaults to all segments present, one email each}
         {--drilldown=10 : Top customer gainers/losers to show across the RM list}
     ';
 
-    protected $description = 'Email RM Movers report (deposit movement) for a fixed portfolio of RM sales codes, reading/building from rm_movers.';
-
-    /**
-     * Fallback RM portfolio, used only if config('reports.balances.rm_portfolio') is empty.
-     * The config array is the source of truth shared with EmailWeeklyRmMoversCommand —
-     * update it there when RMs join/leave, not here.
-     */
-    public const DEFAULT_RM_CODES = [
-        'KE0827' => 'Veronica Nasieku Lalarari',
-        'KE1228' => 'James Chisakane Odera',
-        'KE0539' => 'Lucy Kamede Lidahuli',
-        'KE1189' => 'Edward Mwenda',
-        'KE1330' => 'Jenipher Dola',
-        'KE1285' => "Jackson Nyakang'o",
-        'KE1301' => 'Susan Odhiambo',
-        'KE0887' => 'John Njogu Waithaka',
-        'KE1187' => 'Betty Chelagat Keter',
-        'KE1318' => 'Edwin Araka',
-        'KE0445' => 'Jennifer Waithera Macharia',
-        'KE0949' => 'Monica Nyambura Gikonyo',
-        'KE1262' => 'Glory Kendi',
-        'KE0343' => 'Nancy Akoth Oywer',
-        'KE1286' => 'Viginia Wangui Waweru',
-        'KE1229' => 'Erick Ochieng Ouma',
-        'KE1343' => 'Joan Sang',
-    ];
-
-    public static function portfolio(): array
-    {
-        $configured = config('reports.balances.rm_portfolio', []);
-        return !empty($configured) ? $configured : self::DEFAULT_RM_CODES;
-    }
+    protected $description = 'Email RM Movers report (deposit movement), one email per Job Unit segment (Premier/Advantage/Direct), reading/building from rm_movers.';
 
     public function handle(RmMoversService $service, RmLoanMoversService $loanService): int
     {
@@ -67,7 +39,11 @@ class EmailRmMoversCommand extends Command
 
         $rmCodes = $this->resolveRmCodes();
 
-        // TO
+        if (empty($rmCodes)) {
+            $this->error('No RM codes resolved for the given --rms/--segment filters.');
+            return self::FAILURE;
+        }
+
         $toOpt = (string) ($this->option('to') ?? '');
         $to = $toOpt !== ''
             ? $this->parseEmails($toOpt)
@@ -78,7 +54,6 @@ class EmailRmMoversCommand extends Command
             return self::FAILURE;
         }
 
-        // CC
         $ccOpt = (string) ($this->option('cc') ?? '');
         $cc = $ccOpt !== ''
             ? $this->parseEmails($ccOpt)
@@ -121,29 +96,53 @@ class EmailRmMoversCommand extends Command
             $this->line("⚠ Fallback applied: using {$effectiveStart} → {$end} (requested was {$requestedStart} → {$end})");
         }
 
-        $loanData     = $loanService->loanBookPerRm($effectiveStart, $end, $rmCodes);
-        $accountData  = $this->fetchAccountSnapshot($rmCodes);
+        $loanData    = $loanService->loanBookPerRm($effectiveStart, $end, $rmCodes);
+        $accountData = $this->fetchAccountSnapshot($rmCodes);
 
-        // Fill in every RM in the requested list with a zero row when it has no movement
-        // (e.g. a brand new RM with no balances yet), keyed by rm_code -> known name (or the code itself).
-        $rmRows = collect($rmCodes)
-            ->mapWithKeys(fn ($code) => [$code => self::portfolio()[$code] ?? $code])
-            ->map(function ($name, $code) use ($rows, $loanData, $accountData) {
+        $segments = RmPortfolioService::groupBySegment($rmCodes);
+        $sentAny  = false;
+
+        foreach ($segments as $segment => $segmentCodes) {
+            $sent = $this->sendSegment(
+                $segment, $segmentCodes, $effectiveStart, $end, $drilldownLimit,
+                $rows, $loanData, $accountData, $service, $to, $cc
+            );
+            $sentAny = $sentAny || $sent;
+        }
+
+        return $sentAny ? self::SUCCESS : self::FAILURE;
+    }
+
+    private function sendSegment(
+        string $segment,
+        array $segmentCodes,
+        string $effectiveStart,
+        string $end,
+        int $drilldownLimit,
+        Collection $rows,
+        array $loanData,
+        array $accountData,
+        RmMoversService $service,
+        array $to,
+        array $cc
+    ): bool {
+        $rmRows = collect($segmentCodes)
+            ->map(function ($code) use ($rows, $loanData, $accountData) {
                 $row     = $rows->get($code);
                 $loan    = $loanData[$code] ?? ['open' => 0.0, 'close' => 0.0];
                 $account = $accountData[$code] ?? null;
 
                 return (object) [
-                    'rm_code'         => $code,
-                    'rm_name'         => $name,
-                    'start_balance'   => $row ? (float) $row->start_balance : 0.0,
-                    'end_balance'     => $row ? (float) $row->end_balance : 0.0,
-                    'movement'        => $row ? (float) $row->movement : 0.0,
-                    'cif_count'       => $account ? (int) $account->total_customers : ($row ? (int) $row->cif_count : 0),
-                    'total_accounts'  => $account ? (int) $account->total_accounts : 0,
-                    'loan_open'       => (float) $loan['open'],
-                    'loan_close'      => (float) $loan['close'],
-                    'loan_movement'   => round((float) $loan['close'] - (float) $loan['open'], 2),
+                    'rm_code'        => $code,
+                    'rm_name'        => RmPortfolioService::name($code),
+                    'start_balance'  => $row ? (float) $row->start_balance : 0.0,
+                    'end_balance'    => $row ? (float) $row->end_balance : 0.0,
+                    'movement'       => $row ? (float) $row->movement : 0.0,
+                    'cif_count'      => $account ? (int) $account->total_customers : ($row ? (int) $row->cif_count : 0),
+                    'total_accounts' => $account ? (int) $account->total_accounts : 0,
+                    'loan_open'      => (float) $loan['open'],
+                    'loan_close'     => (float) $loan['close'],
+                    'loan_movement'  => round((float) $loan['close'] - (float) $loan['open'], 2),
                 ];
             })
             ->sortBy('rm_name')
@@ -160,8 +159,8 @@ class EmailRmMoversCommand extends Command
             'loan_movement'  => (float) $rmRows->sum('loan_movement'),
         ];
 
-        $drilldown = $service->drilldownByRmCodes($effectiveStart, $end, $rmCodes, $drilldownLimit);
-        $groupedDrilldown = $service->drilldownGroupedByRmCodes($effectiveStart, $end, $rmCodes, $drilldownLimit);
+        $drilldown        = $service->drilldownByRmCodes($effectiveStart, $end, $segmentCodes, $drilldownLimit);
+        $groupedDrilldown = $service->drilldownGroupedByRmCodes($effectiveStart, $end, $segmentCodes, $drilldownLimit);
 
         $mailable = new RmMoversReportMail(
             $effectiveStart,
@@ -169,12 +168,13 @@ class EmailRmMoversCommand extends Command
             $rmRows,
             $totals,
             collect($drilldown['gainers']),
-            collect($drilldown['losers'])
+            collect($drilldown['losers']),
+            $segment
         );
 
-        $excelName = "RM_Movers_{$effectiveStart}_{$end}.xlsx";
+        $excelName = "RM_Movers_{$segment}_{$effectiveStart}_{$end}.xlsx";
         $excelBinary = Excel::raw(
-            new RmMoversWorkbookExport($effectiveStart, $end, $rmRows, $totals, $rmCodes, self::portfolio(), $groupedDrilldown),
+            new RmMoversWorkbookExport($effectiveStart, $end, $rmRows, $totals, $segmentCodes, RmPortfolioService::names(), $groupedDrilldown),
             ExcelWriter::XLSX
         );
         $mailable->attachData(
@@ -185,15 +185,15 @@ class EmailRmMoversCommand extends Command
 
         Mail::to($to)->cc($cc)->send($mailable);
 
-        $this->info('RM movers email sent (with Excel attachment).');
-        $this->line('TO: ' . implode(', ', $to));
-        $this->line('CC: ' . (empty($cc) ? '(none)' : implode(', ', $cc)));
-        $this->line("Period: {$effectiveStart} → {$end} | RMs: " . count($rmCodes));
+        $this->info("[{$segment}] RM movers email sent (with Excel attachment).");
+        $this->line("[{$segment}] TO: " . implode(', ', $to));
+        $this->line("[{$segment}] CC: " . (empty($cc) ? '(none)' : implode(', ', $cc)));
+        $this->line("[{$segment}] Period: {$effectiveStart} → {$end} | RMs: " . count($segmentCodes));
 
-        return self::SUCCESS;
+        return true;
     }
 
-    private function fetchRows(string $start, string $end, array $rmCodes): \Illuminate\Support\Collection
+    private function fetchRows(string $start, string $end, array $rmCodes): Collection
     {
         return DB::table('rm_movers')
             ->whereDate('start_date', $start)
@@ -207,6 +207,7 @@ class EmailRmMoversCommand extends Command
      * Current portfolio snapshot per RM: distinct customers (CIF) and total accounts managed,
      * from customer_accounts_imports.acc_ofcr. Not date-scoped — this table reflects the
      * latest import, same convention as BuildRmWorkloadCommand's customer count.
+     * Staff accounts (account_class = KECATF) are excluded.
      *
      * @return array<string, object{total_customers:int, total_accounts:int}>
      */
@@ -224,6 +225,7 @@ class EmailRmMoversCommand extends Command
             ")
             ->whereNotNull('acc_ofcr')
             ->whereRaw("TRIM(acc_ofcr) <> ''")
+            ->whereRaw("UPPER(TRIM(COALESCE(account_class, ''))) <> 'KECATF'")
             ->whereRaw(
                 'UPPER(TRIM(acc_ofcr)) IN (' . implode(',', array_fill(0, count($rmCodes), '?')) . ')',
                 $rmCodes
@@ -238,16 +240,24 @@ class EmailRmMoversCommand extends Command
     {
         $opt = (string) ($this->option('rms') ?? '');
 
-        if (trim($opt) === '') {
-            return array_keys(self::portfolio());
+        $codes = trim($opt) === ''
+            ? RmPortfolioService::codes()
+            : collect(preg_split('/[,\s;]+/', $opt) ?: [])
+                ->map(fn ($c) => strtoupper(trim((string) $c)))
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+
+        $segmentOpt = trim((string) ($this->option('segment') ?? ''));
+        if ($segmentOpt === '') {
+            return $codes;
         }
 
-        return collect(preg_split('/[,\s;]+/', $opt) ?: [])
-            ->map(fn ($c) => strtoupper(trim((string) $c)))
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
+        return array_values(array_filter(
+            $codes,
+            fn ($code) => strcasecmp(RmPortfolioService::segment($code), $segmentOpt) === 0
+        ));
     }
 
     private function parseEmails(array|string|null $input): array
