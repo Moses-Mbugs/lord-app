@@ -9,8 +9,8 @@
 <body style="margin:0;padding:0;background:#EAEEF2;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:#1a1f2e;-webkit-font-smoothing:antialiased;">
 
 @php
-    $rmRows = $rmRows ?? collect();
-    $t = $totals ?? (object) [];
+    $segmentsData = $segmentsData ?? [];
+    $t = $grandTotals ?? (object) [];
 
     $fmtDate  = fn($d) => $d ? \Carbon\Carbon::parse($d)->format('d M Y') : '—';
     $fmtShort = fn($d) => $d ? \Carbon\Carbon::parse($d)->format('d M')   : '—';
@@ -53,12 +53,7 @@
       <table width="100%" cellpadding="0" cellspacing="0" style="mso-table-lspace:0pt;mso-table-rspace:0pt;">
         <tr>
           <td style="vertical-align:top;">
-            <div style="font-size:26px;font-weight:900;color:#ffffff;letter-spacing:-0.6px;line-height:1.1;">
-              RM Loan Movers
-              @isset($segment)
-                <span style="font-size:16px;font-weight:800;color:#BED600;">— {{ $segment }}</span>
-              @endisset
-            </div>
+            <div style="font-size:26px;font-weight:900;color:#ffffff;letter-spacing:-0.6px;line-height:1.1;">RM Loan Movers</div>
             <div style="font-size:12px;font-weight:500;color:rgba(255,255,255,0.55);margin-top:5px;letter-spacing:0.2px;">
               Loan portfolio movement per RM &nbsp;·&nbsp; Performing book, Corporate &amp; Staff loans excluded
             </div>
@@ -114,43 +109,51 @@
 {{-- CONTENT --}}
 <div style="padding:22px 28px 30px;">
 
-  <table cellpadding="0" cellspacing="0" style="mso-table-lspace:0pt;mso-table-rspace:0pt;margin-bottom:14px;">
-    <tr>
-      <td style="padding-right:10px;vertical-align:middle;">
-        <div style="width:4px;height:18px;background:linear-gradient(180deg,#86EFAC 0%,#166534 100%);border-radius:2px;"></div>
-      </td>
-      <td style="vertical-align:middle;">
-        <span style="font-size:13px;font-weight:800;color:#0F172A;letter-spacing:-0.2px;">RM Loan Summary</span>
-        <span style="font-size:11px;font-weight:500;color:#94A3B8;margin-left:8px;">· KES Equivalent</span>
-      </td>
-    </tr>
-  </table>
+  @foreach ($segmentsData as $segment => $sd)
+    {{-- SEGMENT BANNER --}}
+    <div style="margin:{{ $loop->first ? 0 : 28 }}px 0 12px;padding:8px 14px;background:linear-gradient(90deg,#166534 0%,#15803D 100%);border-radius:8px;">
+      <span style="font-size:14px;font-weight:900;color:#ffffff;letter-spacing:0.2px;">{{ $segment }}</span>
+      <span style="font-size:11px;font-weight:700;color:#DCFCE7;margin-left:8px;">{{ $sd['rmRows']->count() }} RM{{ $sd['rmRows']->count() === 1 ? '' : 's' }}</span>
+    </div>
 
-  @include('emails.finance.partials.rm_loan_summary_table', [
-      'rows'   => $rmRows,
-      'totals' => $totals ?? null,
-  ])
-
-  @if ($topGainers->isNotEmpty() || $topLosers->isNotEmpty())
-  <div style="margin-top:28px;">
     <table cellpadding="0" cellspacing="0" style="mso-table-lspace:0pt;mso-table-rspace:0pt;margin-bottom:14px;">
       <tr>
         <td style="padding-right:10px;vertical-align:middle;">
-          <div style="width:4px;height:18px;background:linear-gradient(180deg,#F59E0B 0%,#B45309 100%);border-radius:2px;"></div>
+          <div style="width:4px;height:18px;background:linear-gradient(180deg,#86EFAC 0%,#166534 100%);border-radius:2px;"></div>
         </td>
         <td style="vertical-align:middle;">
-          <span style="font-size:13px;font-weight:800;color:#0F172A;letter-spacing:-0.2px;">Top Loan Movers</span>
-          <span style="font-size:11px;font-weight:500;color:#94A3B8;margin-left:8px;">· across the listed RMs</span>
+          <span style="font-size:13px;font-weight:800;color:#0F172A;letter-spacing:-0.2px;">RM Loan Summary</span>
+          <span style="font-size:11px;font-weight:500;color:#94A3B8;margin-left:8px;">· KES Equivalent</span>
         </td>
       </tr>
     </table>
 
-    @include('emails.finance.partials.loan_movers_side_by_side', [
-        'topGainers' => $topGainers,
-        'topLosers'  => $topLosers,
+    @include('emails.finance.partials.rm_loan_summary_table', [
+        'rows'   => $sd['rmRows'],
+        'totals' => $sd['totals'],
     ])
-  </div>
-  @endif
+
+    @if ($sd['topGainers']->isNotEmpty() || $sd['topLosers']->isNotEmpty())
+    <div style="margin-top:28px;">
+      <table cellpadding="0" cellspacing="0" style="mso-table-lspace:0pt;mso-table-rspace:0pt;margin-bottom:14px;">
+        <tr>
+          <td style="padding-right:10px;vertical-align:middle;">
+            <div style="width:4px;height:18px;background:linear-gradient(180deg,#F59E0B 0%,#B45309 100%);border-radius:2px;"></div>
+          </td>
+          <td style="vertical-align:middle;">
+            <span style="font-size:13px;font-weight:800;color:#0F172A;letter-spacing:-0.2px;">Top Loan Movers</span>
+            <span style="font-size:11px;font-weight:500;color:#94A3B8;margin-left:8px;">· {{ $segment }}</span>
+          </td>
+        </tr>
+      </table>
+
+      @include('emails.finance.partials.loan_movers_side_by_side', [
+          'topGainers' => $sd['topGainers'],
+          'topLosers'  => $sd['topLosers'],
+      ])
+    </div>
+    @endif
+  @endforeach
 
   <div style="margin-top:20px;font-size:10.5px;color:#64748B;padding:10px 14px;background:#F8FAFC;border:1px solid #E2E8F0;border-left:4px solid #005B82;border-radius:8px;line-height:1.6;">
     <strong style="color:#1F3A5F;font-weight:900;">Notes:</strong>

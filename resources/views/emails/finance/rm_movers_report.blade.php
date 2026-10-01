@@ -38,9 +38,6 @@
                             <td style="vertical-align:middle;">
                                 <div style="font-size:18px; font-weight:900; letter-spacing:-0.2px; margin:0 0 4px 0; color:#ffffff;">
                                     RM Movers Report
-                                    @isset($segment)
-                                        <span style="font-size:12px; font-weight:800; color:#BED600;">— {{ $segment }}</span>
-                                    @endisset
                                 </div>
                                 <div style="font-size:11px; font-weight:600; color:#ccecf7;">
                                     Relationship Manager portfolio, deposit &amp; loan movement — Finance Analytics
@@ -71,11 +68,13 @@
         <div style="padding:{{ $contentPadT }}px {{ $contentPadX }}px {{ $contentPadB }}px;">
 
             @php
-                $t = $totals ?? (object) [];
+                $t = $grandTotals ?? (object) [];
                 $depMv = (float) ($t->movement ?? 0);
                 $loanMv = (float) ($t->loan_movement ?? 0);
                 $depGain = $depMv >= 0;
                 $loanGain = $loanMv >= 0;
+                $segmentsData = $segmentsData ?? [];
+                $totalRmCount = collect($segmentsData)->sum(fn ($sd) => $sd['rmRows']->count());
 
                 $tiles = [
                     [
@@ -87,7 +86,7 @@
                     [
                         'label' => 'Accounts Managed',
                         'value' => number_format((int) ($t->total_accounts ?? 0)),
-                        'sub'   => 'across ' . ($rmRows ?? collect())->count() . ' RMs',
+                        'sub'   => 'across ' . $totalRmCount . ' RMs',
                         'fg'    => '#005B82', 'bg' => '#E8F4FB', 'border' => '#B3D9ED',
                     ],
                     [
@@ -109,7 +108,7 @@
                 ];
             @endphp
 
-            {{-- KPI STRIP --}}
+            {{-- KPI STRIP (all segments combined) --}}
             <table width="100%" cellpadding="0" cellspacing="0" style="width:100%; margin:0 0 16px; mso-table-lspace:0pt; mso-table-rspace:0pt;">
                 <tr>
                     @foreach ($tiles as $tile)
@@ -130,47 +129,55 @@
                 </tr>
             </table>
 
-            {{-- SECTION: RM SUMMARY --}}
-            <div style="margin:0 0 10px; padding-bottom:8px; border-bottom:2px solid #E0E0E0;">
-                <table width="100%" cellpadding="0" cellspacing="0" style="width:100%; mso-table-lspace:0pt; mso-table-rspace:0pt;">
-                    <tr>
-                        <td style="vertical-align:middle;">
-                            <span style="display:inline-block; width:5px; height:16px; background:linear-gradient(180deg,#BED600 0%,#669438 100%); border-radius:3px; vertical-align:middle; margin-right:8px;"></span>
-                            <span style="font-size:14px; font-weight:900; color:#005B82; letter-spacing:-0.15px;">RM Portfolio &amp; Movement</span>
-                            <span style="font-size:11px; font-weight:700; color:#979797;"> — LCY equivalent, deposits P50 excluded</span>
-                        </td>
-                    </tr>
-                </table>
-            </div>
+            @foreach ($segmentsData as $segment => $sd)
+                {{-- SEGMENT BANNER --}}
+                <div style="margin:{{ $loop->first ? 0 : 28 }}px 0 12px; padding:8px 14px; background:linear-gradient(90deg,#005B82 0%,#0082BB 100%); border-radius:8px;">
+                    <span style="font-size:14px; font-weight:900; color:#ffffff; letter-spacing:0.2px;">{{ $segment }}</span>
+                    <span style="font-size:11px; font-weight:700; color:#D8E9F3; margin-left:8px;">{{ $sd['rmRows']->count() }} RM{{ $sd['rmRows']->count() === 1 ? '' : 's' }}</span>
+                </div>
 
-            @include('emails.finance.partials.rm_movers_table', [
-                'rows'   => $rmRows ?? collect(),
-                'totals' => $totals ?? null,
-                'start'  => $start,
-                'end'    => $end,
-            ])
+                {{-- SECTION: RM SUMMARY --}}
+                <div style="margin:0 0 10px; padding-bottom:8px; border-bottom:2px solid #E0E0E0;">
+                    <table width="100%" cellpadding="0" cellspacing="0" style="width:100%; mso-table-lspace:0pt; mso-table-rspace:0pt;">
+                        <tr>
+                            <td style="vertical-align:middle;">
+                                <span style="display:inline-block; width:5px; height:16px; background:linear-gradient(180deg,#BED600 0%,#669438 100%); border-radius:3px; vertical-align:middle; margin-right:8px;"></span>
+                                <span style="font-size:14px; font-weight:900; color:#005B82; letter-spacing:-0.15px;">RM Portfolio &amp; Movement</span>
+                                <span style="font-size:11px; font-weight:700; color:#979797;"> — LCY equivalent, deposits P50 excluded</span>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
 
-            {{-- SECTION: TOP CUSTOMER GAINERS --}}
-            <div style="margin:{{ $sectionGap }}px 0 10px; padding-bottom:8px; border-bottom:2px solid #E0E0E0;">
-                <span style="display:inline-block; width:5px; height:16px; background:linear-gradient(180deg,#86EFAC 0%,#14532d 100%); border-radius:3px; vertical-align:middle; margin-right:8px;"></span>
-                <span style="font-size:14px; font-weight:900; color:#005B82; letter-spacing:-0.15px;">Top Deposit Gainers</span>
-                <span style="font-size:11px; font-weight:700; color:#979797;"> — customers, across the listed RMs</span>
-            </div>
+                @include('emails.finance.partials.rm_movers_table', [
+                    'rows'   => $sd['rmRows'],
+                    'totals' => $sd['totals'],
+                    'start'  => $start,
+                    'end'    => $end,
+                ])
 
-            @include('emails.finance.partials.rm_movers_drivers_table', [
-                'rows' => $topGainers ?? collect(),
-            ])
+                {{-- SECTION: TOP CUSTOMER GAINERS --}}
+                <div style="margin:{{ $sectionGap }}px 0 10px; padding-bottom:8px; border-bottom:2px solid #E0E0E0;">
+                    <span style="display:inline-block; width:5px; height:16px; background:linear-gradient(180deg,#86EFAC 0%,#14532d 100%); border-radius:3px; vertical-align:middle; margin-right:8px;"></span>
+                    <span style="font-size:14px; font-weight:900; color:#005B82; letter-spacing:-0.15px;">Top Deposit Gainers</span>
+                    <span style="font-size:11px; font-weight:700; color:#979797;"> — customers, {{ $segment }}</span>
+                </div>
 
-            {{-- SECTION: TOP CUSTOMER LOSERS --}}
-            <div style="margin:{{ $sectionGap }}px 0 10px; padding-bottom:8px; border-bottom:2px solid #E0E0E0;">
-                <span style="display:inline-block; width:5px; height:16px; background:linear-gradient(180deg,#fca5a5 0%,#7f1d1d 100%); border-radius:3px; vertical-align:middle; margin-right:8px;"></span>
-                <span style="font-size:14px; font-weight:900; color:#005B82; letter-spacing:-0.15px;">Top Deposit Losers</span>
-                <span style="font-size:11px; font-weight:700; color:#979797;"> — customers, across the listed RMs</span>
-            </div>
+                @include('emails.finance.partials.rm_movers_drivers_table', [
+                    'rows' => $sd['topGainers'],
+                ])
 
-            @include('emails.finance.partials.rm_movers_drivers_table', [
-                'rows' => $topLosers ?? collect(),
-            ])
+                {{-- SECTION: TOP CUSTOMER LOSERS --}}
+                <div style="margin:{{ $sectionGap }}px 0 10px; padding-bottom:8px; border-bottom:2px solid #E0E0E0;">
+                    <span style="display:inline-block; width:5px; height:16px; background:linear-gradient(180deg,#fca5a5 0%,#7f1d1d 100%); border-radius:3px; vertical-align:middle; margin-right:8px;"></span>
+                    <span style="font-size:14px; font-weight:900; color:#005B82; letter-spacing:-0.15px;">Top Deposit Losers</span>
+                    <span style="font-size:11px; font-weight:700; color:#979797;"> — customers, {{ $segment }}</span>
+                </div>
+
+                @include('emails.finance.partials.rm_movers_drivers_table', [
+                    'rows' => $sd['topLosers'],
+                ])
+            @endforeach
 
             {{-- Notes --}}
             <div style="font-size:11px; color:#646464; margin-top:{{ $sectionGap }}px; padding:10px 12px; background:#f9fbe8; border:1px solid #d8e870; border-left:4px solid #BED600; border-radius:8px; line-height:1.55;">

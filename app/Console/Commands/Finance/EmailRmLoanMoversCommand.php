@@ -22,11 +22,11 @@ class EmailRmLoanMoversCommand extends Command
         {--to= : Override TO recipients (comma/semicolon/space separated)}
         {--cc= : Override CC recipients (comma/semicolon/space separated)}
         {--rms= : Override RM sales codes (comma/semicolon/space separated); defaults to reports.balances.rm_portfolio}
-        {--segment= : Restrict to one Job Unit segment (Premier|Advantage|Direct); defaults to all segments present, one email each}
-        {--drilldown=10 : Top loan account gainers/losers to show across the RM list}
+        {--segment= : Restrict to one Job Unit segment (Premier|Advantage|Direct); defaults to all segments, as sections in one email}
+        {--drilldown=10 : Top loan account gainers/losers to show per segment}
     ';
 
-    protected $description = 'Email RM Loan Movers report (loan portfolio movement), one email per Job Unit segment (Premier/Advantage/Direct). Performing book only; Corporate segment and Staff loans (linecode) excluded.';
+    protected $description = 'Email RM Loan Movers report (loan portfolio movement), one email with a section per Job Unit segment (Premier/Advantage/Direct). Performing book only; Corporate segment and Staff loans (linecode) excluded.';
 
     public function handle(RmLoanMoversService $service): int
     {
@@ -59,31 +59,60 @@ class EmailRmLoanMoversCommand extends Command
         $loanBook = $service->loanBookPerRm($start, $end, $rmCodes);
         $snapshot = $service->loanAccountSnapshotPerRm($rmCodes);
 
-        $segments = RmPortfolioService::groupBySegment($rmCodes);
-        $sentAny  = false;
+        $segments     = RmPortfolioService::groupBySegment($rmCodes);
+        $segmentsData = [];
+        $orderedCodes = [];
 
         foreach ($segments as $segment => $segmentCodes) {
-            $sent = $this->sendSegment(
-                $segment, $segmentCodes, $start, $end, $drilldownLimit, $loanBook, $snapshot, $service, $to, $cc
+            $segmentsData[$segment] = $this->buildSegmentData(
+                $segmentCodes, $start, $end, $drilldownLimit, $loanBook, $snapshot, $service
             );
-            $sentAny = $sentAny || $sent;
+            $orderedCodes = array_merge($orderedCodes, $segmentCodes);
         }
 
-        return $sentAny ? self::SUCCESS : self::FAILURE;
+        $allRmRows = collect($segmentsData)->flatMap(fn ($sd) => $sd['rmRows']);
+        $grandTotals = (object) [
+            'account_count'  => (int) $allRmRows->sum('account_count'),
+            'customer_count' => (int) $allRmRows->sum('customer_count'),
+            'loan_open'      => (float) $allRmRows->sum('loan_open'),
+            'loan_close'     => (float) $allRmRows->sum('loan_close'),
+            'loan_movement'  => (float) $allRmRows->sum('loan_movement'),
+        ];
+
+        $mailable = new RmLoanMoversReportMail($start, $end, $segmentsData, $grandTotals);
+
+        $groupedDrilldown = $service->accountMoversGroupedByRmCodes($start, $end, $orderedCodes, $drilldownLimit);
+
+        $excelName = "RM_Loan_Movers_{$start}_{$end}.xlsx";
+        $excelBinary = Excel::raw(
+            new RmLoanMoversWorkbookExport($start, $end, $segmentsData, $grandTotals, $orderedCodes, RmPortfolioService::names(), $groupedDrilldown),
+            ExcelWriter::XLSX
+        );
+        $mailable->attachData(
+            $excelBinary,
+            $excelName,
+            ['mime' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
+        );
+
+        Mail::to($to)->cc($cc)->send($mailable);
+
+        $this->info('RM loan movers email sent (with Excel attachment).');
+        $this->line('TO: ' . implode(', ', $to));
+        $this->line('CC: ' . (empty($cc) ? '(none)' : implode(', ', $cc)));
+        $this->line("Period: {$start} → {$end} | RMs: " . count($rmCodes) . ' | Segments: ' . implode(', ', array_keys($segments)));
+
+        return self::SUCCESS;
     }
 
-    private function sendSegment(
-        string $segment,
+    private function buildSegmentData(
         array $segmentCodes,
         string $start,
         string $end,
         int $drilldownLimit,
         array $loanBook,
         array $snapshot,
-        RmLoanMoversService $service,
-        array $to,
-        array $cc
-    ): bool {
+        RmLoanMoversService $service
+    ): array {
         $rmRows = collect($segmentCodes)
             ->map(function ($code) use ($loanBook, $snapshot) {
                 $loan = $loanBook[$code] ?? ['open' => 0.0, 'close' => 0.0];
@@ -119,32 +148,14 @@ class EmailRmLoanMoversCommand extends Command
                 ->map(fn ($r) => array_merge($r, ['rm_code' => $code]));
         });
 
-        $topGainers = $flattened->filter(fn ($r) => $r['movement'] > 0)
-            ->sortByDesc(fn ($r) => $r['movement'])->take($drilldownLimit)->values();
-        $topLosers = $flattened->filter(fn ($r) => $r['movement'] < 0)
-            ->sortBy(fn ($r) => $r['movement'])->take($drilldownLimit)->values();
-
-        $mailable = new RmLoanMoversReportMail($start, $end, $rmRows, $totals, $topGainers, $topLosers, $segment);
-
-        $excelName = "RM_Loan_Movers_{$segment}_{$start}_{$end}.xlsx";
-        $excelBinary = Excel::raw(
-            new RmLoanMoversWorkbookExport($start, $end, $rmRows, $totals, $segmentCodes, RmPortfolioService::names(), $groupedDrilldown),
-            ExcelWriter::XLSX
-        );
-        $mailable->attachData(
-            $excelBinary,
-            $excelName,
-            ['mime' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
-        );
-
-        Mail::to($to)->cc($cc)->send($mailable);
-
-        $this->info("[{$segment}] RM loan movers email sent (with Excel attachment).");
-        $this->line("[{$segment}] TO: " . implode(', ', $to));
-        $this->line("[{$segment}] CC: " . (empty($cc) ? '(none)' : implode(', ', $cc)));
-        $this->line("[{$segment}] Period: {$start} → {$end} | RMs: " . count($segmentCodes));
-
-        return true;
+        return [
+            'rmRows'     => $rmRows,
+            'totals'     => $totals,
+            'topGainers' => $flattened->filter(fn ($r) => $r['movement'] > 0)
+                ->sortByDesc(fn ($r) => $r['movement'])->take($drilldownLimit)->values(),
+            'topLosers'  => $flattened->filter(fn ($r) => $r['movement'] < 0)
+                ->sortBy(fn ($r) => $r['movement'])->take($drilldownLimit)->values(),
+        ];
     }
 
     private function resolveRmCodes(): array

@@ -22,11 +22,11 @@ class EmailWeeklyRmLoanMoversCommand extends Command
         {--to= : Override TO recipients (comma/semicolon/space separated)}
         {--cc= : Override CC recipients (comma/semicolon/space separated)}
         {--rms= : Override RM sales codes (comma/semicolon/space separated); defaults to reports.balances.rm_portfolio}
-        {--segment= : Restrict to one Job Unit segment (Premier|Advantage|Direct); defaults to all segments present, one email each}
-        {--limit=10 : Top N loan account gainers/losers for the Weekly period}
+        {--segment= : Restrict to one Job Unit segment (Premier|Advantage|Direct); defaults to all segments, as sections in one email}
+        {--limit=10 : Top N loan account gainers/losers per segment for the Weekly period}
     ';
 
-    protected $description = 'Email Weekly RM Loan Movers report: Loans (WTD/MTD/YTD) per RM, ranked by weekly performance, one email per Job Unit segment (Premier/Advantage/Direct). Performing book only; Corporate segment and Staff loans (linecode) excluded.';
+    protected $description = 'Email Weekly RM Loan Movers report: Loans (WTD/MTD/YTD) per RM, ranked by weekly performance within each Job Unit segment (Premier/Advantage/Direct), one email with a section per segment. Performing book only; Corporate segment and Staff loans (linecode) excluded.';
 
     public function handle(RmLoanMoversService $service): int
     {
@@ -103,30 +103,61 @@ class EmailWeeklyRmLoanMoversCommand extends Command
             $fullSummaryByPeriod[$key] = $summary;
         }
 
-        $segments = RmPortfolioService::groupBySegment($rmCodes);
-        $sentAny  = false;
-
-        foreach ($segments as $segment => $segmentCodes) {
-            $sent = $this->sendSegment(
-                $segment, $segmentCodes, $weekEnd, $periods, $fullSummaryByPeriod, $limit, $service, $to, $cc
-            );
-            $sentAny = $sentAny || $sent;
+        $grandDataByPeriod = [];
+        foreach ($fullSummaryByPeriod as $key => $summary) {
+            $grandDataByPeriod[$key] = (object) [
+                'account_count'  => (int) $summary->sum('account_count'),
+                'customer_count' => (int) $summary->sum('customer_count'),
+                'loan_open'      => (float) $summary->sum('loan_open'),
+                'loan_close'     => (float) $summary->sum('loan_close'),
+                'loan_movement'  => (float) $summary->sum('loan_movement'),
+            ];
         }
 
-        return $sentAny ? self::SUCCESS : self::FAILURE;
+        $segments     = RmPortfolioService::groupBySegment($rmCodes);
+        $segmentsData = [];
+        $orderedCodes = [];
+
+        foreach ($segments as $segment => $segmentCodes) {
+            $segmentsData[$segment] = $this->buildSegmentData(
+                $segmentCodes, $periods, $fullSummaryByPeriod, $limit, $service
+            );
+            $orderedCodes = array_merge($orderedCodes, $segmentCodes);
+        }
+
+        $mailable = new WeeklyRmLoanMoversReportMail($weekEnd, $periods, $segmentsData, $grandDataByPeriod);
+
+        $weekPeriod = $periods['week'];
+        $groupedDrilldown = $service->accountMoversGroupedByRmCodes($weekPeriod['start'], $weekPeriod['end'], $orderedCodes, $limit);
+
+        $excelName = "Weekly_RM_Loan_Movers_{$weekEnd}.xlsx";
+        $excelBinary = Excel::raw(
+            new WeeklyRmLoanMoversWorkbookExport($weekEnd, $periods, $segmentsData, $grandDataByPeriod, $orderedCodes, RmPortfolioService::names(), $groupedDrilldown),
+            ExcelWriter::XLSX
+        );
+        $mailable->attachData(
+            $excelBinary,
+            $excelName,
+            ['mime' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
+        );
+
+        Mail::to($to)->cc($cc)->send($mailable);
+
+        $this->info('Weekly RM loan movers email sent (with Excel attachment).');
+        $this->line('TO: ' . implode(', ', $to));
+        $this->line('CC: ' . (empty($cc) ? '(none)' : implode(', ', $cc)));
+        $this->line('RMs: ' . count($rmCodes) . ' | Segments: ' . implode(', ', array_keys($segments)));
+
+        return self::SUCCESS;
     }
 
-    private function sendSegment(
-        string $segment,
+    private function buildSegmentData(
         array $segmentCodes,
-        string $weekEnd,
         array $periods,
         array $fullSummaryByPeriod,
         int $limit,
-        RmLoanMoversService $service,
-        array $to,
-        array $cc
-    ): bool {
+        RmLoanMoversService $service
+    ): array {
         $data = [];
         foreach ($periods as $key => $period) {
             $summary = $fullSummaryByPeriod[$key]->only($segmentCodes)->values();
@@ -155,27 +186,7 @@ class EmailWeeklyRmLoanMoversCommand extends Command
         $data['week']['topLosers'] = $flattened->filter(fn ($r) => $r['movement'] < 0)
             ->sortBy(fn ($r) => $r['movement'])->take($limit)->values();
 
-        $mailable = new WeeklyRmLoanMoversReportMail($weekEnd, $periods, $data, $segment);
-
-        $excelName = "Weekly_RM_Loan_Movers_{$segment}_{$weekEnd}.xlsx";
-        $excelBinary = Excel::raw(
-            new WeeklyRmLoanMoversWorkbookExport($weekEnd, $periods, $data, $segmentCodes, RmPortfolioService::names(), $groupedDrilldown),
-            ExcelWriter::XLSX
-        );
-        $mailable->attachData(
-            $excelBinary,
-            $excelName,
-            ['mime' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
-        );
-
-        Mail::to($to)->cc($cc)->send($mailable);
-
-        $this->info("[{$segment}] Weekly RM loan movers email sent (with Excel attachment).");
-        $this->line("[{$segment}] TO: " . implode(', ', $to));
-        $this->line("[{$segment}] CC: " . (empty($cc) ? '(none)' : implode(', ', $cc)));
-        $this->line("[{$segment}] RMs: " . count($segmentCodes));
-
-        return true;
+        return $data;
     }
 
     private function resolveRmCodes(): array

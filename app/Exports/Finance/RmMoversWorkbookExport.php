@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Exports\Finance;
 
-use Illuminate\Support\Collection;
 use Maatwebsite\Excel\Concerns\FromArray;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithColumnFormatting;
@@ -20,24 +19,25 @@ use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 /**
- * Daily RM Movers workbook: RM Summary (portfolio + deposit/loan movement) and, per RM,
- * the top deposit customer gainers/losers — same shape as BranchMoversWorkbookExport.
+ * Daily RM Movers workbook: RM Summary (portfolio + deposit/loan movement, grouped by Job
+ * Unit segment with subtotal rows) and, per RM (grouped in segment order), the top deposit
+ * customer gainers/losers — same shape as BranchMoversWorkbookExport.
  */
 class RmMoversWorkbookExport implements WithMultipleSheets
 {
     /**
-     * @param Collection $rmRows rows built by EmailRmMoversCommand (rm_code, rm_name,
-     *        start_balance, end_balance, movement, cif_count, total_accounts, loan_open,
-     *        loan_close, loan_movement)
-     * @param object $totals same shape, summed across $rmRows
+     * @param array<string, array{rmRows: \Illuminate\Support\Collection, totals: object, topGainers: \Illuminate\Support\Collection, topLosers: \Illuminate\Support\Collection}> $segmentsData
+     *        keyed by segment name, in display order
+     * @param object $grandTotals same shape as each segment's totals, summed across all segments
+     * @param array $rmCodes RM codes in segment-grouped order (so the movers sheet groups by segment)
      * @param array<string,array{gainers: array, losers: array}> $groupedDrilldown from
      *        RmMoversService::drilldownGroupedByRmCodes(), keyed by rm_code
      */
     public function __construct(
         private readonly string $startDate,
         private readonly string $endDate,
-        private readonly Collection $rmRows,
-        private readonly object $totals,
+        private readonly array $segmentsData,
+        private readonly object $grandTotals,
         private readonly array $rmCodes,
         private readonly array $rmNames,
         private readonly array $groupedDrilldown
@@ -47,20 +47,24 @@ class RmMoversWorkbookExport implements WithMultipleSheets
     public function sheets(): array
     {
         return [
-            new RmSummarySheet($this->rmRows, $this->totals),
+            new RmSummarySheet($this->segmentsData, $this->grandTotals),
             new RmDepositMoversSheet($this->startDate, $this->endDate, $this->rmCodes, $this->rmNames, $this->groupedDrilldown),
         ];
     }
 }
 
 /**
- * SHEET 1: RM Summary — one row per RM plus a Total row.
+ * SHEET 1: RM Summary — grouped by Job Unit segment, with a subtotal row per segment and
+ * a grand Total row at the end.
  */
 class RmSummarySheet implements FromArray, WithTitle, WithHeadings, ShouldAutoSize, WithStyles, WithColumnFormatting, WithEvents
 {
+    private array $boldRows = [];
+
+    /** @param array<string, array{rmRows: \Illuminate\Support\Collection, totals: object}> $segmentsData */
     public function __construct(
-        private readonly Collection $rmRows,
-        private readonly object $totals
+        private readonly array $segmentsData,
+        private readonly object $grandTotals
     ) {
     }
 
@@ -72,7 +76,7 @@ class RmSummarySheet implements FromArray, WithTitle, WithHeadings, ShouldAutoSi
     public function headings(): array
     {
         return [
-            'RM Code', 'RM Name', 'Customers', 'Accounts',
+            'Segment', 'RM Code', 'RM Name', 'Customers', 'Accounts',
             'Dep Start', 'Dep End', 'Dep Movement',
             'Loan Opening', 'Loan Closing', 'Loan Movement',
         ];
@@ -80,34 +84,44 @@ class RmSummarySheet implements FromArray, WithTitle, WithHeadings, ShouldAutoSi
 
     public function array(): array
     {
-        if ($this->rmRows->isEmpty()) {
-            return [['No data', 'No qualifying movements for this period.', '', '', '', '', '', '', '', '']];
+        if (empty($this->segmentsData)) {
+            return [['No data', '', 'No qualifying movements for this period.', '', '', '', '', '', '', '', '']];
         }
 
-        $rows = $this->rmRows->map(fn ($r) => [
-            (string) $r->rm_code,
-            (string) $r->rm_name,
-            (int) $r->cif_count,
-            (int) $r->total_accounts,
-            (float) $r->start_balance,
-            (float) $r->end_balance,
-            (float) $r->movement,
-            (float) $r->loan_open,
-            (float) $r->loan_close,
-            (float) $r->loan_movement,
-        ])->toArray();
+        $rows = [];
+        $rowNum = 1; // headings occupy row 1
 
+        foreach ($this->segmentsData as $segment => $sd) {
+            foreach ($sd['rmRows'] as $r) {
+                $rows[] = [
+                    $segment, (string) $r->rm_code, (string) $r->rm_name,
+                    (int) $r->cif_count, (int) $r->total_accounts,
+                    (float) $r->start_balance, (float) $r->end_balance, (float) $r->movement,
+                    (float) $r->loan_open, (float) $r->loan_close, (float) $r->loan_movement,
+                ];
+                $rowNum++;
+            }
+
+            $t = $sd['totals'];
+            $rows[] = [
+                $segment . ' TOTAL', '', '',
+                (int) $t->cif_count, (int) $t->total_accounts,
+                (float) $t->start_balance, (float) $t->end_balance, (float) $t->movement,
+                (float) $t->loan_open, (float) $t->loan_close, (float) $t->loan_movement,
+            ];
+            $rowNum++;
+            $this->boldRows[] = $rowNum;
+        }
+
+        $g = $this->grandTotals;
         $rows[] = [
-            'TOTAL', '',
-            (int) $this->totals->cif_count,
-            (int) $this->totals->total_accounts,
-            (float) $this->totals->start_balance,
-            (float) $this->totals->end_balance,
-            (float) $this->totals->movement,
-            (float) $this->totals->loan_open,
-            (float) $this->totals->loan_close,
-            (float) $this->totals->loan_movement,
+            'GRAND TOTAL', '', '',
+            (int) $g->cif_count, (int) $g->total_accounts,
+            (float) $g->start_balance, (float) $g->end_balance, (float) $g->movement,
+            (float) $g->loan_open, (float) $g->loan_close, (float) $g->loan_movement,
         ];
+        $rowNum++;
+        $this->boldRows[] = $rowNum;
 
         return $rows;
     }
@@ -120,14 +134,14 @@ class RmSummarySheet implements FromArray, WithTitle, WithHeadings, ShouldAutoSi
     public function columnFormats(): array
     {
         return [
-            'C' => NumberFormat::FORMAT_NUMBER,
             'D' => NumberFormat::FORMAT_NUMBER,
-            'E' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
+            'E' => NumberFormat::FORMAT_NUMBER,
             'F' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'G' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'H' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'I' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'J' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
+            'K' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
         ];
     }
 
@@ -138,22 +152,24 @@ class RmSummarySheet implements FromArray, WithTitle, WithHeadings, ShouldAutoSi
                 $sheet   = $event->sheet->getDelegate();
                 $lastRow = $sheet->getHighestRow();
 
-                $sheet->getStyle('H1:J1')->applyFromArray([
+                $sheet->getStyle('I1:K1')->applyFromArray([
                     'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'DCFCE7']],
                     'font' => ['bold' => true, 'color' => ['rgb' => '166534']],
                 ]);
 
-                $sheet->getStyle("H1:H{$lastRow}")->applyFromArray([
+                $sheet->getStyle("I1:I{$lastRow}")->applyFromArray([
                     'borders' => ['left' => ['borderStyle' => Border::BORDER_MEDIUM, 'color' => ['rgb' => 'BBF7D0']]],
                 ]);
 
                 if ($lastRow > 1) {
-                    $sheet->getStyle("H2:J{$lastRow}")->applyFromArray([
+                    $sheet->getStyle("I2:K{$lastRow}")->applyFromArray([
                         'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F0FDF4']],
                         'font' => ['color' => ['rgb' => '166534']],
                     ]);
+                }
 
-                    $sheet->getStyle("A{$lastRow}:J{$lastRow}")->applyFromArray([
+                foreach ($this->boldRows as $r) {
+                    $sheet->getStyle("A{$r}:K{$r}")->applyFromArray([
                         'font' => ['bold' => true],
                         'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'E2E8F0']],
                     ]);

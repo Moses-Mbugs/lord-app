@@ -18,24 +18,27 @@ use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 /**
- * Weekly RM Movers workbook: RM Summary (Deposits WTD/MTD/YTD Δ + Closing Bal, Loans
- * WTD/MTD Δ + Closing Bal, NTB WTD/MTD/YTD) and, per RM, the week's top deposit customer
- * gainers/losers — same shape as WeeklyBranchMoversWorkbookExport, plus a Deposits YTD Δ
- * column (not present on the branch version) and a per-RM breakdown sheet instead of a
- * single flat top-movers list.
+ * Weekly RM Movers workbook: RM Summary (grouped by Job Unit segment, ranked within each
+ * segment by Deposits WTD Δ, with a subtotal row per segment and a grand Total row) and,
+ * per RM (grouped in segment order), the week's top deposit customer gainers/losers.
  */
 class WeeklyRmMoversWorkbookExport implements WithMultipleSheets
 {
     /**
      * @param array $periods ['week'|'mtd'|'ytd' => ['start','end','label']]
-     * @param array $data    ['week'|'mtd'|'ytd' => ['summary','all']]
+     * @param array<string, array> $segmentsData keyed by segment name, each shaped like
+     *        ['week'|'mtd'|'ytd' => ['period','summary','all']]
+     * @param array<string, object> $grandData 'week'|'mtd'|'ytd' => 'all'-shaped object,
+     *        summed across every segment
+     * @param array $rmCodes RM codes in segment-grouped order (so the movers sheet groups by segment)
      * @param array<string,array{gainers: array, losers: array}> $groupedDrilldown from
      *        RmMoversService::drilldownGroupedByRmCodes() for the week period, keyed by rm_code
      */
     public function __construct(
         private readonly string $weekEnd,
         private readonly array  $periods,
-        private readonly array  $data,
+        private readonly array  $segmentsData,
+        private readonly array  $grandData,
         private readonly array  $rmCodes,
         private readonly array  $rmNames,
         private readonly array  $groupedDrilldown
@@ -47,7 +50,7 @@ class WeeklyRmMoversWorkbookExport implements WithMultipleSheets
         $weekPeriod = $this->periods['week'] ?? ['start' => $this->weekEnd, 'end' => $this->weekEnd];
 
         return [
-            new WeeklyRmSummarySheet($this->weekEnd, $this->periods, $this->data),
+            new WeeklyRmSummarySheet($this->weekEnd, $this->periods, $this->segmentsData, $this->grandData),
             new RmDepositMoversSheet(
                 $weekPeriod['start'],
                 $weekPeriod['end'],
@@ -60,24 +63,28 @@ class WeeklyRmMoversWorkbookExport implements WithMultipleSheets
 }
 
 /**
- * SHEET 1: Rank (by Deposits WTD Δ, best first), RM Code, RM Name,
- * Deposits (WTD Δ/MTD Δ/YTD Δ/Closing Bal), Loans (WTD Δ/MTD Δ/Closing Bal),
- * NTB (WTD/MTD/YTD), plus a Total row (unranked).
+ * SHEET 1: Segment, Rank (by Deposits WTD Δ, best first within each segment), RM Code,
+ * RM Name, Deposits (WTD Δ/MTD Δ/YTD Δ/Closing Bal), Loans (WTD Δ/MTD Δ/Closing Bal),
+ * NTB (WTD/MTD/YTD), with a subtotal row per segment and a grand Total row.
  */
 class WeeklyRmSummarySheet implements FromArray, WithTitle, ShouldAutoSize, WithColumnFormatting, WithEvents
 {
-    private const NUM_COLS = 13;
+    private const NUM_COLS = 14;
 
     private array $boldRows   = [];
     private int   $headerRow  = 0;
     private int   $lastRmRow  = 0;
 
-    /** @param array $periods ['week'|'mtd'|'ytd' => ['start','end','label']] */
-    /** @param array $data    ['week'|'mtd'|'ytd' => ['summary','all']] */
+    /**
+     * @param array $periods ['week'|'mtd'|'ytd' => ['start','end','label']]
+     * @param array<string, array> $segmentsData keyed by segment name
+     * @param array<string, object> $grandData
+     */
     public function __construct(
         private readonly string $weekEnd,
         private readonly array  $periods,
-        private readonly array  $data
+        private readonly array  $segmentsData,
+        private readonly array  $grandData
     ) {
     }
 
@@ -92,9 +99,99 @@ class WeeklyRmSummarySheet implements FromArray, WithTitle, ShouldAutoSize, With
         $mtdPeriod  = $this->periods['mtd']  ?? [];
         $ytdPeriod  = $this->periods['ytd']  ?? [];
 
-        $weekData = $this->data['week'] ?? ['summary' => collect(), 'all' => null];
-        $mtdData  = $this->data['mtd']  ?? ['summary' => collect(), 'all' => null];
-        $ytdData  = $this->data['ytd']  ?? ['summary' => collect(), 'all' => null];
+        $rows   = [];
+        $rowNum = 0;
+
+        $rows[] = array_pad(['ECOBANK KENYA — WEEKLY RM MOVERS'], self::NUM_COLS, '');
+        $this->boldRows[] = ++$rowNum;
+
+        $rows[] = array_pad(["Week ending: {$this->weekEnd}"], self::NUM_COLS, '');
+        ++$rowNum;
+
+        $rows[] = array_pad([
+            "Weekly: {$weekPeriod['start']} → {$weekPeriod['end']}",
+            "MTD: {$mtdPeriod['start']} → {$mtdPeriod['end']}",
+            "YTD: {$ytdPeriod['start']} → {$ytdPeriod['end']}",
+        ], self::NUM_COLS, '');
+        ++$rowNum;
+
+        $rows[] = array_fill(0, self::NUM_COLS, '');
+        ++$rowNum;
+
+        $this->headerRow = ++$rowNum;
+        $rows[] = [
+            'Segment', 'Rank', 'RM Code', 'RM Name',
+            'Deposits WTD Δ', 'Deposits MTD Δ', 'Deposits YTD Δ', 'Deposits Closing Bal',
+            'Loans WTD Δ', 'Loans MTD Δ', 'Loans Closing Bal',
+            'NTB WTD', 'NTB MTD', 'NTB YTD',
+        ];
+        $this->boldRows[] = $this->headerRow;
+
+        foreach ($this->segmentsData as $segment => $data) {
+            $map = $this->buildMap($data);
+
+            $rank = 0;
+            foreach ($map as $r) {
+                ++$rowNum;
+                ++$rank;
+                $rows[] = [
+                    $segment, $rank, (string) $r['code'], (string) $r['name'],
+                    (float) $r['dep_week'], (float) $r['dep_mtd'], (float) $r['dep_ytd'], (float) $r['dep_balance'],
+                    (float) $r['loan_week'], (float) $r['loan_mtd'], (float) $r['loan_balance'],
+                    (int) $r['ntb_week'], (int) $r['ntb_mtd'], (int) $r['ntb_ytd'],
+                ];
+            }
+
+            $weekAll = $data['week']['all'] ?? null;
+            $mtdAll  = $data['mtd']['all']  ?? null;
+            $ytdAll  = $data['ytd']['all']  ?? null;
+            ++$rowNum;
+            $rows[] = [
+                $segment, '', '', 'TOTAL',
+                (float) ($weekAll->movement      ?? 0),
+                (float) ($mtdAll->movement       ?? 0),
+                (float) ($ytdAll->movement       ?? 0),
+                (float) ($weekAll->end_balance   ?? 0),
+                (float) ($weekAll->loan_movement ?? 0),
+                (float) ($mtdAll->loan_movement  ?? 0),
+                (float) ($weekAll->loan_close    ?? 0),
+                (int)   ($weekAll->ntb_count     ?? 0),
+                (int)   ($mtdAll->ntb_count      ?? 0),
+                (int)   ($ytdAll->ntb_count      ?? 0),
+            ];
+            $this->boldRows[] = $rowNum;
+        }
+        $this->lastRmRow = $rowNum;
+
+        $weekAll = $this->grandData['week'] ?? null;
+        $mtdAll  = $this->grandData['mtd']  ?? null;
+        $ytdAll  = $this->grandData['ytd']  ?? null;
+        ++$rowNum;
+        $rows[] = [
+            'GRAND TOTAL', '', '', '',
+            (float) ($weekAll->movement      ?? 0),
+            (float) ($mtdAll->movement       ?? 0),
+            (float) ($ytdAll->movement       ?? 0),
+            (float) ($weekAll->end_balance   ?? 0),
+            (float) ($weekAll->loan_movement ?? 0),
+            (float) ($mtdAll->loan_movement  ?? 0),
+            (float) ($weekAll->loan_close    ?? 0),
+            (int)   ($weekAll->ntb_count     ?? 0),
+            (int)   ($mtdAll->ntb_count      ?? 0),
+            (int)   ($ytdAll->ntb_count      ?? 0),
+        ];
+        ++$rowNum;
+        $this->boldRows[] = $rowNum;
+
+        return $rows;
+    }
+
+    /** Builds this segment's rm_code => fields map, ranked by WTD deposit movement. */
+    private function buildMap(array $data): array
+    {
+        $weekData = $data['week'] ?? ['summary' => collect()];
+        $mtdData  = $data['mtd']  ?? ['summary' => collect()];
+        $ytdData  = $data['ytd']  ?? ['summary' => collect()];
 
         $map = [];
 
@@ -123,95 +220,24 @@ class WeeklyRmSummarySheet implements FromArray, WithTitle, ShouldAutoSize, With
             }
         }
 
-        // Rank by WTD deposit movement (best performer first).
         uasort($map, fn ($a, $b) => $b['dep_week'] <=> $a['dep_week']);
 
-        $rows   = [];
-        $rowNum = 0;
-
-        $rows[] = array_pad(['ECOBANK KENYA — WEEKLY RM MOVERS'], self::NUM_COLS, '');
-        $this->boldRows[] = ++$rowNum;
-
-        $rows[] = array_pad(["Week ending: {$this->weekEnd}"], self::NUM_COLS, '');
-        ++$rowNum;
-
-        $rows[] = array_pad([
-            "Weekly: {$weekPeriod['start']} → {$weekPeriod['end']}",
-            "MTD: {$mtdPeriod['start']} → {$mtdPeriod['end']}",
-            "YTD: {$ytdPeriod['start']} → {$ytdPeriod['end']}",
-        ], self::NUM_COLS, '');
-        ++$rowNum;
-
-        $rows[] = array_fill(0, self::NUM_COLS, '');
-        ++$rowNum;
-
-        $this->headerRow = ++$rowNum;
-        $rows[] = [
-            'Rank', 'RM Code', 'RM Name',
-            'Deposits WTD Δ', 'Deposits MTD Δ', 'Deposits YTD Δ', 'Deposits Closing Bal',
-            'Loans WTD Δ', 'Loans MTD Δ', 'Loans Closing Bal',
-            'NTB WTD', 'NTB MTD', 'NTB YTD',
-        ];
-        $this->boldRows[] = $this->headerRow;
-
-        $rank = 0;
-        foreach ($map as $r) {
-            ++$rowNum;
-            ++$rank;
-            $rows[] = [
-                $rank,
-                (string) $r['code'],
-                (string) $r['name'],
-                (float)  $r['dep_week'],
-                (float)  $r['dep_mtd'],
-                (float)  $r['dep_ytd'],
-                (float)  $r['dep_balance'],
-                (float)  $r['loan_week'],
-                (float)  $r['loan_mtd'],
-                (float)  $r['loan_balance'],
-                (int)    $r['ntb_week'],
-                (int)    $r['ntb_mtd'],
-                (int)    $r['ntb_ytd'],
-            ];
-        }
-        $this->lastRmRow = $rowNum;
-
-        // Total row (excluded from ranking)
-        $weekAll = $weekData['all'] ?? null;
-        $mtdAll  = $mtdData['all']  ?? null;
-        $ytdAll  = $ytdData['all']  ?? null;
-        ++$rowNum;
-        $rows[] = [
-            '', 'ALL', 'Total',
-            (float) ($weekAll->movement    ?? 0),
-            (float) ($mtdAll->movement     ?? 0),
-            (float) ($ytdAll->movement     ?? 0),
-            (float) ($weekAll->end_balance ?? 0),
-            (float) ($weekAll->loan_movement ?? 0),
-            (float) ($mtdAll->loan_movement  ?? 0),
-            (float) ($weekAll->loan_close    ?? 0),
-            (int)   ($weekAll->ntb_count      ?? 0),
-            (int)   ($mtdAll->ntb_count       ?? 0),
-            (int)   ($ytdAll->ntb_count       ?? 0),
-        ];
-        $this->boldRows[] = $rowNum;
-
-        return $rows;
+        return $map;
     }
 
     public function columnFormats(): array
     {
         return [
-            'D' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'E' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'F' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'G' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'H' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'I' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'J' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
-            'K' => NumberFormat::FORMAT_NUMBER,
+            'K' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'L' => NumberFormat::FORMAT_NUMBER,
             'M' => NumberFormat::FORMAT_NUMBER,
+            'N' => NumberFormat::FORMAT_NUMBER,
         ];
     }
 
@@ -224,62 +250,66 @@ class WeeklyRmSummarySheet implements FromArray, WithTitle, ShouldAutoSize, With
                 $hdr     = $this->headerRow;
                 $lastRow = $sheet->getHighestRow();
 
-                $sheet->mergeCells('A1:M1');
-                $sheet->getStyle('A1:M1')->applyFromArray([
+                $sheet->mergeCells('A1:N1');
+                $sheet->getStyle('A1:N1')->applyFromArray([
                     'font'      => ['bold' => true, 'size' => 14, 'color' => ['rgb' => 'FFFFFF']],
                     'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '002E4A']],
                     'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT],
                 ]);
                 $sheet->getRowDimension(1)->setRowHeight(26);
-                $sheet->mergeCells('A2:M2');
+                $sheet->mergeCells('A2:N2');
 
                 foreach ($this->boldRows as $r) {
-                    $sheet->getStyle("A{$r}:M{$r}")->getFont()->setBold(true);
+                    $sheet->getStyle("A{$r}:N{$r}")->applyFromArray([
+                        'font' => ['bold' => true],
+                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'E2E8F0']],
+                    ]);
                 }
-
-                $sheet->getStyle("A{$hdr}:M{$hdr}")->applyFromArray([
+                // Header row keeps its own stronger styling (applied after the generic bold pass above).
+                $sheet->getStyle("A{$hdr}:N{$hdr}")->applyFromArray([
                     'font'      => ['bold' => true, 'size' => 11, 'color' => ['rgb' => 'FFFFFF']],
                     'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1F3A5F']],
                     'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
                 ]);
-                $sheet->getStyle("A{$hdr}:C{$hdr}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-                $sheet->getStyle("C{$hdr}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+                $sheet->getStyle("D{$hdr}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
 
-                $sheet->getStyle("D{$hdr}:G{$hdr}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1D4ED8']]]);
-                $sheet->getStyle("H{$hdr}:J{$hdr}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '166534']]]);
-                $sheet->getStyle("K{$hdr}:M{$hdr}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'B45309']]]);
+                $sheet->getStyle("E{$hdr}:H{$hdr}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1D4ED8']]]);
+                $sheet->getStyle("I{$hdr}:K{$hdr}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '166534']]]);
+                $sheet->getStyle("L{$hdr}:N{$hdr}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'B45309']]]);
 
                 if ($this->lastRmRow > $hdr) {
                     for ($row = $hdr + 1; $row <= $this->lastRmRow; $row++) {
-                        $sheet->getStyle("A{$row}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-                        $sheet->getStyle("A{$row}")->getFont()->setBold(true);
+                        if (in_array($row, $this->boldRows, true)) continue; // subtotal row — leave its own styling
 
-                        foreach (['D', 'E', 'F', 'H', 'I'] as $col) {
+                        $sheet->getStyle("B{$row}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+                        $sheet->getStyle("B{$row}")->getFont()->setBold(true);
+
+                        foreach (['E', 'F', 'G', 'I', 'J'] as $col) {
                             $v = $sheet->getCell("{$col}{$row}")->getValue();
                             if (!is_numeric($v)) continue;
                             $vf = (float) $v;
                             if ($vf > 0)     $sheet->getStyle("{$col}{$row}")->getFont()->getColor()->setRGB('0B6E4F');
                             elseif ($vf < 0) $sheet->getStyle("{$col}{$row}")->getFont()->getColor()->setRGB('B00020');
                         }
-                        $sheet->getStyle("D{$row}:G{$row}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'EFF6FF']]]);
-                        $sheet->getStyle("H{$row}:J{$row}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F0FDF4']]]);
-                        $sheet->getStyle("K{$row}:M{$row}")->applyFromArray([
+                        $sheet->getStyle("E{$row}:H{$row}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'EFF6FF']]]);
+                        $sheet->getStyle("I{$row}:K{$row}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F0FDF4']]]);
+                        $sheet->getStyle("L{$row}:N{$row}")->applyFromArray([
                             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FFFBEB']],
                             'font' => ['color' => ['rgb' => '92400E']],
                         ]);
-                        $sheet->getStyle("G{$row}")->getFont()->getColor()->setRGB('374151');
-                        $sheet->getStyle("J{$row}")->getFont()->getColor()->setRGB('374151');
+                        $sheet->getStyle("H{$row}")->getFont()->getColor()->setRGB('374151');
+                        $sheet->getStyle("K{$row}")->getFont()->getColor()->setRGB('374151');
                     }
                 }
 
-                // Total row (last data row)
-                $sheet->getStyle("A{$lastRow}:M{$lastRow}")->applyFromArray([
+                // Grand total row (last row)
+                $sheet->getStyle("A{$lastRow}:N{$lastRow}")->applyFromArray([
                     'font' => ['bold' => true, 'size' => 11],
-                    'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'E2E8F0']],
+                    'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'CBD5E1']],
                 ]);
 
                 if ($lastRow > $hdr) {
-                    $sheet->getStyle("A{$hdr}:M{$lastRow}")->getBorders()->getAllBorders()
+                    $sheet->getStyle("A{$hdr}:N{$lastRow}")->getBorders()->getAllBorders()
                         ->setBorderStyle(Border::BORDER_HAIR)->getColor()->setRGB('E2E8F0');
                 }
 

@@ -24,12 +24,12 @@ class EmailWeeklyRmMoversCommand extends Command
         {--to= : Override TO recipients (comma/semicolon/space separated)}
         {--cc= : Override CC recipients (comma/semicolon/space separated)}
         {--rms= : Override RM sales codes (comma/semicolon/space separated); defaults to reports.balances.rm_portfolio}
-        {--segment= : Restrict to one Job Unit segment (Premier|Advantage|Direct); defaults to all segments present, one email each}
-        {--limit=10 : Top N customer gainers/losers for the Weekly period}
+        {--segment= : Restrict to one Job Unit segment (Premier|Advantage|Direct); defaults to all segments, as sections in one email}
+        {--limit=10 : Top N customer gainers/losers per segment for the Weekly period}
         {--auto-build : Build rm_movers for each period if data is not already stored}
     ';
 
-    protected $description = 'Email Weekly RM Movers report: Deposits (WTD/MTD), Loans (WTD/MTD), and NTB (WTD/MTD/YTD) per RM, one email per Job Unit segment (Premier/Advantage/Direct).';
+    protected $description = 'Email Weekly RM Movers report: Deposits (WTD/MTD), Loans (WTD/MTD), and NTB (WTD/MTD/YTD) per RM, one email with a section per Job Unit segment (Premier/Advantage/Direct).';
 
     public function handle(RmMoversService $service, RmLoanMoversService $loanService): int
     {
@@ -129,30 +129,67 @@ class EmailWeeklyRmMoversCommand extends Command
             $fullSummaryByPeriod[$key] = $summary;
         }
 
-        $segments = RmPortfolioService::groupBySegment($rmCodes);
-        $sentAny  = false;
-
-        foreach ($segments as $segment => $segmentCodes) {
-            $sent = $this->sendSegment(
-                $segment, $segmentCodes, $weekEnd, $periods, $fullSummaryByPeriod, $limit, $service, $to, $cc
-            );
-            $sentAny = $sentAny || $sent;
+        // Grand ('all segments combined') totals per period, for the top-level KPI strip.
+        $grandDataByPeriod = [];
+        foreach ($fullSummaryByPeriod as $key => $summary) {
+            $grandDataByPeriod[$key] = (object) [
+                'rm_code'       => 'ALL',
+                'rm_name'       => 'Total',
+                'start_balance' => (float) $summary->sum('start_balance'),
+                'end_balance'   => (float) $summary->sum('end_balance'),
+                'movement'      => (float) $summary->sum('movement'),
+                'cif_count'     => (int) $summary->sum('cif_count'),
+                'loan_open'     => (float) $summary->sum('loan_open'),
+                'loan_close'    => (float) $summary->sum('loan_close'),
+                'loan_movement' => (float) $summary->sum('loan_movement'),
+                'ntb_count'     => (int) $summary->sum('ntb_count'),
+            ];
         }
 
-        return $sentAny ? self::SUCCESS : self::FAILURE;
+        $segments     = RmPortfolioService::groupBySegment($rmCodes);
+        $segmentsData = [];
+        $orderedCodes = [];
+
+        foreach ($segments as $segment => $segmentCodes) {
+            $segmentsData[$segment] = $this->buildSegmentData(
+                $segmentCodes, $periods, $fullSummaryByPeriod, $limit, $service
+            );
+            $orderedCodes = array_merge($orderedCodes, $segmentCodes);
+        }
+
+        $mailable = new WeeklyRmMoversReportMail($weekEnd, $periods, $segmentsData, $grandDataByPeriod, $limit);
+
+        $weekPeriod = $periods['week'];
+        $groupedDrilldown = $service->drilldownGroupedByRmCodes($weekPeriod['start'], $weekPeriod['end'], $orderedCodes, $limit);
+
+        $excelName = "Weekly_RM_Movers_{$weekEnd}.xlsx";
+        $excelBinary = Excel::raw(
+            new WeeklyRmMoversWorkbookExport($weekEnd, $periods, $segmentsData, $grandDataByPeriod, $orderedCodes, RmPortfolioService::names(), $groupedDrilldown),
+            ExcelWriter::XLSX
+        );
+        $mailable->attachData(
+            $excelBinary,
+            $excelName,
+            ['mime' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
+        );
+
+        Mail::to($to)->cc($cc)->send($mailable);
+
+        $this->info('Weekly RM movers email sent (with Excel attachment).');
+        $this->line('TO: ' . implode(', ', $to));
+        $this->line('CC: ' . (empty($cc) ? '(none)' : implode(', ', $cc)));
+        $this->line('RMs: ' . count($rmCodes) . ' | Segments: ' . implode(', ', array_keys($segments)));
+
+        return self::SUCCESS;
     }
 
-    private function sendSegment(
-        string $segment,
+    private function buildSegmentData(
         array $segmentCodes,
-        string $weekEnd,
         array $periods,
         array $fullSummaryByPeriod,
         int $limit,
-        RmMoversService $service,
-        array $to,
-        array $cc
-    ): bool {
+        RmMoversService $service
+    ): array {
         $data = [];
         foreach ($periods as $key => $period) {
             $summary = $fullSummaryByPeriod[$key]->only($segmentCodes)->values();
@@ -178,29 +215,7 @@ class EmailWeeklyRmMoversCommand extends Command
         $data['week']['topGainers'] = collect($drilldown['gainers']);
         $data['week']['topLosers']  = collect($drilldown['losers']);
 
-        $mailable = new WeeklyRmMoversReportMail($weekEnd, $periods, $data, $limit, $segment);
-
-        $groupedDrilldown = $service->drilldownGroupedByRmCodes($weekPeriod['start'], $weekPeriod['end'], $segmentCodes, $limit);
-
-        $excelName = "Weekly_RM_Movers_{$segment}_{$weekEnd}.xlsx";
-        $excelBinary = Excel::raw(
-            new WeeklyRmMoversWorkbookExport($weekEnd, $periods, $data, $segmentCodes, RmPortfolioService::names(), $groupedDrilldown),
-            ExcelWriter::XLSX
-        );
-        $mailable->attachData(
-            $excelBinary,
-            $excelName,
-            ['mime' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
-        );
-
-        Mail::to($to)->cc($cc)->send($mailable);
-
-        $this->info("[{$segment}] Weekly RM movers email sent (with Excel attachment).");
-        $this->line("[{$segment}] TO: " . implode(', ', $to));
-        $this->line("[{$segment}] CC: " . (empty($cc) ? '(none)' : implode(', ', $cc)));
-        $this->line("[{$segment}] RMs: " . count($segmentCodes));
-
-        return true;
+        return $data;
     }
 
     private function resolveRmCodes(): array

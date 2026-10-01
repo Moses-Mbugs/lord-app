@@ -25,11 +25,11 @@ class EmailRmMoversCommand extends Command
         {--to= : Override TO recipients (comma/semicolon/space separated)}
         {--cc= : Override CC recipients (comma/semicolon/space separated)}
         {--rms= : Override RM sales codes (comma/semicolon/space separated); defaults to the tracked portfolio list}
-        {--segment= : Restrict to one Job Unit segment (Premier|Advantage|Direct); defaults to all segments present, one email each}
-        {--drilldown=10 : Top customer gainers/losers to show across the RM list}
+        {--segment= : Restrict to one Job Unit segment (Premier|Advantage|Direct); defaults to all segments, as sections in one email}
+        {--drilldown=10 : Top customer gainers/losers to show per segment}
     ';
 
-    protected $description = 'Email RM Movers report (deposit movement), one email per Job Unit segment (Premier/Advantage/Direct), reading/building from rm_movers.';
+    protected $description = 'Email RM Movers report (deposit movement), one email with a section per Job Unit segment (Premier/Advantage/Direct), reading/building from rm_movers.';
 
     public function handle(RmMoversService $service, RmLoanMoversService $loanService): int
     {
@@ -99,22 +99,55 @@ class EmailRmMoversCommand extends Command
         $loanData    = $loanService->loanBookPerRm($effectiveStart, $end, $rmCodes);
         $accountData = $this->fetchAccountSnapshot($rmCodes);
 
-        $segments = RmPortfolioService::groupBySegment($rmCodes);
-        $sentAny  = false;
+        $segments     = RmPortfolioService::groupBySegment($rmCodes);
+        $segmentsData = [];
+        $orderedCodes = [];
 
         foreach ($segments as $segment => $segmentCodes) {
-            $sent = $this->sendSegment(
-                $segment, $segmentCodes, $effectiveStart, $end, $drilldownLimit,
-                $rows, $loanData, $accountData, $service, $to, $cc
+            $segmentsData[$segment] = $this->buildSegmentData(
+                $segmentCodes, $effectiveStart, $end, $drilldownLimit, $rows, $loanData, $accountData, $service
             );
-            $sentAny = $sentAny || $sent;
+            $orderedCodes = array_merge($orderedCodes, $segmentCodes);
         }
 
-        return $sentAny ? self::SUCCESS : self::FAILURE;
+        $allRmRows = collect($segmentsData)->flatMap(fn ($sd) => $sd['rmRows']);
+        $grandTotals = (object) [
+            'start_balance'  => (float) $allRmRows->sum('start_balance'),
+            'end_balance'    => (float) $allRmRows->sum('end_balance'),
+            'movement'       => (float) $allRmRows->sum('movement'),
+            'cif_count'      => (int) $allRmRows->sum('cif_count'),
+            'total_accounts' => (int) $allRmRows->sum('total_accounts'),
+            'loan_open'      => (float) $allRmRows->sum('loan_open'),
+            'loan_close'     => (float) $allRmRows->sum('loan_close'),
+            'loan_movement'  => (float) $allRmRows->sum('loan_movement'),
+        ];
+
+        $mailable = new RmMoversReportMail($effectiveStart, $end, $segmentsData, $grandTotals);
+
+        $groupedDrilldown = $service->drilldownGroupedByRmCodes($effectiveStart, $end, $orderedCodes, $drilldownLimit);
+
+        $excelName = "RM_Movers_{$effectiveStart}_{$end}.xlsx";
+        $excelBinary = Excel::raw(
+            new RmMoversWorkbookExport($effectiveStart, $end, $segmentsData, $grandTotals, $orderedCodes, RmPortfolioService::names(), $groupedDrilldown),
+            ExcelWriter::XLSX
+        );
+        $mailable->attachData(
+            $excelBinary,
+            $excelName,
+            ['mime' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
+        );
+
+        Mail::to($to)->cc($cc)->send($mailable);
+
+        $this->info('RM movers email sent (with Excel attachment).');
+        $this->line('TO: ' . implode(', ', $to));
+        $this->line('CC: ' . (empty($cc) ? '(none)' : implode(', ', $cc)));
+        $this->line("Period: {$effectiveStart} → {$end} | RMs: " . count($rmCodes) . ' | Segments: ' . implode(', ', array_keys($segments)));
+
+        return self::SUCCESS;
     }
 
-    private function sendSegment(
-        string $segment,
+    private function buildSegmentData(
         array $segmentCodes,
         string $effectiveStart,
         string $end,
@@ -122,10 +155,8 @@ class EmailRmMoversCommand extends Command
         Collection $rows,
         array $loanData,
         array $accountData,
-        RmMoversService $service,
-        array $to,
-        array $cc
-    ): bool {
+        RmMoversService $service
+    ): array {
         $rmRows = collect($segmentCodes)
             ->map(function ($code) use ($rows, $loanData, $accountData) {
                 $row     = $rows->get($code);
@@ -159,38 +190,14 @@ class EmailRmMoversCommand extends Command
             'loan_movement'  => (float) $rmRows->sum('loan_movement'),
         ];
 
-        $drilldown        = $service->drilldownByRmCodes($effectiveStart, $end, $segmentCodes, $drilldownLimit);
-        $groupedDrilldown = $service->drilldownGroupedByRmCodes($effectiveStart, $end, $segmentCodes, $drilldownLimit);
+        $drilldown = $service->drilldownByRmCodes($effectiveStart, $end, $segmentCodes, $drilldownLimit);
 
-        $mailable = new RmMoversReportMail(
-            $effectiveStart,
-            $end,
-            $rmRows,
-            $totals,
-            collect($drilldown['gainers']),
-            collect($drilldown['losers']),
-            $segment
-        );
-
-        $excelName = "RM_Movers_{$segment}_{$effectiveStart}_{$end}.xlsx";
-        $excelBinary = Excel::raw(
-            new RmMoversWorkbookExport($effectiveStart, $end, $rmRows, $totals, $segmentCodes, RmPortfolioService::names(), $groupedDrilldown),
-            ExcelWriter::XLSX
-        );
-        $mailable->attachData(
-            $excelBinary,
-            $excelName,
-            ['mime' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
-        );
-
-        Mail::to($to)->cc($cc)->send($mailable);
-
-        $this->info("[{$segment}] RM movers email sent (with Excel attachment).");
-        $this->line("[{$segment}] TO: " . implode(', ', $to));
-        $this->line("[{$segment}] CC: " . (empty($cc) ? '(none)' : implode(', ', $cc)));
-        $this->line("[{$segment}] Period: {$effectiveStart} → {$end} | RMs: " . count($segmentCodes));
-
-        return true;
+        return [
+            'rmRows'     => $rmRows,
+            'totals'     => $totals,
+            'topGainers' => collect($drilldown['gainers']),
+            'topLosers'  => collect($drilldown['losers']),
+        ];
     }
 
     private function fetchRows(string $start, string $end, array $rmCodes): Collection
