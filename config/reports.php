@@ -221,6 +221,24 @@ return [
             'KE1343' => 'Joan Sang',
         ],
 
+        // Test phase — sending to mmuigai@ecobank.com only. Expand once validated.
+        'rm_loan_movers_to' => [
+            'mmuigai@ecobank.com',
+        ],
+
+        'rm_loan_movers_cc' => [
+            // 'ALLEKE-ICT@ecobank.com',
+        ],
+
+        // Falls back to rm_loan_movers_to/_cc above if left empty.
+        'weekly_rm_loan_movers_to' => [
+            // 'mmuigai@ecobank.com',
+        ],
+
+        'weekly_rm_loan_movers_cc' => [
+            // 'ALLEKE-ICT@ecobank.com',
+        ],
+
     ],
 
     'loans' => [

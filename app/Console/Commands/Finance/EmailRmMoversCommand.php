@@ -6,6 +6,7 @@ namespace App\Console\Commands\Finance;
 
 use App\Exports\Finance\RmMoversWorkbookExport;
 use App\Mail\RmMoversReportMail;
+use App\Services\Reports\RmLoanMoversService;
 use App\Services\Reports\RmMoversService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
@@ -58,7 +59,7 @@ class EmailRmMoversCommand extends Command
         return !empty($configured) ? $configured : self::DEFAULT_RM_CODES;
     }
 
-    public function handle(RmMoversService $service): int
+    public function handle(RmMoversService $service, RmLoanMoversService $loanService): int
     {
         $requestedStart = Carbon::parse((string) $this->argument('start'))->toDateString();
         $end            = Carbon::parse((string) $this->argument('end'))->toDateString();
@@ -120,7 +121,7 @@ class EmailRmMoversCommand extends Command
             $this->line("⚠ Fallback applied: using {$effectiveStart} → {$end} (requested was {$requestedStart} → {$end})");
         }
 
-        $loanData     = $this->fetchRmLoanData($effectiveStart, $end, $rmCodes);
+        $loanData     = $loanService->loanBookPerRm($effectiveStart, $end, $rmCodes);
         $accountData  = $this->fetchAccountSnapshot($rmCodes);
 
         // Fill in every RM in the requested list with a zero row when it has no movement
@@ -200,76 +201,6 @@ class EmailRmMoversCommand extends Command
             ->whereIn('rm_code', $rmCodes)
             ->get()
             ->keyBy(fn ($r) => strtoupper(trim((string) $r->rm_code)));
-    }
-
-    /**
-     * Performing loan book per RM (open / close), using nearest available as_at_date
-     * on or before each period date. Mirrors EmailBranchMoversCommand::fetchBranchLoanData,
-     * grouped by rm_officer instead of branch and scoped to the given RM codes.
-     *
-     * @return array<string, array{open: float, close: float}>
-     */
-    private function fetchRmLoanData(string $start, string $end, array $rmCodes): array
-    {
-        if (empty($rmCodes)) {
-            return [];
-        }
-
-        $loanStartDate = DB::table('loan_listings')
-            ->whereNotNull('as_at_date')->whereDate('as_at_date', '<=', $start)->max('as_at_date');
-        $loanEndDate = DB::table('loan_listings')
-            ->whereNotNull('as_at_date')->whereDate('as_at_date', '<=', $end)->max('as_at_date');
-
-        if (!$loanStartDate || !$loanEndDate || $loanStartDate === $loanEndDate) {
-            $latest = DB::table('loan_listings')
-                ->whereNotNull('as_at_date')
-                ->select(DB::raw('DATE(as_at_date) AS snap_date'))
-                ->distinct()
-                ->orderByDesc('snap_date')
-                ->limit(2)
-                ->pluck('snap_date');
-
-            if ($latest->count() < 2) {
-                return [];
-            }
-
-            $loanEndDate   = $latest->first();
-            $loanStartDate = $latest->last();
-        }
-
-        $dates = array_values(array_unique(array_filter([$loanStartDate, $loanEndDate])));
-
-        $rows = DB::table('loan_listings as ll')
-            ->joinSub(
-                DB::table('loan_listings')
-                    ->whereIn(DB::raw('DATE(as_at_date)'), $dates)
-                    ->whereRaw("UPPER(TRIM(COALESCE(business_segment,''))) != 'CORPORATE'")
-                    ->whereRaw("(TRIM(COALESCE(loan_status, '')) = '' OR loan_status IN ('NORM', 'Normal', 'OAEM', 'SUBS', 'Watch'))")
-                    ->whereIn('rm_officer', $rmCodes)
-                    ->select(DB::raw('DATE(as_at_date) AS snap_date'), 'related_account', DB::raw('MAX(id) AS max_id'))
-                    ->groupBy(DB::raw('DATE(as_at_date)'), 'related_account'),
-                'dedup',
-                'll.id',
-                '=',
-                'dedup.max_id'
-            )
-            ->selectRaw(
-                "ll.rm_officer AS rm_code,
-                 SUM(CASE WHEN DATE(ll.as_at_date) = ? THEN ll.loan_book_outstanding ELSE 0 END) AS loan_open,
-                 SUM(CASE WHEN DATE(ll.as_at_date) = ? THEN ll.loan_book_outstanding ELSE 0 END) AS loan_close",
-                [$loanStartDate, $loanEndDate]
-            )
-            ->groupBy('ll.rm_officer')
-            ->get();
-
-        $result = [];
-        foreach ($rows as $r) {
-            $code = strtoupper(trim((string) $r->rm_code));
-            if ($code === '') continue;
-            $result[$code] = ['open' => (float) $r->loan_open, 'close' => (float) $r->loan_close];
-        }
-
-        return $result;
     }
 
     /**
