@@ -36,8 +36,8 @@ class SubSegmentMoversService
         '470130430' => ['business' => 'Corporate Banking', 'business_segment_name' => 'Regional Corporates'],
 
         // TEMPORARY manual reclassification (Oct 2026) — revert once corrected at source.
-        '471704700' => ['business' => 'Commercial Banking', 'business_segment_name' => 'Local Corporates'],    // BLUE SKY ENERGY LIMITED (was Commercial / SME)
-        '471650332' => ['business' => 'Commercial Banking', 'business_segment_name' => 'Local Corporates'],    // MFI TECHNOLOGY SOLUTIONS LIMITED (was Commercial / SME)
+        '471704700' => ['business' => 'Commercial Banking', 'business_segment_name' => 'Local Corporate'],     // BLUE SKY ENERGY LIMITED (was Commercial / SME)
+        '471650332' => ['business' => 'Commercial Banking', 'business_segment_name' => 'Local Corporate'],     // MFI TECHNOLOGY SOLUTIONS LIMITED (was Commercial / SME)
         '471770982' => ['business' => 'Corporate Banking', 'business_segment_name' => 'Regional Corporates'], // MASHONALAND TOBACCO COMPANY (was Unmapped)
     ];
 
