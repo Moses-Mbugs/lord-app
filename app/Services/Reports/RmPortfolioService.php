@@ -15,6 +15,31 @@ class RmPortfolioService
     /** Job Unit segments, in display order. Any code with no known segment groups as 'Unassigned'. */
     public const SEGMENTS = ['Premier', 'Advantage', 'Direct'];
 
+    /**
+     * Single color per segment, used to color-code segment sections consistently across
+     * every RM report's email body (HTML gradients) and Excel attachment (cell fills).
+     * 'hex' is the plain 6-digit hex (no '#'), used for Excel ARGB fills; 'html' is the
+     * '#'-prefixed form for inline CSS. 'from'/'to' give a two-stop gradient for banners.
+     */
+    private const SEGMENT_COLORS = [
+        'Premier' => [
+            'from' => '#B45309', 'to' => '#D97706', 'text' => '#FEF3C7',
+            'fill' => 'FEF3C7', 'fillText' => '92400E', 'border' => 'FDE68A',
+        ],
+        'Advantage' => [
+            'from' => '#6D28D9', 'to' => '#8B5CF6', 'text' => '#EDE9FE',
+            'fill' => 'EDE9FE', 'fillText' => '5B21B6', 'border' => 'C4B5FD',
+        ],
+        'Direct' => [
+            'from' => '#005B82', 'to' => '#0082BB', 'text' => '#D8E9F3',
+            'fill' => 'E8F4FB', 'fillText' => '005B82', 'border' => 'B3D9ED',
+        ],
+        'Unassigned' => [
+            'from' => '#475569', 'to' => '#64748B', 'text' => '#E2E8F0',
+            'fill' => 'F1F5F9', 'fillText' => '334155', 'border' => 'CBD5E1',
+        ],
+    ];
+
     private const DEFAULT_PORTFOLIO = [
         'KE0827' => ['name' => 'Veronica Nasieku Lalarari',      'segment' => 'Premier'],
         'KE1228' => ['name' => 'James Chisakane Odera',          'segment' => 'Premier'],
@@ -55,6 +80,24 @@ class RmPortfolioService
     public static function segment(string $rmCode): string
     {
         return self::all()[$rmCode]['segment'] ?? 'Unassigned';
+    }
+
+    /**
+     * Color scheme for a segment name (Premier/Advantage/Direct/Unassigned):
+     * 'from'/'to' (banner gradient), 'text' (text on the gradient), 'fill'/'fillText'/'border'
+     * (Excel cell fill, no '#' prefix, for PhpSpreadsheet RGB colors).
+     *
+     * @return array{from: string, to: string, text: string, fill: string, fillText: string, border: string}
+     */
+    public static function segmentColor(string $segment): array
+    {
+        return self::SEGMENT_COLORS[$segment] ?? self::SEGMENT_COLORS['Unassigned'];
+    }
+
+    /** Color scheme for an RM code, looked up via its segment. */
+    public static function colorForCode(string $rmCode): array
+    {
+        return self::segmentColor(self::segment($rmCode));
     }
 
     /** rm_code => name, for everywhere that only needs a display-name lookup. */

@@ -130,10 +130,11 @@
             </table>
 
             @foreach ($segmentsData as $segment => $sd)
+                @php $segColor = \App\Services\Reports\RmPortfolioService::segmentColor($segment); @endphp
                 {{-- SEGMENT BANNER --}}
-                <div style="margin:{{ $loop->first ? 0 : 28 }}px 0 12px; padding:8px 14px; background:linear-gradient(90deg,#005B82 0%,#0082BB 100%); border-radius:8px;">
+                <div style="margin:{{ $loop->first ? 0 : 28 }}px 0 12px; padding:8px 14px; background:linear-gradient(90deg,{{ $segColor['from'] }} 0%,{{ $segColor['to'] }} 100%); border-radius:8px;">
                     <span style="font-size:14px; font-weight:900; color:#ffffff; letter-spacing:0.2px;">{{ $segment }}</span>
-                    <span style="font-size:11px; font-weight:700; color:#D8E9F3; margin-left:8px;">{{ $sd['rmRows']->count() }} RM{{ $sd['rmRows']->count() === 1 ? '' : 's' }}</span>
+                    <span style="font-size:11px; font-weight:700; color:{{ $segColor['text'] }}; margin-left:8px;">{{ $sd['rmRows']->count() }} RM{{ $sd['rmRows']->count() === 1 ? '' : 's' }}</span>
                 </div>
 
                 {{-- SECTION: RM SUMMARY --}}

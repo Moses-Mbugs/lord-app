@@ -86,6 +86,9 @@ class WeeklyRmSummarySheet implements FromArray, WithTitle, ShouldAutoSize, With
     private int   $headerRow  = 0;
     private int   $lastRmRow  = 0;
 
+    /** @var array<string, array{0: int, 1: int}> segment => [firstRow, lastRow] (inclusive, incl. its TOTAL row) */
+    private array $segmentRowRanges = [];
+
     /**
      * @param array $periods ['week'|'mtd'|'ytd' => ['start','end','label']]
      * @param array<string, array> $segmentsData keyed by segment name
@@ -140,6 +143,7 @@ class WeeklyRmSummarySheet implements FromArray, WithTitle, ShouldAutoSize, With
 
         foreach ($this->segmentsData as $segment => $data) {
             $map = $this->buildMap($data);
+            $segmentFirstRow = $rowNum + 1;
 
             $rank = 0;
             foreach ($map as $r) {
@@ -171,6 +175,7 @@ class WeeklyRmSummarySheet implements FromArray, WithTitle, ShouldAutoSize, With
                 (int)   ($ytdAll->ntb_count      ?? 0),
             ];
             $this->boldRows[] = $rowNum;
+            $this->segmentRowRanges[$segment] = [$segmentFirstRow, $rowNum];
         }
         $this->lastRmRow = $rowNum;
 
@@ -311,6 +316,19 @@ class WeeklyRmSummarySheet implements FromArray, WithTitle, ShouldAutoSize, With
                         $sheet->getStyle("H{$row}")->getFont()->getColor()->setRGB('374151');
                         $sheet->getStyle("K{$row}")->getFont()->getColor()->setRGB('374151');
                     }
+                }
+
+                // Color-code the Segment column per segment, with a matching left border
+                // stripe down the whole row so each segment (incl. its TOTAL row) reads as
+                // its own color band.
+                foreach ($this->segmentRowRanges as $segment => [$first, $last]) {
+                    $color = \App\Services\Reports\RmPortfolioService::segmentColor($segment);
+
+                    $sheet->getStyle("A{$first}:A{$last}")->applyFromArray([
+                        'fill'    => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $color['fill']]],
+                        'font'    => ['color' => ['rgb' => $color['fillText']]],
+                        'borders' => ['left' => ['borderStyle' => Border::BORDER_THICK, 'color' => ['rgb' => $color['border']]]],
+                    ]);
                 }
 
                 // Grand total row (last row)

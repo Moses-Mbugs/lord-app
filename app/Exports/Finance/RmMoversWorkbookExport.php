@@ -66,6 +66,9 @@ class RmSummarySheet implements FromArray, WithTitle, WithHeadings, ShouldAutoSi
 {
     private array $boldRows = [];
 
+    /** @var array<string, array{0: int, 1: int}> segment => [firstRow, lastRow] (inclusive, incl. its TOTAL row) */
+    private array $segmentRowRanges = [];
+
     /** @param array<string, array{rmRows: \Illuminate\Support\Collection, totals: object}> $segmentsData */
     public function __construct(
         private readonly array $segmentsData,
@@ -97,6 +100,8 @@ class RmSummarySheet implements FromArray, WithTitle, WithHeadings, ShouldAutoSi
         $rowNum = 1; // headings occupy row 1
 
         foreach ($this->segmentsData as $segment => $sd) {
+            $segmentFirstRow = $rowNum + 1;
+
             foreach ($sd['rmRows'] as $r) {
                 $rows[] = [
                     $segment, (string) $r->rm_code, (string) $r->rm_name,
@@ -116,6 +121,7 @@ class RmSummarySheet implements FromArray, WithTitle, WithHeadings, ShouldAutoSi
             ];
             $rowNum++;
             $this->boldRows[] = $rowNum;
+            $this->segmentRowRanges[$segment] = [$segmentFirstRow, $rowNum];
         }
 
         $g = $this->grandTotals;
@@ -177,6 +183,18 @@ class RmSummarySheet implements FromArray, WithTitle, WithHeadings, ShouldAutoSi
                     $sheet->getStyle("A{$r}:K{$r}")->applyFromArray([
                         'font' => ['bold' => true],
                         'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'E2E8F0']],
+                    ]);
+                }
+
+                // Color-code the Segment column per segment, with a matching left border
+                // stripe down the whole row so each segment reads as its own color band.
+                foreach ($this->segmentRowRanges as $segment => [$first, $last]) {
+                    $color = \App\Services\Reports\RmPortfolioService::segmentColor($segment);
+
+                    $sheet->getStyle("A{$first}:A{$last}")->applyFromArray([
+                        'fill'    => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $color['fill']]],
+                        'font'    => ['color' => ['rgb' => $color['fillText']]],
+                        'borders' => ['left' => ['borderStyle' => Border::BORDER_THICK, 'color' => ['rgb' => $color['border']]]],
                     ]);
                 }
             },

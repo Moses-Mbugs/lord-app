@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Exports\Finance;
 
+use App\Services\Reports\RmPortfolioService;
 use Maatwebsite\Excel\Concerns\FromArray;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithColumnFormatting;
 use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Concerns\WithTitle;
 use Maatwebsite\Excel\Events\AfterSheet;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 
 /**
@@ -27,6 +29,9 @@ class LoanAccountMoversByRmSheet implements FromArray, WithTitle, ShouldAutoSize
 {
     private array $mergeRows = [];
     private array $boldRows  = [];
+
+    /** @var array<int, string> rmHeaderRow => segment name, for color-coding each RM's block */
+    private array $rmHeaderSegments = [];
 
     public function __construct(
         private readonly string $startDate,
@@ -64,6 +69,7 @@ class LoanAccountMoversByRmSheet implements FromArray, WithTitle, ShouldAutoSize
             $rows[] = [$title];
             $this->mergeRows[] = $rmHeaderRow;
             $this->boldRows[]  = $rmHeaderRow;
+            $this->rmHeaderSegments[$rmHeaderRow] = RmPortfolioService::segment($code);
 
             $headerRow = count($rows) + 1;
             $rows[] = [
@@ -122,6 +128,15 @@ class LoanAccountMoversByRmSheet implements FromArray, WithTitle, ShouldAutoSize
 
                 foreach ($this->boldRows as $r) {
                     $sheet->getStyle("A{$r}:I{$r}")->getFont()->setBold(true);
+                }
+
+                // Color-code each RM's block header by their Job Unit segment.
+                foreach ($this->rmHeaderSegments as $row => $segment) {
+                    $color = RmPortfolioService::segmentColor($segment);
+                    $sheet->getStyle("A{$row}:I{$row}")->applyFromArray([
+                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $color['fill']]],
+                        'font' => ['bold' => true, 'color' => ['rgb' => $color['fillText']]],
+                    ]);
                 }
 
                 $sheet->freezePane('A4');
