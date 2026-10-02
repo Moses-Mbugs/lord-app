@@ -50,8 +50,7 @@
     style="width:100%;border-collapse:collapse;font-size:12px;background:#ffffff;mso-table-lspace:0pt;mso-table-rspace:0pt;">
   <thead>
     <tr bgcolor="#1B344F">
-      <th style="width:4px;padding:0;background:#0F2744;border-bottom:1px solid #0F2744;"></th>
-      <th style="padding:11px 16px 11px 12px;text-align:left;font-size:10px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:0.8px;border-bottom:1px solid #253D54;width:32%;">Segment</th>
+      <th style="padding:11px 16px 11px 14px;text-align:left;font-size:10px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:0.8px;border-bottom:1px solid #253D54;width:32%;">Segment</th>
       <th style="{{ $th }}width:17%;">Month Δ<br><span style="{{ $thSub }}">{{ $fmtShort($periods['month_start'] ?? null) }} → {{ $fmtShort($periods['month_end'] ?? null) }}</span></th>
       <th style="{{ $th }}width:10%;">MoM %</th>
       <th style="{{ $th }}width:17%;">YTD Δ<br><span style="{{ $thSub }}">from {{ $fmtShort($periods['ytd_start'] ?? null) }}</span></th>
@@ -68,7 +67,6 @@
         $borderTop = $isTotal ? 'border-top:2px solid #CBD5E1;' : 'border-top:1px solid #E8ECF1;';
       @endphp
       <tr style="background:{{ $p['rowBg'] }};">
-        <td style="width:4px;padding:0;background:{{ $p['accent'] }};{{ $borderTop }}"></td>
         <td style="padding:11px 14px;{{ $borderTop }}">
           <span style="font-size:12.5px;font-weight:800;color:{{ $p['nameTx'] }};letter-spacing:0.1px;">{{ strtoupper($seg['name'] ?? $code) }}</span>
           @if(!$isTotal && count($subs))
@@ -84,7 +82,6 @@
       @foreach ($subs as $sub)
         @php $subBorder = $loop->last ? 'border-bottom:1px solid #E8ECF1;' : 'border-bottom:1px solid #F1F5F9;'; @endphp
         <tr style="background:{{ $p['subBg'] }};">
-          <td style="width:4px;padding:0;background:{{ $p['accent'] }};opacity:0.25;{{ $subBorder }}"></td>
           <td style="padding:6px 14px 6px 24px;{{ $subBorder }}">
             <table cellpadding="0" cellspacing="0" style="mso-table-lspace:0pt;mso-table-rspace:0pt;">
               <tr>
@@ -100,7 +97,7 @@
         </tr>
       @endforeach
     @empty
-      <tr><td colspan="6" style="padding:28px;text-align:center;color:#94A3B8;font-size:12px;">No segment data available for this period.</td></tr>
+      <tr><td colspan="5"style="padding:28px;text-align:center;color:#94A3B8;font-size:12px;">No segment data available for this period.</td></tr>
     @endforelse
   </tbody>
 </table>
