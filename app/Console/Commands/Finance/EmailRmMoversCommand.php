@@ -104,9 +104,7 @@ class EmailRmMoversCommand extends Command
         $orderedCodes = [];
 
         foreach ($segments as $segment => $segmentCodes) {
-            $segmentsData[$segment] = $this->buildSegmentData(
-                $segmentCodes, $effectiveStart, $end, $drilldownLimit, $rows, $loanData, $accountData, $service
-            );
+            $segmentsData[$segment] = $this->buildSegmentData($segmentCodes, $rows, $loanData, $accountData);
             $orderedCodes = array_merge($orderedCodes, $segmentCodes);
         }
 
@@ -122,13 +120,27 @@ class EmailRmMoversCommand extends Command
             'loan_movement'  => (float) $allRmRows->sum('loan_movement'),
         ];
 
-        $mailable = new RmMoversReportMail($effectiveStart, $end, $segmentsData, $grandTotals);
+        // One combined top-gainers/top-losers list across all segments (for the email body).
+        $drilldown = $service->drilldownByRmCodes($effectiveStart, $end, $rmCodes, $drilldownLimit);
 
-        $groupedDrilldown = $service->drilldownGroupedByRmCodes($effectiveStart, $end, $orderedCodes, $drilldownLimit);
+        $mailable = new RmMoversReportMail(
+            $effectiveStart,
+            $end,
+            $segmentsData,
+            $grandTotals,
+            collect($drilldown['gainers']),
+            collect($drilldown['losers'])
+        );
+
+        $groupedDrilldown     = $service->drilldownGroupedByRmCodes($effectiveStart, $end, $orderedCodes, $drilldownLimit);
+        $groupedLoanDrilldown = $loanService->accountMoversGroupedByRmCodes($effectiveStart, $end, $orderedCodes, $drilldownLimit);
 
         $excelName = "RM_Movers_{$effectiveStart}_{$end}.xlsx";
         $excelBinary = Excel::raw(
-            new RmMoversWorkbookExport($effectiveStart, $end, $segmentsData, $grandTotals, $orderedCodes, RmPortfolioService::names(), $groupedDrilldown),
+            new RmMoversWorkbookExport(
+                $effectiveStart, $end, $segmentsData, $grandTotals, $orderedCodes, RmPortfolioService::names(),
+                $groupedDrilldown, $groupedLoanDrilldown
+            ),
             ExcelWriter::XLSX
         );
         $mailable->attachData(
@@ -149,13 +161,9 @@ class EmailRmMoversCommand extends Command
 
     private function buildSegmentData(
         array $segmentCodes,
-        string $effectiveStart,
-        string $end,
-        int $drilldownLimit,
         Collection $rows,
         array $loanData,
-        array $accountData,
-        RmMoversService $service
+        array $accountData
     ): array {
         $rmRows = collect($segmentCodes)
             ->map(function ($code) use ($rows, $loanData, $accountData) {
@@ -190,13 +198,9 @@ class EmailRmMoversCommand extends Command
             'loan_movement'  => (float) $rmRows->sum('loan_movement'),
         ];
 
-        $drilldown = $service->drilldownByRmCodes($effectiveStart, $end, $segmentCodes, $drilldownLimit);
-
         return [
-            'rmRows'     => $rmRows,
-            'totals'     => $totals,
-            'topGainers' => collect($drilldown['gainers']),
-            'topLosers'  => collect($drilldown['losers']),
+            'rmRows' => $rmRows,
+            'totals' => $totals,
         ];
     }
 

@@ -14,8 +14,9 @@ use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 
 /**
  * Top N loan-account gainers/losers per RM, side-by-side, all in one sheet.
- * Layout mirrors RmDepositMoversSheet / LoanAccountMoversByBranchSheet (BranchMoversWorkbookExport.php)
- * but grouped by RM instead of branch — shared by the daily and weekly RM Loan Movers Excel exports.
+ * Layout mirrors RmDepositMoversSheet — the deposit equivalent — but for the loan book.
+ * Added as an extra sheet on the RM Movers workbook (daily + weekly), since loans are
+ * already shown alongside deposits in those reports and no longer have a separate report.
  *
  * @param array<string,string> $rmNames rm_code => display name
  * @param array<string,array{gainers: array, losers: array}> $grouped from

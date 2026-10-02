@@ -173,6 +173,11 @@
     </div>
   @endforeach
 
+  @include('emails.finance.partials.weekly_top_deposit_movers', [
+      'topGainers' => $topGainers ?? collect(),
+      'topLosers'  => $topLosers ?? collect(),
+  ])
+
   {{-- ── Notes ──────────────────────── --}}
   <div style="margin-top:20px;font-size:10.5px;color:#64748B;padding:10px 14px;background:#F8FAFC;border:1px solid #E2E8F0;border-left:4px solid #005B82;border-radius:8px;line-height:1.6;">
     <strong style="color:#1F3A5F;font-weight:900;">Notes:</strong>

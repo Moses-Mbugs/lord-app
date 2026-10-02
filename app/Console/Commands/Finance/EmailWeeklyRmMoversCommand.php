@@ -151,20 +151,33 @@ class EmailWeeklyRmMoversCommand extends Command
         $orderedCodes = [];
 
         foreach ($segments as $segment => $segmentCodes) {
-            $segmentsData[$segment] = $this->buildSegmentData(
-                $segmentCodes, $periods, $fullSummaryByPeriod, $limit, $service
-            );
+            $segmentsData[$segment] = $this->buildSegmentData($segmentCodes, $periods, $fullSummaryByPeriod);
             $orderedCodes = array_merge($orderedCodes, $segmentCodes);
         }
 
-        $mailable = new WeeklyRmMoversReportMail($weekEnd, $periods, $segmentsData, $grandDataByPeriod, $limit);
-
+        // One combined top-gainers/top-losers list across all segments, for the email body.
         $weekPeriod = $periods['week'];
-        $groupedDrilldown = $service->drilldownGroupedByRmCodes($weekPeriod['start'], $weekPeriod['end'], $orderedCodes, $limit);
+        $drilldown = $service->drilldownByRmCodes($weekPeriod['start'], $weekPeriod['end'], $rmCodes, $limit);
+
+        $mailable = new WeeklyRmMoversReportMail(
+            $weekEnd,
+            $periods,
+            $segmentsData,
+            $grandDataByPeriod,
+            $limit,
+            collect($drilldown['gainers']),
+            collect($drilldown['losers'])
+        );
+
+        $groupedDrilldown     = $service->drilldownGroupedByRmCodes($weekPeriod['start'], $weekPeriod['end'], $orderedCodes, $limit);
+        $groupedLoanDrilldown = $loanService->accountMoversGroupedByRmCodes($weekPeriod['start'], $weekPeriod['end'], $orderedCodes, $limit);
 
         $excelName = "Weekly_RM_Movers_{$weekEnd}.xlsx";
         $excelBinary = Excel::raw(
-            new WeeklyRmMoversWorkbookExport($weekEnd, $periods, $segmentsData, $grandDataByPeriod, $orderedCodes, RmPortfolioService::names(), $groupedDrilldown),
+            new WeeklyRmMoversWorkbookExport(
+                $weekEnd, $periods, $segmentsData, $grandDataByPeriod, $orderedCodes, RmPortfolioService::names(),
+                $groupedDrilldown, $groupedLoanDrilldown
+            ),
             ExcelWriter::XLSX
         );
         $mailable->attachData(
@@ -183,13 +196,8 @@ class EmailWeeklyRmMoversCommand extends Command
         return self::SUCCESS;
     }
 
-    private function buildSegmentData(
-        array $segmentCodes,
-        array $periods,
-        array $fullSummaryByPeriod,
-        int $limit,
-        RmMoversService $service
-    ): array {
+    private function buildSegmentData(array $segmentCodes, array $periods, array $fullSummaryByPeriod): array
+    {
         $data = [];
         foreach ($periods as $key => $period) {
             $summary = $fullSummaryByPeriod[$key]->only($segmentCodes)->values();
@@ -209,11 +217,6 @@ class EmailWeeklyRmMoversCommand extends Command
 
             $data[$key] = ['period' => $period, 'summary' => $summary, 'all' => $all];
         }
-
-        $weekPeriod = $periods['week'];
-        $drilldown = $service->drilldownByRmCodes($weekPeriod['start'], $weekPeriod['end'], $segmentCodes, $limit);
-        $data['week']['topGainers'] = collect($drilldown['gainers']);
-        $data['week']['topLosers']  = collect($drilldown['losers']);
 
         return $data;
     }

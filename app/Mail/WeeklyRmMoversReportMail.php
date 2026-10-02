@@ -8,6 +8,7 @@ use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Collection;
 
 class WeeklyRmMoversReportMail extends Mailable
 {
@@ -16,17 +17,20 @@ class WeeklyRmMoversReportMail extends Mailable
     /**
      * @param array $periods ['week'|'mtd'|'ytd' => ['start','end','label']]
      * @param array<string, array> $segmentsData keyed by segment name, each value shaped
-     *        like ['week'|'mtd'|'ytd' => ['period','summary','all'], 'week' additionally
-     *        carrying 'topGainers'/'topLosers']
+     *        like ['week'|'mtd'|'ytd' => ['period','summary','all']]
      * @param array<string, object> $grandData 'week'|'mtd'|'ytd' => 'all'-shaped object,
      *        summed across every segment, for the top-level KPI strip
+     * @param Collection $topGainers top deposit customer gainers (week period) across all segments combined
+     * @param Collection $topLosers  top deposit customer losers (week period) across all segments combined
      */
     public function __construct(
         public string $weekEnd,
         public array  $periods,
         public array  $segmentsData,
         public array  $grandData,
-        public int    $limit = 10
+        public int    $limit = 10,
+        public Collection $topGainers = new Collection(),
+        public Collection $topLosers = new Collection()
     ) {}
 
     public function build(): static
@@ -41,6 +45,8 @@ class WeeklyRmMoversReportMail extends Mailable
                 'segmentsData' => $this->segmentsData,
                 'grandData'    => $this->grandData,
                 'limit'        => $this->limit,
+                'topGainers'   => $this->topGainers,
+                'topLosers'    => $this->topLosers,
             ]);
     }
 }

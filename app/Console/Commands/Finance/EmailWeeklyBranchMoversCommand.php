@@ -6,6 +6,7 @@ namespace App\Console\Commands\Finance;
 
 use App\Exports\Finance\WeeklyBranchMoversWorkbookExport;
 use App\Mail\WeeklyBranchMoversReportMail;
+use App\Services\Reports\BranchPeriodMetricsService;
 use App\Services\Reports\GroupMoversService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
@@ -26,7 +27,7 @@ class EmailWeeklyBranchMoversCommand extends Command
 
     protected $description = 'Email Weekly Branch Movers report: Deposits (WTD/MTD/YTD), Loans (WTD/MTD), and NTB (WTD/MTD/YTD) movement per branch.';
 
-    public function handle(GroupMoversService $service): int
+    public function handle(GroupMoversService $service, BranchPeriodMetricsService $metrics): int
     {
         $endArg  = trim((string) ($this->argument('end') ?? ''));
         $weekEnd = $endArg !== '' ? Carbon::parse($endArg)->toDateString() : $this->findLatestBalanceDate();
@@ -100,13 +101,13 @@ class EmailWeeklyBranchMoversCommand extends Command
         // Fetch / build data for each period
         $data = [];
         foreach ($periods as $key => $period) {
-            [$summary, $top] = $this->fetchGroupMovers($period['start'], $period['end']);
+            [$summary, $top] = $metrics->groupMovers($period['start'], $period['end']);
 
             if ($summary->isEmpty() && $top->isEmpty()) {
                 if ($autoBuild) {
                     $this->line("  Building {$period['label']} ({$period['start']} → {$period['end']})…");
                     $service->buildBranchMovers($period['start'], $period['end'], $limit);
-                    [$summary, $top] = $this->fetchGroupMovers($period['start'], $period['end']);
+                    [$summary, $top] = $metrics->groupMovers($period['start'], $period['end']);
                 } else {
                     $this->warn("  No data for {$period['label']} ({$period['start']} → {$period['end']}).");
                     $this->warn("  Run: php artisan reports:build-branch-movers {$period['start']} {$period['end']} --limit={$limit}");
@@ -115,8 +116,8 @@ class EmailWeeklyBranchMoversCommand extends Command
             }
 
             // Enrich summary rows with loan data + NTB (new accounts opened in this period)
-            $loanByBranch = $this->fetchBranchLoanData($period['start'], $period['end']);
-            $ntbByBranch  = $this->fetchBranchNtbCounts($period['start'], $period['end']);
+            $loanByBranch = $metrics->loanTotals($period['start'], $period['end']);
+            $ntbByBranch  = $metrics->ntbCounts($period['start'], $period['end']);
             $summary = $summary->map(function ($row) use ($loanByBranch, $ntbByBranch) {
                 $code = strtoupper(trim((string) ($row->group_key ?? '')));
                 $loan = $loanByBranch[$code] ?? ['open' => 0.0, 'close' => 0.0];
@@ -182,141 +183,6 @@ class EmailWeeklyBranchMoversCommand extends Command
             ->max('balance_date');
 
         return $date ? Carbon::parse((string) $date)->toDateString() : null;
-    }
-
-    private function fetchGroupMovers(string $start, string $end): array
-    {
-        $summary = DB::table('group_movers')
-            ->where('group_type', 'BRANCH')
-            ->where('scope', 'SUMMARY')
-            ->whereDate('start_date', $start)
-            ->whereDate('end_date', $end)
-            ->orderByRaw("
-                CASE
-                    WHEN group_key = '834' THEN 1
-                    WHEN group_key = '950' THEN 2
-                    WHEN group_key = 'ALL' THEN 3
-                    ELSE 0
-                END
-            ")
-            ->orderBy('group_key')
-            ->get();
-
-        $top = DB::table('group_movers')
-            ->where('group_type', 'BRANCH')
-            ->where('scope', 'TOP')
-            ->whereDate('start_date', $start)
-            ->whereDate('end_date', $end)
-            ->orderBy('direction')
-            ->orderBy('rank')
-            ->get();
-
-        return [$summary, $top];
-    }
-
-    private function fetchBranchLoanData(string $start, string $end): array
-    {
-        $loanStartDate = DB::table('loan_listings')
-            ->whereNotNull('as_at_date')
-            ->whereDate('as_at_date', '<=', $start)
-            ->max('as_at_date');
-
-        $loanEndDate = DB::table('loan_listings')
-            ->whereNotNull('as_at_date')
-            ->whereDate('as_at_date', '<=', $end)
-            ->max('as_at_date');
-
-        if (!$loanStartDate || !$loanEndDate || $loanStartDate === $loanEndDate) {
-            $latest = DB::table('loan_listings')
-                ->whereNotNull('as_at_date')
-                ->select(DB::raw('DATE(as_at_date) AS snap_date'))
-                ->distinct()
-                ->orderByDesc('snap_date')
-                ->limit(2)
-                ->pluck('snap_date');
-
-            if ($latest->count() < 2) return [];
-
-            $loanEndDate   = (string) $latest->first();
-            $loanStartDate = (string) $latest->last();
-        }
-
-        $dates = array_values(array_unique([$loanStartDate, $loanEndDate]));
-
-        $rows = DB::table('loan_listings as ll')
-            ->joinSub(
-                DB::table('loan_listings')
-                    ->whereIn(DB::raw('DATE(as_at_date)'), $dates)
-                    ->whereRaw("UPPER(TRIM(COALESCE(business_segment,''))) != 'CORPORATE'")
-                    ->whereRaw("(TRIM(COALESCE(loan_status, '')) = '' OR loan_status IN ('NORM', 'Normal', 'OAEM', 'SUBS', 'Watch'))")
-                    ->select(DB::raw('DATE(as_at_date) AS snap_date'), 'related_account', DB::raw('MAX(id) AS max_id'))
-                    ->groupBy(DB::raw('DATE(as_at_date)'), 'related_account'),
-                'dedup', 'll.id', '=', 'dedup.max_id'
-            )
-            ->selectRaw(
-                "UPPER(TRIM(COALESCE(NULLIF(TRIM(ll.branch),''), LEFT(ll.related_account, 3)))) AS branch_code,
-                 SUM(CASE WHEN DATE(ll.as_at_date) = ? THEN ll.loan_book_outstanding ELSE 0 END) AS loan_open,
-                 SUM(CASE WHEN DATE(ll.as_at_date) = ? THEN ll.loan_book_outstanding ELSE 0 END) AS loan_close",
-                [$loanStartDate, $loanEndDate]
-            )
-            ->groupByRaw("UPPER(TRIM(COALESCE(NULLIF(TRIM(ll.branch),''), LEFT(ll.related_account, 3))))")
-            ->get();
-
-        $result   = [];
-        $allOpen  = 0.0;
-        $allClose = 0.0;
-
-        foreach ($rows as $r) {
-            $code = strtoupper(trim((string) $r->branch_code));
-            if ($code === '') continue;
-            $result[$code] = ['open' => (float) $r->loan_open, 'close' => (float) $r->loan_close];
-            $allOpen  += (float) $r->loan_open;
-            $allClose += (float) $r->loan_close;
-        }
-
-        $result['ALL'] = ['open' => $allOpen, 'close' => $allClose];
-
-        return $result;
-    }
-
-    /**
-     * NTB — distinct CIFs with a new account opened in (start, end] — per branch, plus 'ALL'.
-     * Exclusive of $start / inclusive of $end so back-to-back periods (e.g. this week's end
-     * being next week's start) never double-count an account opened on the boundary date.
-     *
-     * ac_open_date is stored as free text in D-Mon-YY form (e.g. "22-Oct-24") despite the
-     * migration declaring a DATE column — STR_TO_DATE is required to parse it, mirroring
-     * BranchDailyPerformanceSummaryService's NTB calculation. P50 (Head Office) is excluded,
-     * matching every other figure in this report.
-     */
-    private function fetchBranchNtbCounts(string $start, string $end): array
-    {
-        $base = DB::table('customer_accounts_imports')
-            ->whereNotNull('branch_code')
-            ->whereNotNull('f12_cif')
-            ->whereNotNull('ac_open_date')
-            ->whereRaw("TRIM(ac_open_date) <> ''")
-            ->whereRaw("UPPER(TRIM(branch_code)) <> 'P50'")
-            ->whereRaw("STR_TO_DATE(ac_open_date, '%d-%b-%y') > ?", [$start])
-            ->whereRaw("STR_TO_DATE(ac_open_date, '%d-%b-%y') <= ?", [$end]);
-
-        $rows = (clone $base)
-            ->selectRaw("UPPER(TRIM(branch_code)) as branch_code, COUNT(DISTINCT f12_cif) as ntb_count")
-            ->groupByRaw("UPPER(TRIM(branch_code))")
-            ->get();
-
-        $result = [];
-        foreach ($rows as $r) {
-            $code = strtoupper(trim((string) $r->branch_code));
-            if ($code === '') continue;
-            $result[$code] = (int) $r->ntb_count;
-        }
-
-        // Distinct across all branches (not a sum of the per-branch counts above), in case the
-        // same CIF opened accounts at more than one branch within the period.
-        $result['ALL'] = (int) ((clone $base)->selectRaw('COUNT(DISTINCT f12_cif) as agg')->value('agg') ?? 0);
-
-        return $result;
     }
 
     private function parseEmails(array|string|null $input): array

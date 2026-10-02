@@ -20,18 +20,21 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 /**
  * Daily RM Movers workbook: RM Summary (portfolio + deposit/loan movement, grouped by Job
- * Unit segment with subtotal rows) and, per RM (grouped in segment order), the top deposit
- * customer gainers/losers — same shape as BranchMoversWorkbookExport.
+ * Unit segment with subtotal rows), per RM (grouped in segment order) the top deposit
+ * customer gainers/losers, and per RM the top loan account gainers/losers — same shape as
+ * BranchMoversWorkbookExport.
  */
 class RmMoversWorkbookExport implements WithMultipleSheets
 {
     /**
-     * @param array<string, array{rmRows: \Illuminate\Support\Collection, totals: object, topGainers: \Illuminate\Support\Collection, topLosers: \Illuminate\Support\Collection}> $segmentsData
+     * @param array<string, array{rmRows: \Illuminate\Support\Collection, totals: object}> $segmentsData
      *        keyed by segment name, in display order
      * @param object $grandTotals same shape as each segment's totals, summed across all segments
-     * @param array $rmCodes RM codes in segment-grouped order (so the movers sheet groups by segment)
+     * @param array $rmCodes RM codes in segment-grouped order (so the movers sheets group by segment)
      * @param array<string,array{gainers: array, losers: array}> $groupedDrilldown from
      *        RmMoversService::drilldownGroupedByRmCodes(), keyed by rm_code
+     * @param array<string,array{gainers: array, losers: array}> $groupedLoanDrilldown from
+     *        RmLoanMoversService::accountMoversGroupedByRmCodes(), keyed by rm_code
      */
     public function __construct(
         private readonly string $startDate,
@@ -40,7 +43,8 @@ class RmMoversWorkbookExport implements WithMultipleSheets
         private readonly object $grandTotals,
         private readonly array $rmCodes,
         private readonly array $rmNames,
-        private readonly array $groupedDrilldown
+        private readonly array $groupedDrilldown,
+        private readonly array $groupedLoanDrilldown
     ) {
     }
 
@@ -49,6 +53,7 @@ class RmMoversWorkbookExport implements WithMultipleSheets
         return [
             new RmSummarySheet($this->segmentsData, $this->grandTotals),
             new RmDepositMoversSheet($this->startDate, $this->endDate, $this->rmCodes, $this->rmNames, $this->groupedDrilldown),
+            new LoanAccountMoversByRmSheet($this->startDate, $this->endDate, $this->rmCodes, $this->rmNames, $this->groupedLoanDrilldown),
         ];
     }
 }

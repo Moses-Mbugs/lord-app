@@ -101,6 +101,8 @@ class ImportDailyBalancesZipCommand extends Command
                 $this->info('Rebuilding RM workload summary...');
                 Artisan::call('finance:build-rm-workload', [], $this->output);
 
+                $this->sendMonthlyReportIfMonthClosed($date, $dateOpt !== '');
+
                 return self::SUCCESS;
             }
 
@@ -124,6 +126,37 @@ class ImportDailyBalancesZipCommand extends Command
         }
 
         return self::FAILURE;
+    }
+
+    /**
+     * The first scheduled import of a new month brings in the previous month's last
+     * business day (e.g. on Thu 1 Oct it imports Wed 30 Sep; on Mon 2 Nov it imports
+     * Fri 30 Oct), which closes that month — so send the monthly performance report for it.
+     * Manual --date runs (backfills) never trigger it.
+     */
+    private function sendMonthlyReportIfMonthClosed(Carbon $importedDate, bool $isManualRun): void
+    {
+        $today = now()->timezone(self::TIMEZONE);
+
+        if ($isManualRun || $importedDate->format('Y-m') === $today->format('Y-m')) {
+            return;
+        }
+
+        $month = $importedDate->format('Y-m');
+        $this->info("Imported the last business day of {$month} — sending the monthly performance report...");
+
+        try {
+            $exit = Artisan::call('reports:email-monthly-performance', ['month' => $month], $this->output);
+        } catch (Throwable $e) {
+            $exit = self::FAILURE;
+            $this->error('reports:email-monthly-performance threw: ' . $e->getMessage());
+        }
+
+        if ($exit !== self::SUCCESS) {
+            $this->notify('error', 'Monthly report failed', "Balances were imported, but the monthly performance report for {$month} failed. Re-run: php artisan reports:email-monthly-performance {$month}", [
+                'Month' => $month,
+            ]);
+        }
     }
 
     /**

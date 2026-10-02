@@ -11,6 +11,8 @@ return [
         // from the finance:import-daily-balances scheduled command.
         'import_status_to' => env('BALANCES_IMPORT_NOTIFY_EMAIL', 'mmuigai@ecobank.com,ALLEKE-ICT@ecobank.com'),
 
+
+        // Depositsssssss
         'top_movers_to' => [
             // 'mmuigai@ecobank.com',
             'RMBITHI@ecobank.com',
@@ -75,10 +77,7 @@ return [
 
         ],
 
-        // 'top_movers_bcc' => [
-        //     'jfmuthui@ecobank.com',
-        // ],
-
+        // Branchesssss
         'branch_movers_to' => [
             // 'mmuigai@ecobank.com',
             'RMBITHI@ecobank.com',
@@ -176,6 +175,15 @@ return [
         // Test phase — sending to mmuigai@ecobank.com only. Expand once validated.
 
 
+
+
+
+
+
+        
+
+
+        // RM Moversssss
         'rm_movers_to' => [
             'mmuigai@ecobank.com',
             'MWANJIRU@ecobank.com',
@@ -186,7 +194,6 @@ return [
         'rm_movers_cc' => [
             // 'ALLEKE-ICT@ecobank.com',
         ],
-
         // Falls back to rm_movers_to/_cc above if left empty, same convention as
         // weekly_branch_movers_to/_cc falling back to branch_movers_to/_cc.
         'weekly_rm_movers_to' => [
@@ -199,11 +206,11 @@ return [
             // 'ALLEKE-ICT@ecobank.com',
         ],
 
-        // Fixed RM portfolio tracked by reports:email-rm-movers, reports:email-weekly-rm-movers,
-        // reports:email-rm-loan-movers and reports:email-weekly-rm-loan-movers.
-        // Single source of truth for all four commands — update here only when RMs join/leave
-        // or move segment. 'segment' is the Job Unit (Premier/Advantage/Direct) — each of the
-        // four reports is split and emailed per segment.
+        // Fixed RM portfolio tracked by reports:email-rm-movers and reports:email-weekly-rm-movers
+        // (deposits + loans combined — there is no separate RM Loan Movers report).
+        // Single source of truth for both commands — update here only when RMs join/leave
+        // or move segment. 'segment' is the Job Unit (Premier/Advantage/Direct) — each report
+        // is split into one section per segment within a single email.
         // Excludes James Kivinda Kinanga (KE1222) and Jane Nyawira (KE1296) — left the bank.
         // Includes Joan Sang (KE1343) — new RM.
         'rm_portfolio' => [
@@ -226,29 +233,16 @@ return [
             'KE1229' => ['name' => 'Erick Ochieng Ouma',             'segment' => 'Direct'],
         ],
 
-        // Test phase — sending to mmuigai@ecobank.com only. Expand once validated.
-        'rm_loan_movers_to' => [
-            'mmuigai@ecobank.com',
-            'MWANJIRU@ecobank.com',
-            'hobiero@ecobank.com',
-
-        ],
-
-        'rm_loan_movers_cc' => [
-            // 'ALLEKE-ICT@ecobank.com',
-        ],
-
-        // Falls back to rm_loan_movers_to/_cc above if left empty.
-        'weekly_rm_loan_movers_to' => [
-            // 'mmuigai@ecobank.com',
-        ],
-
-        'weekly_rm_loan_movers_cc' => [
-            // 'ALLEKE-ICT@ecobank.com',
-        ],
-
     ],
 
+
+
+
+
+
+
+
+    // Loans sections
     'loans' => [
         'to' => [
             'RMBITHI@ecobank.com',
@@ -463,9 +457,25 @@ return [
             'mmuigai@ecobank.com',
         ],
     ],
+
+    // Monthly bank performance (Deposits + Loans + Branches, MoM & YTD) — sent automatically by
+    // finance:import-daily-balances once the previous month's last balances file is imported.
+    'monthly_performance' => [
+        'to' => [
+            'mmuigai@ecobank.com',
+        ],
+        'cc' => [
+        ],
+    ],
 ];
 
-// friday committttt
+
+
+
+
+
+
+
 
 //                  How to use this project works
 

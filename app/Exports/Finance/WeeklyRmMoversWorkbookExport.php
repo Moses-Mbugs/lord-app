@@ -19,8 +19,9 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 /**
  * Weekly RM Movers workbook: RM Summary (grouped by Job Unit segment, ranked within each
- * segment by Deposits WTD Δ, with a subtotal row per segment and a grand Total row) and,
- * per RM (grouped in segment order), the week's top deposit customer gainers/losers.
+ * segment by Deposits WTD Δ, with a subtotal row per segment and a grand Total row), per RM
+ * (grouped in segment order) the week's top deposit customer gainers/losers, and per RM the
+ * week's top loan account gainers/losers.
  */
 class WeeklyRmMoversWorkbookExport implements WithMultipleSheets
 {
@@ -30,9 +31,11 @@ class WeeklyRmMoversWorkbookExport implements WithMultipleSheets
      *        ['week'|'mtd'|'ytd' => ['period','summary','all']]
      * @param array<string, object> $grandData 'week'|'mtd'|'ytd' => 'all'-shaped object,
      *        summed across every segment
-     * @param array $rmCodes RM codes in segment-grouped order (so the movers sheet groups by segment)
+     * @param array $rmCodes RM codes in segment-grouped order (so the movers sheets group by segment)
      * @param array<string,array{gainers: array, losers: array}> $groupedDrilldown from
      *        RmMoversService::drilldownGroupedByRmCodes() for the week period, keyed by rm_code
+     * @param array<string,array{gainers: array, losers: array}> $groupedLoanDrilldown from
+     *        RmLoanMoversService::accountMoversGroupedByRmCodes() for the week period, keyed by rm_code
      */
     public function __construct(
         private readonly string $weekEnd,
@@ -41,7 +44,8 @@ class WeeklyRmMoversWorkbookExport implements WithMultipleSheets
         private readonly array  $grandData,
         private readonly array  $rmCodes,
         private readonly array  $rmNames,
-        private readonly array  $groupedDrilldown
+        private readonly array  $groupedDrilldown,
+        private readonly array  $groupedLoanDrilldown
     ) {
     }
 
@@ -57,6 +61,13 @@ class WeeklyRmMoversWorkbookExport implements WithMultipleSheets
                 $this->rmCodes,
                 $this->rmNames,
                 $this->groupedDrilldown
+            ),
+            new LoanAccountMoversByRmSheet(
+                $weekPeriod['start'],
+                $weekPeriod['end'],
+                $this->rmCodes,
+                $this->rmNames,
+                $this->groupedLoanDrilldown
             ),
         ];
     }

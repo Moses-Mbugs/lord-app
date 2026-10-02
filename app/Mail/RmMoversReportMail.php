@@ -7,20 +7,25 @@ namespace App\Mail;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Collection;
 
 class RmMoversReportMail extends Mailable
 {
     use Queueable, SerializesModels;
 
     /**
-     * @param array<string, array{rmRows: \Illuminate\Support\Collection, totals: object, topGainers: \Illuminate\Support\Collection, topLosers: \Illuminate\Support\Collection}> $segmentsData
+     * @param array<string, array{rmRows: \Illuminate\Support\Collection, totals: object}> $segmentsData
      *        keyed by segment name (Premier/Advantage/Direct/...), in display order
+     * @param Collection $topGainers top deposit customer gainers across all segments combined
+     * @param Collection $topLosers  top deposit customer losers across all segments combined
      */
     public function __construct(
         public string $start,
         public string $end,
         public array $segmentsData,
-        public object $grandTotals
+        public object $grandTotals,
+        public Collection $topGainers = new Collection(),
+        public Collection $topLosers = new Collection()
     ) {}
 
     public function build()
@@ -32,6 +37,8 @@ class RmMoversReportMail extends Mailable
                 'end'          => $this->end,
                 'segmentsData' => $this->segmentsData,
                 'grandTotals'  => $this->grandTotals,
+                'topGainers'   => $this->topGainers,
+                'topLosers'    => $this->topLosers,
             ]);
     }
 }

@@ -516,6 +516,109 @@ class WeeklyLoanReportService
     }
 
     /**
+     * Month + YTD segment/sub-segment movement for the monthly performance report —
+     * same combined KES-equivalent, performing-loan basis as build(). All three dates
+     * must be actual as_at_dates (see latestAvailableInMonth() / findYtdStart()).
+     *
+     * @return array<int, array{code: string, name: string, month_mv: float, ytd_mv: float, balance: float, sub_segments: array}>
+     */
+    public function buildMonthly(string $monthStart, string $monthEnd, string $ytdStart): array
+    {
+        // closing_0 = month start, closing_1 = month end, closing_2 = YTD start
+        $rows      = $this->querySegmentSubTotalsForDates([$monthStart, $monthEnd, $ytdStart]);
+        $bySegment = collect($rows)->groupBy('business_segment');
+
+        $segments = [];
+        $totals   = ['ms' => 0.0, 'me' => 0.0, 'ys' => 0.0];
+
+        $allSegments = array_unique(array_merge(array_keys(self::SEGMENT_ORDER), $bySegment->keys()->all()));
+
+        foreach ($allSegments as $code) {
+            $subRows = $bySegment->get($code);
+            if (!$subRows) continue;
+
+            $subSegments = [];
+            $seg = ['ms' => 0.0, 'me' => 0.0, 'ys' => 0.0];
+
+            foreach ($subRows as $row) {
+                $ms = (float) ($row->closing_0 ?? 0);
+                $me = (float) ($row->closing_1 ?? 0);
+                $ys = (float) ($row->closing_2 ?? 0);
+
+                $seg['ms'] += $ms;
+                $seg['me'] += $me;
+                $seg['ys'] += $ys;
+
+                $subSegments[] = [
+                    'name'     => trim((string) ($row->sub_segment_name ?? 'Unmapped')) ?: 'Unmapped',
+                    'month_mv' => $me - $ms,
+                    'ytd_mv'   => $me - $ys,
+                    'balance'  => $me,
+                ];
+            }
+
+            usort($subSegments, fn($a, $b) => $a['name'] <=> $b['name']);
+
+            foreach ($seg as $k => $v) $totals[$k] += $v;
+
+            $segments[$code] = [
+                'code'         => $code,
+                'name'         => self::SEGMENT_MAP[$code] ?? $code,
+                'month_mv'     => $seg['me'] - $seg['ms'],
+                'ytd_mv'       => $seg['me'] - $seg['ys'],
+                'balance'      => $seg['me'],
+                'sub_segments' => $subSegments,
+            ];
+        }
+
+        uasort($segments, fn($a, $b) =>
+            (self::SEGMENT_ORDER[$a['code']] ?? 50) <=> (self::SEGMENT_ORDER[$b['code']] ?? 50)
+        );
+
+        $segments['ALL'] = [
+            'code'         => 'ALL',
+            'name'         => 'Totals',
+            'month_mv'     => $totals['me'] - $totals['ms'],
+            'ytd_mv'       => $totals['me'] - $totals['ys'],
+            'balance'      => $totals['me'],
+            'sub_segments' => [],
+        ];
+
+        return array_values($segments);
+    }
+
+    /** Latest as_at_date within a specific year+month, or null if none. */
+    public function latestAvailableInMonth(int $year, int $month): ?string
+    {
+        $d = DB::table('loan_listings')
+            ->whereYear('as_at_date', $year)
+            ->whereMonth('as_at_date', $month)
+            ->max('as_at_date');
+
+        return $d ? Carbon::parse((string) $d)->toDateString() : null;
+    }
+
+    /**
+     * Latest as_at_date of the previous calendar year, falling back to the earliest
+     * as_at_date in the current year when there is no prior-year data — mirrors
+     * WeeklySegmentReportService::findYtdStart().
+     */
+    public function findYtdStart(string $date): string
+    {
+        $yearStart = Carbon::parse($date)->startOfYear()->toDateString();
+
+        $d = DB::table('loan_listings')->where('as_at_date', '<', $yearStart)->max('as_at_date');
+        if ($d) return Carbon::parse((string) $d)->toDateString();
+
+        $d2 = DB::table('loan_listings')
+            ->where('as_at_date', '>=', $yearStart)
+            ->where('as_at_date', '<', $date)
+            ->min('as_at_date');
+
+        return $d2 ? Carbon::parse((string) $d2)->toDateString() : $date;
+    }
+
+    /**
      * Per-month CIF drilldown to accompany buildMonthlyMovement() — same
      * gainers/losers-per-sub-segment shape as drilldown(), just run once per
      * consecutive pair of monthly anchor dates instead of a single period.

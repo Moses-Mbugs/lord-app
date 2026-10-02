@@ -155,29 +155,29 @@
                     'start'  => $start,
                     'end'    => $end,
                 ])
-
-                {{-- SECTION: TOP CUSTOMER GAINERS --}}
-                <div style="margin:{{ $sectionGap }}px 0 10px; padding-bottom:8px; border-bottom:2px solid #E0E0E0;">
-                    <span style="display:inline-block; width:5px; height:16px; background:linear-gradient(180deg,#86EFAC 0%,#14532d 100%); border-radius:3px; vertical-align:middle; margin-right:8px;"></span>
-                    <span style="font-size:14px; font-weight:900; color:#005B82; letter-spacing:-0.15px;">Top Deposit Gainers</span>
-                    <span style="font-size:11px; font-weight:700; color:#979797;"> — customers, {{ $segment }}</span>
-                </div>
-
-                @include('emails.finance.partials.rm_movers_drivers_table', [
-                    'rows' => $sd['topGainers'],
-                ])
-
-                {{-- SECTION: TOP CUSTOMER LOSERS --}}
-                <div style="margin:{{ $sectionGap }}px 0 10px; padding-bottom:8px; border-bottom:2px solid #E0E0E0;">
-                    <span style="display:inline-block; width:5px; height:16px; background:linear-gradient(180deg,#fca5a5 0%,#7f1d1d 100%); border-radius:3px; vertical-align:middle; margin-right:8px;"></span>
-                    <span style="font-size:14px; font-weight:900; color:#005B82; letter-spacing:-0.15px;">Top Deposit Losers</span>
-                    <span style="font-size:11px; font-weight:700; color:#979797;"> — customers, {{ $segment }}</span>
-                </div>
-
-                @include('emails.finance.partials.rm_movers_drivers_table', [
-                    'rows' => $sd['topLosers'],
-                ])
             @endforeach
+
+            {{-- SECTION: TOP CUSTOMER GAINERS (across all segments) --}}
+            <div style="margin:{{ $sectionGap + 16 }}px 0 10px; padding-bottom:8px; border-bottom:2px solid #E0E0E0;">
+                <span style="display:inline-block; width:5px; height:16px; background:linear-gradient(180deg,#86EFAC 0%,#14532d 100%); border-radius:3px; vertical-align:middle; margin-right:8px;"></span>
+                <span style="font-size:14px; font-weight:900; color:#005B82; letter-spacing:-0.15px;">Top Deposit Gainers</span>
+                <span style="font-size:11px; font-weight:700; color:#979797;"> — customers, across all segments</span>
+            </div>
+
+            @include('emails.finance.partials.rm_movers_drivers_table', [
+                'rows' => $topGainers ?? collect(),
+            ])
+
+            {{-- SECTION: TOP CUSTOMER LOSERS (across all segments) --}}
+            <div style="margin:{{ $sectionGap }}px 0 10px; padding-bottom:8px; border-bottom:2px solid #E0E0E0;">
+                <span style="display:inline-block; width:5px; height:16px; background:linear-gradient(180deg,#fca5a5 0%,#7f1d1d 100%); border-radius:3px; vertical-align:middle; margin-right:8px;"></span>
+                <span style="font-size:14px; font-weight:900; color:#005B82; letter-spacing:-0.15px;">Top Deposit Losers</span>
+                <span style="font-size:11px; font-weight:700; color:#979797;"> — customers, across all segments</span>
+            </div>
+
+            @include('emails.finance.partials.rm_movers_drivers_table', [
+                'rows' => $topLosers ?? collect(),
+            ])
 
             {{-- Notes --}}
             <div style="font-size:11px; color:#646464; margin-top:{{ $sectionGap }}px; padding:10px 12px; background:#f9fbe8; border:1px solid #d8e870; border-left:4px solid #BED600; border-radius:8px; line-height:1.55;">
