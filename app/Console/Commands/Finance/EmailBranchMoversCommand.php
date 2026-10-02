@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands\Finance;
 
+use App\Services\Reports\StaffExclusion;
 use App\Exports\Finance\BranchMoversWorkbookExport;
 use App\Mail\BranchMoversReportMail;
 use Carbon\Carbon;
@@ -217,6 +218,7 @@ class EmailBranchMoversCommand extends Command
                     ->whereIn(DB::raw('DATE(as_at_date)'), [$loanStartDate, $loanEndDate])
                     ->whereRaw("UPPER(TRIM(COALESCE(business_segment,''))) != 'CORPORATE'")
                     ->whereRaw("(TRIM(COALESCE(loan_status, '')) = '' OR loan_status IN ('NORM', 'Normal', 'OAEM', 'SUBS', 'Watch'))")
+                    ->whereRaw(StaffExclusion::loanSql(''))
                     ->select(DB::raw('DATE(as_at_date) AS snap_date'), 'related_account', DB::raw('MAX(id) AS max_id'))
                     ->groupBy(DB::raw('DATE(as_at_date)'), 'related_account'),
                 'dedup', 'll.id', '=', 'dedup.max_id'
@@ -307,6 +309,7 @@ class EmailBranchMoversCommand extends Command
                     ->whereIn(DB::raw('DATE(as_at_date)'), $dates)
                     ->whereRaw("UPPER(TRIM(COALESCE(business_segment,''))) != 'CORPORATE'")
                     ->whereRaw("(TRIM(COALESCE(loan_status, '')) = '' OR loan_status IN ('NORM', 'Normal', 'OAEM', 'SUBS', 'Watch'))")
+                    ->whereRaw(StaffExclusion::loanSql(''))
                     ->select(DB::raw('DATE(as_at_date) AS snap_date'), 'related_account', DB::raw('MAX(id) AS max_id'))
                     ->groupBy(DB::raw('DATE(as_at_date)'), 'related_account'),
                 'dedup',

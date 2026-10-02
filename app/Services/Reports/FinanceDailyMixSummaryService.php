@@ -146,7 +146,8 @@ class FinanceDailyMixSummaryService
     {
         $base = DB::table('customer_balances')
             ->whereDate('balance_date', $balanceDate)
-            ->where('lcy_balance', '>', 0);
+            ->where('lcy_balance', '>', 0)
+            ->whereRaw(StaffExclusion::depositSql('customer_balances'));
 
         $rowCount = (clone $base)->count();
 
@@ -276,6 +277,7 @@ class FinanceDailyMixSummaryService
                             });
                     });
             })
+            ->whereRaw(StaffExclusion::depositSql('cb'))
             ->selectRaw("
                 cb.cif,
                 cb.currency,

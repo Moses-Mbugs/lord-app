@@ -96,6 +96,7 @@ class BranchPeriodMetricsService
                     ->whereIn(DB::raw('DATE(as_at_date)'), $dates)
                     ->whereRaw("UPPER(TRIM(COALESCE(business_segment,''))) != 'CORPORATE'")
                     ->whereRaw("(TRIM(COALESCE(loan_status, '')) = '' OR loan_status IN ('NORM', 'Normal', 'OAEM', 'SUBS', 'Watch'))")
+                    ->whereRaw(StaffExclusion::loanSql(''))
                     ->select(DB::raw('DATE(as_at_date) AS snap_date'), 'related_account', DB::raw('MAX(id) AS max_id'))
                     ->groupBy(DB::raw('DATE(as_at_date)'), 'related_account'),
                 'dedup', 'll.id', '=', 'dedup.max_id'
@@ -133,8 +134,8 @@ class BranchPeriodMetricsService
      *
      * ac_open_date is stored as free text in D-Mon-YY form (e.g. "22-Oct-24") despite the
      * migration declaring a DATE column — STR_TO_DATE is required to parse it, mirroring
-     * BranchDailyPerformanceSummaryService's NTB calculation. P50 (Head Office) is excluded,
-     * matching every other figure in the branch reports.
+     * BranchDailyPerformanceSummaryService's NTB calculation. P50 (Head Office) and staff
+     * accounts are excluded, matching every other figure in the branch reports.
      *
      * @return array<string, int>
      */
@@ -146,6 +147,7 @@ class BranchPeriodMetricsService
             ->whereNotNull('ac_open_date')
             ->whereRaw("TRIM(ac_open_date) <> ''")
             ->whereRaw("UPPER(TRIM(branch_code)) <> 'P50'")
+            ->whereRaw(StaffExclusion::accountSql())
             ->whereRaw("STR_TO_DATE(ac_open_date, '%d-%b-%y') > ?", [$start])
             ->whereRaw("STR_TO_DATE(ac_open_date, '%d-%b-%y') <= ?", [$end]);
 

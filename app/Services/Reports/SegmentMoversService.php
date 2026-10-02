@@ -117,6 +117,7 @@ class SegmentMoversService
                             AND (cb.cr_gl IS NULL OR cb.cr_gl <> ?)
                         )
                   )
+                  AND " . StaffExclusion::depositSql('cb') . "
                 GROUP BY cb.cif
             ) m
 

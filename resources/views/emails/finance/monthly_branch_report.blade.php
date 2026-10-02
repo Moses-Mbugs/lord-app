@@ -161,7 +161,8 @@
     Month Δ compares the last posted balance of {{ $report['label'] }} with the last posted balance of the previous month; Closing is the balance at month end.
     Deposits YTD Δ is measured from the last balance of the previous year, or the earliest balance held this year where there is no prior-year data.
     Loans are the performing book excluding the Corporate segment (as in the weekly branch report), month-on-month only.
-    NTB = distinct CIFs with a new account opened in the calendar month / year. P50 (Head Office) excluded throughout.
+    NTB = distinct CIFs with a new account opened in the calendar month / year. P50 (Head Office), staff accounts and staff loans excluded throughout.
+    The Excel attachment adds each branch's top 20 deposit and loan customer movers for the month.
   </div>
 
 </div>

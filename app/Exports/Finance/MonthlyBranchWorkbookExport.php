@@ -8,8 +8,9 @@ use Carbon\Carbon;
 use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 
 /**
- * Monthly branch workbook: per-branch Deposits (MoM + YTD), Loans (MoM) and NTB,
- * plus the month's top/bottom branches by deposit movement.
+ * Monthly branch workbook: per-branch Deposits (MoM + YTD), Loans (MoM) and NTB, the
+ * month's top/bottom branches by deposit movement, and each branch's top 20 deposit
+ * and loan customer movers.
  */
 class MonthlyBranchWorkbookExport implements WithMultipleSheets
 {
@@ -54,9 +55,17 @@ class MonthlyBranchWorkbookExport implements WithMultipleSheets
 
         $title = "ECOBANK KENYA — MONTHLY BRANCH PERFORMANCE — {$r['label']}";
 
+        // Per-branch top 20 customer gainers/losers for the month — the same "Deposit CIF" and
+        // "Loans CIF" sheets the daily branch movers workbook uses (Corporate and staff excluded),
+        // run over the monthly window. The loan sheet resolves its own loan snapshot dates on or
+        // before these deposit dates and prints them in its header.
+        [, , $depositMovers, $loanMovers] = (new BranchMoversWorkbookExport($dep['month_start'], $dep['month_end'], 20))->sheets();
+
         return [
             new MonthlyPerformanceSheet('Branches', $title, $subtitle, [$branchBlock], ['C', 'D', 'F'], ['C', 'D', 'E', 'F', 'G', 'H', 'I']),
             new MonthlyPerformanceSheet('Top & Bottom Branches', $title, $subtitle, $topBlocks, ['F'], ['D', 'E', 'F']),
+            $depositMovers,
+            $loanMovers,
         ];
     }
 }

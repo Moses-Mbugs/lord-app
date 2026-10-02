@@ -206,6 +206,7 @@ class LoanDashboardService
             ->selectRaw('CASE WHEN ' . self::PERFORMING_CASE . ' THEN 1 ELSE 0 END AS is_performing')
             ->selectRaw('SUM(loan_listings.loan_book_outstanding) AS balance')
             ->whereBetween('loan_listings.as_at_date', [$historyStart, $asOfDate])
+            ->whereRaw(StaffExclusion::loanSql('loan_listings'))
             ->groupBy('loan_listings.as_at_date')
             ->groupBy(DB::raw($this->loanMovementService->segmentExpr()))
             ->groupBy('loan_listings.status_bucket')
@@ -476,6 +477,7 @@ class LoanDashboardService
     {
         $rows = DB::table('loan_listings')
             ->where('as_at_date', $asOfDate)
+            ->whereRaw(StaffExclusion::loanSql('loan_listings'))
             ->selectRaw('currency_type, SUM(loan_book_outstanding) AS balance')
             ->groupBy('currency_type')
             ->get();

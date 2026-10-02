@@ -331,6 +331,7 @@ class WeeklySegmentReportService
                             AND (cb.cr_gl IS NULL OR cb.cr_gl <> ?)
                         )
                   )
+                  AND {$this->staffFilterSql()}
                 GROUP BY cb.cif
             ) m
             LEFT JOIN (
@@ -503,6 +504,12 @@ class WeeklySegmentReportService
         };
     }
 
+    /** Excludes staff accounts (see StaffExclusion) — appended to every customer_balances query here. */
+    private function staffFilterSql(): string
+    {
+        return StaffExclusion::depositSql('cb');
+    }
+
     /**
      * SQL CASE expression that forces CIF_SEGMENT_OVERRIDES onto a segment/sub-segment
      * value ahead of its normally-computed expression. $cifColumn is the column holding
@@ -593,6 +600,7 @@ class WeeklySegmentReportService
                         AND (cb.cr_gl IS NULL OR cb.cr_gl <> ?)
                     )
               )
+              AND {$this->staffFilterSql()}
             GROUP BY 1
         ", array_merge(
             $this->segmentOverrideBindings('segment_code'),
@@ -691,6 +699,7 @@ class WeeklySegmentReportService
                         AND (cb.cr_gl IS NULL OR cb.cr_gl <> ?)
                     )
               )
+              AND {$this->staffFilterSql()}
             GROUP BY 1, 2
         ", array_merge(
             $this->segmentOverrideBindings('segment_code'),
@@ -989,6 +998,7 @@ class WeeklySegmentReportService
                         AND (cb.cr_gl IS NULL OR cb.cr_gl <> ?)
                     )
               )
+              AND {$this->staffFilterSql()}
             GROUP BY 1
         ", array_merge(
             $this->segmentOverrideBindings('segment_code'),
@@ -1097,6 +1107,7 @@ class WeeklySegmentReportService
                         AND (cb.cr_gl IS NULL OR cb.cr_gl <> ?)
                     )
               )
+              AND {$this->staffFilterSql()}
             GROUP BY 1, 2
         ", array_merge(
             $this->segmentOverrideBindings('segment_code'),

@@ -211,6 +211,7 @@
     Deposits YTD Δ is measured from the last balance of the previous year, or the earliest balance held this year where there is no prior-year data (start date shown above).
     Loans are shown month-on-month only for now (the performing book: NORM/OAEM/SUBS/Watch).
     Deposits use the same exclusions as the weekly report (P50 and GL 216220001, with the usual exception CIFs).
+    Staff accounts and staff loans are excluded throughout.
     The Excel attachment carries the LCY/FCY deposit splits and the full top customer movers lists. Branch performance is sent as a separate email.
   </div>
 

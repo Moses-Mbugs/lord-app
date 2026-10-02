@@ -277,6 +277,7 @@ class SubSegmentMoversService
                             });
                     });
             })
+            ->whereRaw(StaffExclusion::depositSql('cb'))
             ->groupBy('cb.cif');
     }
 

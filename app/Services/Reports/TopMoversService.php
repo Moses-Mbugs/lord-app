@@ -383,6 +383,7 @@ class TopMoversService
                     cb.cif IN ({$exceptionPh})
                     OR (UPPER(TRIM(cb.branch_code)) != 'P50' AND (cb.cr_gl IS NULL OR cb.cr_gl != ?))
               )
+              AND " . StaffExclusion::depositSql('cb') . "
             GROUP BY 1
         ", array_merge(
             $this->segmentOverrideBindings(),
@@ -417,6 +418,7 @@ class TopMoversService
             ->whereIn('balance_date', [$start, $end])
             ->whereIn('cif', $cifs->toArray())
             ->whereNotNull('cif')
+            ->whereRaw(StaffExclusion::depositSql('customer_balances'))
             ->groupBy('cif')
             ->get()
             ->keyBy('cif');
@@ -675,5 +677,8 @@ class TopMoversService
                     }
                 });
         });
+
+        // Staff accounts are excluded for every CIF, exception list included.
+        $query->whereRaw(StaffExclusion::depositSql($alias));
     }
 }

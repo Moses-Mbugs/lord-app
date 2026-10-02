@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Exports\Finance;
 
+use App\Services\Reports\StaffExclusion;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -197,6 +198,7 @@ class BranchSummarySheet implements FromArray, WithTitle, WithHeadings, ShouldAu
                     ->whereIn(DB::raw('DATE(as_at_date)'), $dates)
                     ->whereRaw("UPPER(TRIM(COALESCE(business_segment,''))) != 'CORPORATE'")
                     ->whereRaw("(TRIM(COALESCE(loan_status, '')) = '' OR loan_status IN ('NORM', 'Normal', 'OAEM', 'SUBS', 'Watch'))")
+                    ->whereRaw(StaffExclusion::loanSql(''))
                     ->select(DB::raw('DATE(as_at_date) AS snap_date'), 'related_account', DB::raw('MAX(id) AS max_id'))
                     ->groupBy(DB::raw('DATE(as_at_date)'), 'related_account'),
                 'dedup', 'll.id', '=', 'dedup.max_id'
@@ -419,6 +421,7 @@ class CifMoversByBranchSheet implements FromArray, WithTitle, ShouldAutoSize, Wi
             ->whereNotNull('cb.branch_code')
             ->whereNotNull('cb.cif')
             ->whereRaw("UPPER(TRIM(cb.branch_code)) <> 'P50'")
+            ->whereRaw(StaffExclusion::depositSql('cb'))
             ->whereNotIn('cb.cif', function ($sub) {
                 $sub->from('customer_accounts_imports')
                     ->select('f12_cif')
@@ -654,6 +657,7 @@ class LoanAccountMoversByBranchSheet implements FromArray, WithTitle, ShouldAuto
                     ->whereIn(DB::raw('DATE(as_at_date)'), [$loanStartDate, $loanEndDate])
                     ->whereRaw("UPPER(TRIM(COALESCE(business_segment,''))) != 'CORPORATE'")
                     ->whereRaw("(TRIM(COALESCE(loan_status, '')) = '' OR loan_status IN ('NORM', 'Normal', 'OAEM', 'SUBS', 'Watch'))")
+                    ->whereRaw(StaffExclusion::loanSql(''))
                     ->select(DB::raw('DATE(as_at_date) AS snap_date'), 'related_account', DB::raw('MAX(id) AS max_id'))
                     ->groupBy(DB::raw('DATE(as_at_date)'), 'related_account'),
                 'dedup', 'll.id', '=', 'dedup.max_id'

@@ -79,6 +79,7 @@ class LoanMovementService
             ->whereIn('loan_listings.as_at_date', $dates)
             ->where('loan_listings.currency_type', $currencyType)
             ->whereRaw("(TRIM(COALESCE(loan_listings.loan_status, '')) = '' OR loan_listings.loan_status IN ('NORM', 'Normal', 'OAEM', 'SUBS', 'Watch'))")
+            ->whereRaw(StaffExclusion::loanSql('loan_listings'))
             ->groupBy(DB::raw($this->segmentExpr()), 'loan_listings.status_bucket')
             ->get();
 
@@ -198,6 +199,7 @@ class LoanMovementService
             ->selectRaw('SUM(CASE WHEN loan_listings.as_at_date = ? THEN loan_book_outstanding ELSE 0 END) as ytd_start', [$ytdStart])
             ->whereIn('loan_listings.as_at_date', $dates)
             ->whereRaw($this->segmentExpr() . ' = ?', [$segmentCanon])
+            ->whereRaw(StaffExclusion::loanSql('loan_listings'))
             ->groupBy('loan_listings.status_bucket')
             ->get();
 
@@ -276,6 +278,7 @@ class LoanMovementService
                 ->whereIn('loan_listings.as_at_date', [$startDate, $endDate])
                 ->where('loan_listings.currency_type', $ctype)
                 ->whereRaw("(TRIM(COALESCE(loan_listings.loan_status, '')) = '' OR loan_listings.loan_status IN ('NORM', 'Normal', 'OAEM', 'SUBS', 'Watch'))")
+                ->whereRaw(StaffExclusion::loanSql('loan_listings'))
                 ->when($segmentFilter, fn($q) => $q->whereRaw($this->segmentExpr() . ' = ?', [$segmentFilter]))
                 ->groupBy(DB::raw($this->segmentExpr()))
                 ->get();
@@ -366,12 +369,14 @@ class LoanMovementService
     /**
      * Total loan book for the entire bank as at a given date — every loan
      * regardless of status_bucket (Performing, Watch, Substandard, Doubtful, Loss).
-     * Unlike buildCombined()'s totals, this is not filtered to performing loans.
+     * Unlike buildCombined()'s totals, this is not filtered to performing loans
+     * (staff loans are still excluded).
      */
     private function totalLoanBook(string $asAtDate): float
     {
         return (float) DB::table('loan_listings')
             ->where('as_at_date', $asAtDate)
+            ->whereRaw(StaffExclusion::loanSql('loan_listings'))
             ->sum('loan_book_outstanding');
     }
 
@@ -391,6 +396,7 @@ class LoanMovementService
             ->selectRaw("{$moveExpr}  as movement",      [$endDate, $startDate])
             ->whereIn('loan_listings.as_at_date', [$startDate, $endDate])
             ->whereRaw("(TRIM(COALESCE(loan_listings.loan_status, '')) = '' OR loan_listings.loan_status IN ('NORM', 'Normal', 'OAEM', 'SUBS', 'Watch'))")
+            ->whereRaw(StaffExclusion::loanSql('loan_listings'))
             ->when($segmentFilter, fn($q) => $q->whereRaw($this->segmentExpr() . ' = ?', [$segmentFilter]))
             ->groupBy('loan_listings.cif')
             ->havingRaw("{$moveExpr} <> 0", [$endDate, $startDate]);
@@ -436,6 +442,7 @@ class LoanMovementService
             ->whereIn('loan_listings.as_at_date', [$startDate, $endDate])
             ->where('loan_listings.currency_type', $currencyType)
             ->whereRaw("(TRIM(COALESCE(loan_listings.loan_status, '')) = '' OR loan_listings.loan_status IN ('NORM', 'Normal', 'OAEM', 'SUBS', 'Watch'))")
+            ->whereRaw(StaffExclusion::loanSql('loan_listings'))
             ->groupBy('loan_listings.cif')
             ->havingRaw("{$moveExpr} <> 0", [$endDate, $startDate]);
 

@@ -123,6 +123,7 @@ class BranchDailyPerformanceSummaryService
             ->whereNotNull('ac_open_date')
             ->whereRaw("TRIM(ac_open_date) <> ''")
             ->whereRaw("STR_TO_DATE(ac_open_date, '%d-%b-%y') >= '2026-01-01'")
+            ->whereRaw(StaffExclusion::accountSql())
             ->select('branch_code', DB::raw('COUNT(DISTINCT f12_cif) as total_accounts'))
             ->groupBy('branch_code')
             ->get()
@@ -310,6 +311,7 @@ class BranchDailyPerformanceSummaryService
         $query = DB::table('customer_balances')
             ->whereDate('balance_date', $balanceDate)
             ->whereIn('branch_code', $branchCodes)
+            ->whereRaw(StaffExclusion::depositSql('customer_balances'))
             ->whereNotNull('cif')
             ->select(
                 'branch_code',
@@ -361,6 +363,7 @@ class BranchDailyPerformanceSummaryService
                     ->whereIn(DB::raw("UPPER(TRIM(COALESCE(NULLIF(TRIM(branch),''), LEFT(related_account, 3))))"), $branchCodes)
                     ->whereRaw("UPPER(TRIM(COALESCE(business_segment,''))) != 'CORPORATE'")
                     ->whereRaw("(TRIM(COALESCE(loan_status, '')) = '' OR loan_status IN ('NORM', 'Normal', 'OAEM', 'SUBS', 'Watch'))")
+                    ->whereRaw(StaffExclusion::loanSql(''))
                     ->select('related_account', DB::raw('MAX(id) as max_id'))
                     ->groupBy('related_account'),
                 'latest',
@@ -398,6 +401,7 @@ class BranchDailyPerformanceSummaryService
         $query = DB::table('customer_accounts_imports')
             ->whereIn('branch_code', $branchCodes)
             ->whereNotNull('f12_cif')
+            ->whereRaw(StaffExclusion::accountSql())
             ->selectRaw("
                 branch_code,
                 COUNT(DISTINCT f12_cif) AS total_cifs,
@@ -440,6 +444,7 @@ class BranchDailyPerformanceSummaryService
         $query = DB::table('customer_balances')
             ->whereDate('balance_date', $date)
             ->whereIn('branch_code', $branchCodes)
+            ->whereRaw(StaffExclusion::depositSql('customer_balances'))
             ->select('branch_code', DB::raw('SUM(lcy_balance) as total_deposits'))
             ->groupBy('branch_code');
 
@@ -485,6 +490,7 @@ class BranchDailyPerformanceSummaryService
                     ->whereIn(DB::raw("UPPER(TRIM(COALESCE(NULLIF(TRIM(branch),''), LEFT(related_account, 3))))"), $branchCodes)
                     ->whereRaw("UPPER(TRIM(COALESCE(business_segment,''))) != 'CORPORATE'")
                     ->whereRaw("(TRIM(COALESCE(loan_status, '')) = '' OR loan_status IN ('NORM', 'Normal', 'OAEM', 'SUBS', 'Watch'))")
+                    ->whereRaw(StaffExclusion::loanSql(''))
                     ->select('as_at_date', 'related_account', DB::raw('MAX(id) as max_id'))
                     ->groupBy('as_at_date', 'related_account'),
                 'latest',
@@ -518,6 +524,7 @@ class BranchDailyPerformanceSummaryService
         $query = DB::table('customer_balances')
             ->whereDate('balance_date', $date)
             ->whereIn('branch_code', $branchCodes)
+            ->whereRaw(StaffExclusion::depositSql('customer_balances'))
             ->selectRaw("
                 branch_code,
                 COALESCE(SUM(CASE WHEN UPPER(TRIM(COALESCE(currency, ''))) = 'KES' THEN lcy_balance ELSE 0 END), 0) AS lcy_amount,

@@ -27,9 +27,11 @@ class WeeklyLoanReportService
     ];
 
     // Only loans in these statuses (or blank) count as the active/performing book —
-    // same filter used throughout LoanMovementService.
+    // same filter used throughout LoanMovementService. Staff loans are excluded too
+    // (kept in sync with StaffExclusion::loanSql('loan_listings')).
     private const LOAN_STATUS_FILTER =
-        "(TRIM(COALESCE(loan_listings.loan_status, '')) = '' OR loan_listings.loan_status IN ('NORM', 'Normal', 'OAEM', 'SUBS', 'Watch'))";
+        "(TRIM(COALESCE(loan_listings.loan_status, '')) = '' OR loan_listings.loan_status IN ('NORM', 'Normal', 'OAEM', 'SUBS', 'Watch'))"
+        . " AND UPPER(COALESCE(loan_listings.linecode, '')) NOT LIKE '%STAFF%'";
 
     public function __construct(private readonly LoanMovementService $loans) {}
 

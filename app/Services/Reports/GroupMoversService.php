@@ -285,6 +285,7 @@ class GroupMoversService
             ->whereNotNull('cb.branch_code')
             ->whereNotNull('cb.cif')
             ->whereRaw("UPPER(TRIM(cb.branch_code)) <> 'P50'")
+            ->whereRaw(StaffExclusion::depositSql('cb'))
             ->whereNotIn('cb.cif', function ($sub) {
                 $sub->from('customer_accounts_imports')
                     ->select('f12_cif')
@@ -587,5 +588,8 @@ class GroupMoversService
                     });
                 });
         });
+
+        // Staff accounts are excluded for every CIF, exception list included.
+        $query->whereRaw(StaffExclusion::depositSql($alias));
     }
 }
