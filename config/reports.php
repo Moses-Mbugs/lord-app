@@ -233,6 +233,8 @@ return [
             'mmuigai@ecobank.com',
             'MWANJIRU@ecobank.com',
             'hobiero@ecobank.com',
+            'AKAMERE@ecobank.com',
+            'FLEIN@ecobank.com',
         ],
 
         'weekly_rm_movers_cc' => [
@@ -501,7 +503,7 @@ return [
     'monthly_performance' => [
         'to' => [
             'mmuigai@ecobank.com',
-            
+
         ],
         'cc' => [
         ],
