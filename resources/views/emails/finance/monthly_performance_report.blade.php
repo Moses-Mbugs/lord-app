@@ -9,15 +9,29 @@
 <body style="margin:0;padding:0;background:#EAEEF2;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:#1a1f2e;-webkit-font-smoothing:antialiased;">
 
 @php
-    $dep      = $report['deposits'];
-    $loans    = $report['loans'];
-    $branches = $report['branches'];
-
+    $dep   = $report['deposits'];
+    $loans = $report['loans'];
     $depP  = $dep['periods'];
     $loanP = $loans['periods'];
 
-    $fmtDate  = fn($d) => $d ? \Carbon\Carbon::parse($d)->format('d M Y') : '—';
-    $fmtShort = fn($d) => $d ? \Carbon\Carbon::parse($d)->format('d M')   : '—';
+    // Product colour coding — Deposits blue, Loans green — used by headings, KPI tiles,
+    // table headers and segment rows so each product reads as one block.
+    $themes = [
+        'deposits' => [
+            'accent' => '#1D4ED8', 'grad' => '#3B82F6 0%,#1D4ED8 100%', 'label' => '#1E40AF',
+            'head' => '#1E3A8A', 'headLine' => '#1E40AF', 'headText' => '#BFDBFE', 'headSub' => '#93C5FD',
+            'name' => '#1E40AF', 'rowBg' => '#EFF6FF', 'subBg' => '#FAFCFF', 'dot' => '#93C5FD', 'totalBg' => '#DBEAFE',
+            'tileBg' => '#EFF6FF', 'tileLine' => '#BFDBFE',
+        ],
+        'loans' => [
+            'accent' => '#15803D', 'grad' => '#22C55E 0%,#15803D 100%', 'label' => '#166534',
+            'head' => '#14532D', 'headLine' => '#166534', 'headText' => '#BBF7D0', 'headSub' => '#86EFAC',
+            'name' => '#166534', 'rowBg' => '#F0FDF4', 'subBg' => '#FAFFFB', 'dot' => '#86EFAC', 'totalBg' => '#DCFCE7',
+            'tileBg' => '#F0FDF4', 'tileLine' => '#BBF7D0',
+        ],
+    ];
+
+    $fmtDate = fn($d) => $d ? \Carbon\Carbon::parse($d)->format('d M Y') : '—';
 
     $abbr = function($v, bool $signed = true) {
         $n    = abs((float) $v);
@@ -37,20 +51,19 @@
     };
 
     $kpis = [
-        ['label' => 'Total Deposits',    'kind' => 'balance',  'value' => $depTotal['balance']  ?? 0, 'sub' => 'as at ' . $fmtDate($depP['month_end'])],
-        ['label' => 'Deposits Month Δ',  'kind' => 'movement', 'value' => $depTotal['month_mv'] ?? 0, 'sub' => $pct($depTotal['month_mv'] ?? 0, $depTotal['balance'] ?? 0) ?: 'from ' . $fmtDate($depP['month_start'])],
-        ['label' => 'Deposits YTD Δ',    'kind' => 'movement', 'value' => $depTotal['ytd_mv']   ?? 0, 'sub' => 'from ' . $fmtDate($depP['ytd_start'])],
+        ['product' => 'deposits', 'label' => 'Total Deposits',   'kind' => 'balance',  'value' => $depTotal['balance']  ?? 0, 'sub' => 'as at ' . $fmtDate($depP['month_end'])],
+        ['product' => 'deposits', 'label' => 'Deposits Month Δ', 'kind' => 'movement', 'value' => $depTotal['month_mv'] ?? 0, 'sub' => $pct($depTotal['month_mv'] ?? 0, $depTotal['balance'] ?? 0) ?: 'from ' . $fmtDate($depP['month_start'])],
+        ['product' => 'deposits', 'label' => 'Deposits YTD Δ',   'kind' => 'movement', 'value' => $depTotal['ytd_mv']   ?? 0, 'sub' => 'from ' . $fmtDate($depP['ytd_start'])],
     ];
     if ($loanP) {
-        $kpis[] = ['label' => 'Total Loans',   'kind' => 'balance',  'value' => $loanTotal['balance']  ?? 0, 'sub' => 'as at ' . $fmtDate($loanP['month_end'])];
-        $kpis[] = ['label' => 'Loans Month Δ', 'kind' => 'movement', 'value' => $loanTotal['month_mv'] ?? 0, 'sub' => $pct($loanTotal['month_mv'] ?? 0, $loanTotal['balance'] ?? 0) ?: 'from ' . $fmtDate($loanP['month_start'])];
-        $kpis[] = ['label' => 'Loans YTD Δ',   'kind' => 'movement', 'value' => $loanTotal['ytd_mv']   ?? 0, 'sub' => 'from ' . $fmtDate($loanP['ytd_start'])];
+        $kpis[] = ['product' => 'loans', 'label' => 'Total Loans',   'kind' => 'balance',  'value' => $loanTotal['balance']  ?? 0, 'sub' => 'as at ' . $fmtDate($loanP['month_end'])];
+        $kpis[] = ['product' => 'loans', 'label' => 'Loans Month Δ', 'kind' => 'movement', 'value' => $loanTotal['month_mv'] ?? 0, 'sub' => $pct($loanTotal['month_mv'] ?? 0, $loanTotal['balance'] ?? 0) ?: 'from ' . $fmtDate($loanP['month_start'])];
     }
 
-    $sectionLabel = fn(string $title, string $sub = '', string $grad = '#00B4D8 0%,#0077B6 100%') =>
+    $sectionLabel = fn(array $t, string $title, string $sub = '') =>
         '<table cellpadding="0" cellspacing="0" style="mso-table-lspace:0pt;mso-table-rspace:0pt;margin-bottom:14px;"><tr>'
-        . '<td style="padding-right:10px;vertical-align:middle;"><div style="width:4px;height:18px;background:linear-gradient(180deg,' . $grad . ');border-radius:2px;"></div></td>'
-        . '<td style="vertical-align:middle;"><span style="font-size:13px;font-weight:800;color:#0F172A;letter-spacing:-0.2px;">' . e($title) . '</span>'
+        . '<td style="padding-right:10px;vertical-align:middle;"><div style="width:4px;height:18px;background:' . $t['accent'] . ';background:linear-gradient(180deg,' . $t['grad'] . ');border-radius:2px;"></div></td>'
+        . '<td style="vertical-align:middle;"><span style="font-size:13px;font-weight:800;color:' . $t['label'] . ';letter-spacing:-0.2px;">' . e($title) . '</span>'
         . ($sub !== '' ? '<span style="font-size:11px;font-weight:500;color:#94A3B8;margin-left:8px;">· ' . e($sub) . '</span>' : '')
         . '</td></tr></table>';
 
@@ -58,10 +71,6 @@
         ? 'display:inline-block;padding:3px 7px;border-radius:6px;font-weight:900;font-size:10.5px;white-space:nowrap;background:#DCFCE7;color:#14532D;border:1px solid #86EFAC;'
         : 'display:inline-block;padding:3px 7px;border-radius:6px;font-weight:900;font-size:10.5px;white-space:nowrap;background:#FEE2E2;color:#7F1D1D;border:1px solid #FCA5A5;';
     $mvText = fn($v) => ((float) $v >= 0 ? '▲ ' : '▼ ') . $abbr($v, false);
-
-    $cifTop = fn(array $top) => [collect($top['gainers'] ?? [])->take(10), collect($top['losers'] ?? [])->take(10)];
-    [$depGainers, $depLosers]   = $cifTop($dep['top']);
-    [$loanGainers, $loanLosers] = $cifTop($loans['top']);
 
     $loansLag = $loanP && $loanP['month_end'] < $depP['month_end'];
 @endphp
@@ -77,9 +86,9 @@
       <table width="100%" cellpadding="0" cellspacing="0" style="mso-table-lspace:0pt;mso-table-rspace:0pt;">
         <tr>
           <td style="vertical-align:top;">
-            <div style="font-size:26px;font-weight:900;color:#ffffff;letter-spacing:-0.6px;line-height:1.1;">Monthly Bank Performance</div>
+            <div style="font-size:26px;font-weight:900;color:#ffffff;letter-spacing:-0.6px;line-height:1.1;">Loans &amp; Deposits Performance</div>
             <div style="font-size:12px;font-weight:500;color:rgba(255,255,255,0.55);margin-top:5px;letter-spacing:0.2px;">
-              Deposits &nbsp;·&nbsp; Loans &nbsp;·&nbsp; Branches &nbsp;·&nbsp; Month-on-month &amp; Year-to-date
+              <span style="color:#93C5FD;">Deposits</span> &nbsp;·&nbsp; <span style="color:#86EFAC;">Loans</span> &nbsp;·&nbsp; Month-on-month by segment
             </div>
           </td>
           <td style="vertical-align:top;text-align:right;white-space:nowrap;">
@@ -95,7 +104,7 @@
           Month &nbsp;{{ $fmtDate($depP['month_start']) }} → {{ $fmtDate($depP['month_end']) }}
         </span>
         <span style="display:inline-block;padding:5px 13px;border-radius:999px;font-size:10.5px;font-weight:700;color:#ffffff;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);white-space:nowrap;">
-          YTD from &nbsp;{{ $fmtDate($depP['ytd_start']) }}
+          Deposits YTD from &nbsp;{{ $fmtDate($depP['ytd_start']) }}
         </span>
       </div>
     </td>
@@ -103,20 +112,21 @@
 </table>
 
 {{-- ═══════════════════════ KPI STRIP ═══════════════════════ --}}
-<table width="100%" cellpadding="0" cellspacing="0" style="width:100%;mso-table-lspace:0pt;mso-table-rspace:0pt;border-bottom:1px solid #E2E8F0;" bgcolor="#F8FAFC">
+<table width="100%" cellpadding="0" cellspacing="0" style="width:100%;mso-table-lspace:0pt;mso-table-rspace:0pt;border-bottom:1px solid #E2E8F0;">
   <tr>
     @foreach ($kpis as $i => $kpi)
       @php
+        $t       = $themes[$kpi['product']];
         $mv      = (float) $kpi['value'];
         $isMv    = $kpi['kind'] === 'movement';
-        $color   = $isMv ? ($mv >= 0 ? '#15803D' : '#BE123C') : '#0F172A';
-        $bg      = $isMv ? ($mv >= 0 ? '#F0FDF4' : '#FFF1F2') : '#F1F5F9';
-        $bd      = $isMv ? ($mv >= 0 ? '#BBF7D0' : '#FECDD3') : '#E2E8F0';
+        $color   = $isMv ? ($mv >= 0 ? '#15803D' : '#BE123C') : $t['name'];
+        $bg      = $isMv ? ($mv >= 0 ? '#F0FDF4' : '#FFF1F2') : '#ffffff';
+        $bd      = $isMv ? ($mv >= 0 ? '#BBF7D0' : '#FECDD3') : $t['tileLine'];
         $text    = $isMv ? $abbr($mv) : 'KES ' . $abbr($mv, false);
         $isLast  = $i === count($kpis) - 1;
       @endphp
-      <td style="padding:16px 18px;{{ !$isLast ? 'border-right:1px solid #E2E8F0;' : '' }}vertical-align:top;background:#F8FAFC;width:{{ round(100 / count($kpis), 4) }}%;" bgcolor="#F8FAFC">
-        <div style="font-size:9px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;white-space:nowrap;">{{ $kpi['label'] }}</div>
+      <td style="padding:16px 18px;{{ !$isLast ? 'border-right:1px solid #E2E8F0;' : '' }}border-top:3px solid {{ $t['accent'] }};vertical-align:top;background:{{ $t['tileBg'] }};width:{{ round(100 / count($kpis), 4) }}%;" bgcolor="{{ $t['tileBg'] }}">
+        <div style="font-size:9px;font-weight:800;color:{{ $t['label'] }};text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;white-space:nowrap;">{{ $kpi['label'] }}</div>
         <div style="display:inline-block;padding:4px 9px;border-radius:8px;background:{{ $bg }};border:1px solid {{ $bd }};">
           <span style="font-size:16px;font-weight:900;color:{{ $color }};font-family:'Courier New',ui-monospace,monospace;letter-spacing:-0.5px;">{{ $text }}</span>
         </div>
@@ -129,22 +139,22 @@
 <div style="padding:22px 28px 30px;">
 
   {{-- ── Deposits ──────────────────────── --}}
-  {!! $sectionLabel('Deposits by Segment', 'Bank (all currencies, KES equivalent)') !!}
+  {!! $sectionLabel($themes['deposits'], 'Deposits by Segment', 'Bank (all currencies, KES equivalent)') !!}
   @include('emails.finance.partials.monthly_segment_table', [
-      'segments' => $dep['bank'], 'periods' => $depP, 'balanceLabel' => 'Deposits',
+      'segments' => $dep['bank'], 'periods' => $depP, 'balanceLabel' => 'Deposits', 'theme' => $themes['deposits'],
   ])
 
   {{-- ── Loans ──────────────────────── --}}
   <div style="margin-top:32px;">
-    {!! $sectionLabel('Loans by Segment', 'Performing book, KES equivalent', '#22C55E 0%,#15803D 100%') !!}
+    {!! $sectionLabel($themes['loans'], 'Loans by Segment', 'Performing book, KES equivalent') !!}
     @if ($loanP)
       @if ($loansLag)
-        <div style="margin-bottom:10px;font-size:11px;color:#92400E;background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:8px 12px;">
+        <div style="margin-bottom:10px;font-size:11px;color:#166534;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:8px 12px;">
           Latest loan book for {{ $report['label'] }} is as at <strong>{{ $fmtDate($loanP['month_end']) }}</strong> — loans are imported separately from deposit balances.
         </div>
       @endif
       @include('emails.finance.partials.monthly_segment_table', [
-          'segments' => $loans['segments'], 'periods' => $loanP, 'balanceLabel' => 'Loans',
+          'segments' => $loans['segments'], 'periods' => $loanP, 'balanceLabel' => 'Loans', 'theme' => $themes['loans'], 'showYtd' => false,
       ])
     @else
       <div style="font-size:12px;color:#92400E;background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;padding:14px 16px;">
@@ -155,88 +165,31 @@
     @endif
   </div>
 
-  {{-- ── Branches ──────────────────────── --}}
-  <div style="margin-top:32px;">
-    {!! $sectionLabel('Branch Performance', 'KES equivalent · P50 excluded', '#F59E0B 0%,#B45309 100%') !!}
-    @php
-      $th  = 'padding:6px 10px;border-bottom:2px solid #CBD5E1;text-align:right;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:0.6px;white-space:nowrap;';
-      $fmtBal = fn($v) => $abbr($v, false);
-    @endphp
-    <table width="100%" cellpadding="0" cellspacing="0"
-      style="width:100%;border-collapse:separate;border-spacing:0;font-size:11px;border:1px solid #E2E8F0;border-radius:10px;overflow:hidden;background:#ffffff;mso-table-lspace:0pt;mso-table-rspace:0pt;">
-      <thead>
-        <tr>
-          <th rowspan="2" style="padding:7px 10px;background:#F1F5F9;border-bottom:2px solid #CBD5E1;text-align:left;font-size:9px;font-weight:900;color:#475569;text-transform:uppercase;letter-spacing:0.7px;border-right:1px solid #CBD5E1;width:20%;">Branch</th>
-          <th colspan="3" style="padding:6px 10px;background:#EFF6FF;border-bottom:1px solid #BFDBFE;text-align:center;font-size:9px;font-weight:900;color:#1D4ED8;text-transform:uppercase;letter-spacing:0.7px;border-right:2px solid #BFDBFE;">Deposits</th>
-          <th colspan="3" style="padding:6px 10px;background:#F0FDF4;border-bottom:1px solid #BBF7D0;text-align:center;font-size:9px;font-weight:900;color:#15803D;text-transform:uppercase;letter-spacing:0.7px;border-right:2px solid #BBF7D0;">Loans</th>
-          <th colspan="2" style="padding:6px 10px;background:#FFFBEB;border-bottom:1px solid #FDE68A;text-align:center;font-size:9px;font-weight:900;color:#B45309;text-transform:uppercase;letter-spacing:0.7px;">NTB</th>
-        </tr>
-        <tr>
-          <th style="{{ $th }}background:#EFF6FF;color:#1D4ED8;">Month Δ</th>
-          <th style="{{ $th }}background:#EFF6FF;color:#1D4ED8;">YTD Δ</th>
-          <th style="{{ $th }}background:#EFF6FF;color:#1D4ED8;border-right:2px solid #BFDBFE;">Closing</th>
-          <th style="{{ $th }}background:#F0FDF4;color:#15803D;">Month Δ</th>
-          <th style="{{ $th }}background:#F0FDF4;color:#15803D;">YTD Δ</th>
-          <th style="{{ $th }}background:#F0FDF4;color:#15803D;border-right:2px solid #BBF7D0;">Closing</th>
-          <th style="{{ $th }}background:#FFFBEB;color:#B45309;">Month</th>
-          <th style="{{ $th }}background:#FFFBEB;color:#B45309;">YTD</th>
-        </tr>
-      </thead>
-      <tbody>
-        @forelse ($branches['rows'] as $b)
-          @php
-            $isTotal = $b['code'] === 'ALL';
-            $rowBg   = $isTotal ? '#F1F5F9' : ($loop->even ? '#F8FAFC' : '#ffffff');
-            $border  = $loop->last ? 'none' : '1px solid #E2E8F0';
-            $td      = "padding:7px 10px;border-bottom:{$border};text-align:right;";
-            $balTd   = $td . "font-family:ui-monospace,'Courier New',monospace;font-weight:700;color:#374151;";
-            $ntbTd   = $td . "font-family:ui-monospace,'Courier New',monospace;font-weight:700;color:#92400E;";
-          @endphp
-          <tr style="background:{{ $rowBg }};">
-            <td style="padding:7px 10px;border-bottom:{{ $border }};border-right:1px solid #E2E8F0;">
-              <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:{{ $isTotal ? '#E2E8F0' : '#EFF6FF' }};border:1px solid {{ $isTotal ? '#CBD5E1' : '#BFDBFE' }};color:{{ $isTotal ? '#334155' : '#1D4ED8' }};font-weight:900;font-size:10px;letter-spacing:0.3px;text-transform:uppercase;">
-                {{ $isTotal ? 'TOTAL' : $b['name'] }}
-              </span>
-            </td>
-            <td style="{{ $td }}"><span style="{{ $mvBadge($b['dep_month']) }}">{{ $mvText($b['dep_month']) }}</span></td>
-            <td style="{{ $td }}"><span style="{{ $mvBadge($b['dep_ytd']) }}">{{ $mvText($b['dep_ytd']) }}</span></td>
-            <td style="{{ $balTd }}border-right:2px solid #BFDBFE;">{{ $fmtBal($b['dep_balance']) }}</td>
-            @if ($loanP)
-              <td style="{{ $td }}"><span style="{{ $mvBadge($b['loan_month']) }}">{{ $mvText($b['loan_month']) }}</span></td>
-              <td style="{{ $td }}"><span style="{{ $mvBadge($b['loan_ytd']) }}">{{ $mvText($b['loan_ytd']) }}</span></td>
-              <td style="{{ $balTd }}border-right:2px solid #BBF7D0;">{{ $fmtBal($b['loan_balance']) }}</td>
-            @else
-              <td colspan="3" style="{{ $td }}text-align:center;color:#94A3B8;border-right:2px solid #BBF7D0;">—</td>
-            @endif
-            <td style="{{ $ntbTd }}">{{ number_format($b['ntb_month']) }}</td>
-            <td style="{{ $ntbTd }}">{{ number_format($b['ntb_ytd']) }}</td>
-          </tr>
-        @empty
-          <tr><td colspan="9" style="padding:20px;text-align:center;color:#94A3B8;">No branch data for this period.</td></tr>
-        @endforelse
-      </tbody>
-    </table>
-  </div>
-
   {{-- ── Top customer movers ──────────────────────── --}}
-  @foreach ([['Deposits', $depGainers, $depLosers], ['Loans', $loanGainers, $loanLosers]] as [$product, $gainers, $losers])
+  @foreach (['deposits' => ['Deposits', $dep['top']], 'loans' => ['Loans', $loans['top']]] as $product => [$productLabel, $top])
+    @php
+      $t       = $themes[$product];
+      $gainers = collect($top['gainers'] ?? [])->take(10);
+      $losers  = collect($top['losers'] ?? [])->take(10);
+    @endphp
     @continue($gainers->isEmpty() && $losers->isEmpty())
     <div style="margin-top:32px;">
-      {!! $sectionLabel("Top {$product} Movers This Month", 'Top 10 customers each way · full list in the Excel attachment', '#94A3B8 0%,#475569 100%') !!}
+      {!! $sectionLabel($t, "Top {$productLabel} Movers This Month", 'Top 10 customers each way · full list in the Excel attachment') !!}
       <table width="100%" cellpadding="0" cellspacing="0" style="width:100%;mso-table-lspace:0pt;mso-table-rspace:0pt;">
         <tr>
-          @foreach ([['▲ Top Gainers', $gainers, '#166534', '#F0FDF4', '#BBF7D0'], ['▼ Top Losers', $losers, '#991B1B', '#FFF5F5', '#FECACA']] as $side => [$heading, $rows, $dark, $light, $line])
+          @foreach ([['▲ Top Gainers', $gainers, '#15803D'], ['▼ Top Losers', $losers, '#BE123C']] as $side => [$heading, $rows, $dirColor])
             <td style="width:50%;vertical-align:top;{{ $side === 0 ? 'padding-right:8px;' : 'padding-left:8px;' }}">
-              <table width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;border-spacing:0;font-size:11px;border:1px solid {{ $line }};border-radius:10px;overflow:hidden;background:#ffffff;">
-                <tr><th colspan="3" style="padding:8px 12px;background:{{ $dark }};text-align:left;font-size:10px;font-weight:900;color:#ffffff;text-transform:uppercase;letter-spacing:0.8px;">{{ $heading }}</th></tr>
+              <table width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;border-spacing:0;font-size:11px;border:1px solid {{ $t['tileLine'] }};border-radius:10px;overflow:hidden;background:#ffffff;">
+                <tr><th colspan="3" bgcolor="{{ $t['head'] }}" style="padding:8px 12px;background:{{ $t['head'] }};text-align:left;font-size:10px;font-weight:900;color:#ffffff;text-transform:uppercase;letter-spacing:0.8px;">{{ $heading }}</th></tr>
                 @forelse ($rows as $i => $r)
-                  <tr style="background:{{ $i % 2 ? $light : '#ffffff' }};">
-                    <td style="padding:6px 10px;width:6%;text-align:center;font-weight:900;color:{{ $dark }};{{ !$loop->last ? "border-bottom:1px solid {$line};" : '' }}">{{ $i + 1 }}</td>
-                    <td style="padding:6px 10px;color:#1F3A5F;{{ !$loop->last ? "border-bottom:1px solid {$line};" : '' }}">
+                  @php $line = !$loop->last ? "border-bottom:1px solid {$t['tileLine']};" : ''; @endphp
+                  <tr style="background:{{ $i % 2 ? $t['rowBg'] : '#ffffff' }};">
+                    <td style="padding:6px 10px;width:6%;text-align:center;font-weight:900;color:{{ $dirColor }};{{ $line }}">{{ $i + 1 }}</td>
+                    <td style="padding:6px 10px;color:#1F3A5F;{{ $line }}">
                       <div style="font-weight:700;">{{ \Illuminate\Support\Str::limit((string) ($r->customer_name ?? $r->cif), 34) }}</div>
                       <div style="font-size:9.5px;color:#94A3B8;">{{ $r->cif }} · {{ $r->sub_segment_name ?? '' }}</div>
                     </td>
-                    <td style="padding:6px 10px;text-align:right;white-space:nowrap;{{ !$loop->last ? "border-bottom:1px solid {$line};" : '' }}">
+                    <td style="padding:6px 10px;text-align:right;white-space:nowrap;{{ $line }}">
                       <span style="{{ $mvBadge($r->movement) }}">{{ $mvText($r->movement) }}</span>
                     </td>
                   </tr>
@@ -255,10 +208,10 @@
   <div style="margin-top:24px;font-size:10.5px;color:#64748B;padding:10px 14px;background:#F8FAFC;border:1px solid #E2E8F0;border-left:4px solid #005B82;border-radius:8px;line-height:1.6;">
     <strong style="color:#1F3A5F;font-weight:900;">Notes:</strong>
     Month Δ compares the last posted balance of {{ $report['label'] }} with the last posted balance of the previous month; MoM % is Month Δ over the opening balance.
-    YTD Δ is measured from the last balance of the previous year, or the earliest balance held this year where there is no prior-year data (YTD start shown above).
+    Deposits YTD Δ is measured from the last balance of the previous year, or the earliest balance held this year where there is no prior-year data (start date shown above).
+    Loans are shown month-on-month only for now (the performing book: NORM/OAEM/SUBS/Watch).
     Deposits use the same exclusions as the weekly report (P50 and GL 216220001, with the usual exception CIFs).
-    Loans are the performing book (NORM/OAEM/SUBS/Watch); branch loan figures exclude the Corporate segment, as in the weekly branch report.
-    NTB = distinct CIFs with a new account opened in the calendar month / year. The Excel attachment carries the LCY/FCY splits and the full top customer movers lists.
+    The Excel attachment carries the LCY/FCY deposit splits and the full top customer movers lists. Branch performance is sent as a separate email.
   </div>
 
 </div>
@@ -273,7 +226,7 @@
             <span style="font-size:11px;color:#94A3B8;">
               <strong style="color:#334155;font-weight:800;font-size:12px;">Ecobank Kenya</strong>
               <span style="color:#CBD5E1;margin:0 6px;">·</span>
-              <span>Monthly Bank Performance</span>
+              <span>Monthly Loans &amp; Deposits Performance</span>
             </span>
           </td>
           <td style="vertical-align:middle;text-align:right;">

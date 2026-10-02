@@ -8,8 +8,9 @@ use Carbon\Carbon;
 use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 
 /**
- * Monthly performance workbook: Summary (deposits Bank/LCY/FCY + loans by segment),
- * Branches, and the month's top CIF gainers/losers for deposits and loans.
+ * Monthly Loans & Deposits workbook: Deposits (Bank/LCY/FCY by segment), Loans (by
+ * segment), and the month's top CIF gainers/losers for each. Branches have their own
+ * workbook (MonthlyBranchWorkbookExport).
  */
 class MonthlyPerformanceWorkbookExport implements WithMultipleSheets
 {
@@ -27,76 +28,66 @@ class MonthlyPerformanceWorkbookExport implements WithMultipleSheets
                  . ', YTD from ' . $this->d($dep['periods']['ytd_start']);
         $loanSub = $loans['periods']
             ? 'Loans: month ' . $this->range($loans['periods']['month_start'], $loans['periods']['month_end'])
-              . ', YTD from ' . $this->d($loans['periods']['ytd_start'])
             : "Loans: no loan snapshot for {$loans['missing']}";
 
-        $summaryBlocks = [
-            $this->segmentBlock('Deposits — Bank (all currencies, KES equivalent)', $dep['bank'], 'Deposits'),
-            $this->segmentBlock('Deposits — LCY (KES)', $dep['lcy'], 'Deposits'),
-            $this->segmentBlock('Deposits — FCY (KES equivalent)', $dep['fcy'], 'Deposits'),
-            $this->segmentBlock('Loans — Performing book (KES equivalent)', $loans['segments'], 'Loans'),
+        $depositBlocks = [
+            $this->segmentBlock('Deposits — Bank (all currencies, KES equivalent)', $dep['bank'], 'Deposits', true),
+            $this->segmentBlock('Deposits — LCY (KES)', $dep['lcy'], 'Deposits', true),
+            $this->segmentBlock('Deposits — FCY (KES equivalent)', $dep['fcy'], 'Deposits', true),
+        ];
+
+        // Loans are month-on-month only — not enough loan history yet for a meaningful YTD.
+        $loanBlocks = [
+            $this->segmentBlock('Loans — Performing book (KES equivalent)', $loans['segments'], 'Loans', false),
         ];
 
         return [
-            new MonthlyPerformanceSheet('Summary', $title, "{$depSub} · {$loanSub}", $summaryBlocks, ['B', 'C', 'D'], ['B', 'C', 'E', 'F']),
-            new MonthlyPerformanceSheet('Branches', $title, $depSub . ' · NTB on calendar account-open dates · P50 excluded', [$this->branchBlock()], ['C', 'D', 'F', 'G'], ['C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']),
+            // Deposit columns: A Segment, B Month Δ, C YTD Δ, D %, E Opening, F Closing
+            new MonthlyPerformanceSheet('Deposits', $title, $depSub, $depositBlocks, ['B', 'C'], ['B', 'C', 'E', 'F']),
+            // Loan columns:    A Segment, B Month Δ, C %, D Opening, E Closing
+            new MonthlyPerformanceSheet('Loans', $title, $loanSub, $loanBlocks, ['B'], ['B', 'D', 'E']),
             new MonthlyPerformanceSheet('Deposit Top Movers', $title, $depSub, $this->cifBlocks('Deposits', $dep['top']), ['H'], ['F', 'G', 'H']),
             new MonthlyPerformanceSheet('Loan Top Movers', $title, $loanSub, $this->cifBlocks('Loans', $loans['top']), ['H'], ['F', 'G', 'H']),
         ];
     }
 
-    private function segmentBlock(string $heading, array $segments, string $balanceLabel): array
+    private function segmentBlock(string $heading, array $segments, string $balanceLabel, bool $withYtd): array
     {
         $rows = $totalRows = $subRows = [];
 
         foreach ($segments as $seg) {
             if (($seg['code'] ?? '') === 'ALL') $totalRows[] = count($rows);
-            $rows[] = $this->segmentRow(strtoupper((string) $seg['name']), $seg);
+            $rows[] = $this->segmentRow(strtoupper((string) $seg['name']), $seg, $withYtd);
 
             foreach ($seg['sub_segments'] ?? [] as $sub) {
                 $subRows[] = count($rows);
-                $rows[]    = $this->segmentRow((string) $sub['name'], $sub);
+                $rows[]    = $this->segmentRow((string) $sub['name'], $sub, $withYtd);
             }
         }
 
+        $headers = $withYtd
+            ? ['Segment', 'Month Δ', 'YTD Δ', 'Month Δ %', "Opening {$balanceLabel}", "Closing {$balanceLabel}"]
+            : ['Segment', 'Month Δ', 'Month Δ %', "Opening {$balanceLabel}", "Closing {$balanceLabel}"];
+
         return [
             'heading'   => $heading,
-            'headers'   => ['Segment', 'Month Δ', 'YTD Δ', 'Month Δ %', "Opening {$balanceLabel}", "Closing {$balanceLabel}"],
+            'headers'   => $headers,
             'rows'      => $rows,
             'totalRows' => $totalRows,
             'subRows'   => $subRows,
         ];
     }
 
-    private function segmentRow(string $name, array $s): array
+    private function segmentRow(string $name, array $s, bool $withYtd): array
     {
         $mv      = (float) $s['month_mv'];
         $closing = (float) $s['balance'];
         $opening = $closing - $mv;
+        $pct     = $opening > 0 ? round($mv / $opening * 100, 2) . '%' : '—';
 
-        return [$name, $mv, (float) $s['ytd_mv'], $opening > 0 ? round($mv / $opening * 100, 2) . '%' : '—', $opening, $closing];
-    }
-
-    private function branchBlock(): array
-    {
-        $rows = $totalRows = [];
-
-        foreach ($this->report['branches']['rows'] as $b) {
-            if ($b['code'] === 'ALL') $totalRows[] = count($rows);
-            $rows[] = [
-                $b['code'], $b['code'] === 'ALL' ? 'TOTAL' : $b['name'],
-                $b['dep_month'], $b['dep_ytd'], $b['dep_balance'],
-                $b['loan_month'], $b['loan_ytd'], $b['loan_balance'],
-                $b['ntb_month'], $b['ntb_ytd'],
-            ];
-        }
-
-        return [
-            'heading'   => 'Branch performance (Loans exclude the Corporate segment)',
-            'headers'   => ['Branch Code', 'Branch Name', 'Deposits Month Δ', 'Deposits YTD Δ', 'Deposits Closing', 'Loans Month Δ', 'Loans YTD Δ', 'Loans Closing', 'NTB Month', 'NTB YTD'],
-            'rows'      => $rows,
-            'totalRows' => $totalRows,
-        ];
+        return $withYtd
+            ? [$name, $mv, (float) $s['ytd_mv'], $pct, $opening, $closing]
+            : [$name, $mv, $pct, $opening, $closing];
     }
 
     private function cifBlocks(string $product, array $top): array

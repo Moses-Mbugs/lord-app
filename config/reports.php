@@ -498,13 +498,22 @@ return [
 
 
 
-    // Monthly bank performance (Deposits + Loans + Branches, MoM & YTD) — sent automatically by
-    // finance:import-daily-balances once the previous month's last balances file is imported.
+    // Monthly Loans & Deposits performance (by segment, MoM; deposits also YTD) — sent automatically
+    // by finance:import-daily-balances once the previous month's last balances file is imported.
     'monthly_performance' => [
         'to' => [
             'mmuigai@ecobank.com',
-            'mwanjira@ecobank.com',
 
+
+        ],
+        'cc' => [
+        ],
+    ],
+
+    // Monthly Branch performance (deposits, loans, NTB per branch) — sent alongside the one above.
+    'monthly_branches' => [
+        'to' => [
+            'mmuigai@ecobank.com',
         ],
         'cc' => [
         ],

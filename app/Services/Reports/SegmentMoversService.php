@@ -37,6 +37,11 @@ class SegmentMoversService
     // (or lack of one). Matches CIF_SEGMENT_OVERRIDES in WeeklySegmentReportService.
     private const CIF_SEGMENT_OVERRIDES = [
         '470130430' => 'CB',
+
+        // TEMPORARY manual reclassification (Oct 2026) — revert once corrected at source.
+        '471704700' => 'CB', // BLUE SKY ENERGY LIMITED → Local Corporates (was Commercial / SME)
+        '471650332' => 'CB', // MFI TECHNOLOGY SOLUTIONS LIMITED → Local Corporates (was Commercial / SME)
+        '471770982' => 'CB', // MASHONALAND TOBACCO COMPANY → Regional Corporates (was Unmapped)
     ];
 
     private function segmentOverrideCaseSql(string $cifColumn, string $fallbackExpr): string

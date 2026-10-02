@@ -281,7 +281,7 @@ class WeeklyLoanReportService
             ->leftJoinSub($cifBiz, 'csm', fn($j) => $j->on('csm.cif', '=', 'loan_listings.cif'))
             ->leftJoinSub($cifSub, 'css', fn($j) => $j->on('css.cif', '=', 'loan_listings.cif'))
             ->selectRaw('loan_listings.cif, MAX(loan_listings.name) as customer_name, MAX(loan_listings.branch) as branch_code')
-            ->selectRaw("COALESCE(NULLIF(TRIM(MAX(css.sub_segment_name)), ''), 'Unmapped') as sub_segment_name")
+            ->selectRaw('MAX(' . $this->subSegmentExpr() . ') as sub_segment_name')
             ->selectRaw('MAX(' . $this->loans->segmentExpr() . ') as business_segment')
             ->selectRaw('SUM(CASE WHEN loan_listings.as_at_date = ? THEN loan_book_outstanding ELSE 0 END) as start_balance', [$start])
             ->selectRaw('SUM(CASE WHEN loan_listings.as_at_date = ? THEN loan_book_outstanding ELSE 0 END) as end_balance', [$end])
@@ -389,14 +389,23 @@ class WeeklyLoanReportService
             ->leftJoinSub($cifBiz, 'csm', fn($j) => $j->on('csm.cif', '=', 'loan_listings.cif'))
             ->leftJoinSub($cifSub, 'css', fn($j) => $j->on('css.cif', '=', 'loan_listings.cif'))
             ->selectRaw($this->loans->segmentExpr() . ' AS business_segment')
-            ->selectRaw("COALESCE(NULLIF(TRIM(css.sub_segment_name), ''), 'Unmapped') AS sub_segment_name")
+            ->selectRaw($this->subSegmentExpr() . ' AS sub_segment_name')
             ->selectRaw('SUM(CASE WHEN loan_listings.as_at_date = ? THEN loan_book_outstanding ELSE 0 END) as weekly_start', [$weekStart])
             ->selectRaw('SUM(CASE WHEN loan_listings.as_at_date = ? THEN loan_book_outstanding ELSE 0 END) as weekly_end', [$weekEnd])
             ->selectRaw('SUM(CASE WHEN loan_listings.as_at_date = ? THEN loan_book_outstanding ELSE 0 END) as mtd_start', [$mtdStart])
             ->whereIn('loan_listings.as_at_date', $dates)
             ->whereRaw(self::LOAN_STATUS_FILTER)
-            ->groupBy(DB::raw($this->loans->segmentExpr()), DB::raw("COALESCE(NULLIF(TRIM(css.sub_segment_name), ''), 'Unmapped')"))
+            ->groupBy(DB::raw($this->loans->segmentExpr()), DB::raw($this->subSegmentExpr()))
             ->get();
+    }
+
+    /**
+     * Sub-segment for a loan row (requires the css join from cifSubSegmentSubquery()),
+     * with LoanMovementService's per-CIF overrides applied.
+     */
+    private function subSegmentExpr(): string
+    {
+        return $this->loans->cifOverrideExpr('sub_segment_name', "COALESCE(NULLIF(TRIM(css.sub_segment_name), ''), 'Unmapped')");
     }
 
     /**
@@ -697,7 +706,7 @@ class WeeklyLoanReportService
             ->leftJoinSub($cifBiz, 'csm', fn($j) => $j->on('csm.cif', '=', 'loan_listings.cif'))
             ->leftJoinSub($cifSub, 'css', fn($j) => $j->on('css.cif', '=', 'loan_listings.cif'))
             ->selectRaw($this->loans->segmentExpr() . ' AS business_segment')
-            ->selectRaw("COALESCE(NULLIF(TRIM(css.sub_segment_name), ''), 'Unmapped') AS sub_segment_name");
+            ->selectRaw($this->subSegmentExpr() . ' AS sub_segment_name');
 
         foreach (array_values($dates) as $idx => $date) {
             $query->selectRaw(
@@ -709,7 +718,7 @@ class WeeklyLoanReportService
         return $query
             ->whereIn('loan_listings.as_at_date', array_values(array_unique($dates)))
             ->whereRaw(self::LOAN_STATUS_FILTER)
-            ->groupBy(DB::raw($this->loans->segmentExpr()), DB::raw("COALESCE(NULLIF(TRIM(css.sub_segment_name), ''), 'Unmapped')"))
+            ->groupBy(DB::raw($this->loans->segmentExpr()), DB::raw($this->subSegmentExpr()))
             ->get();
     }
 

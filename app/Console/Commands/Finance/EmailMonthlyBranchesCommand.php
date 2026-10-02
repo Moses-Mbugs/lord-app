@@ -4,22 +4,21 @@ declare(strict_types=1);
 
 namespace App\Console\Commands\Finance;
 
-use App\Mail\MonthlyPerformanceReportMail;
+use App\Mail\MonthlyBranchReportMail;
 use App\Services\Reports\MonthlyPerformanceReportService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Mail;
 use Throwable;
 
-class EmailMonthlyPerformanceCommand extends Command
+class EmailMonthlyBranchesCommand extends Command
 {
-    protected $signature = 'reports:email-monthly-performance
+    protected $signature = 'reports:email-monthly-branches
         {month? : Month to report on, YYYY-MM (defaults to the previous calendar month)}
         {--to= : Override TO recipients (comma/semicolon/space separated)}
         {--cc= : Override CC recipients (comma/semicolon/space separated)}
-        {--limit=100 : Top CIF gainers/losers per product in the Excel attachment}
     ';
 
-    protected $description = 'Email the monthly Loans & Deposits performance report: Deposits (MoM + YTD) and Loans (MoM) by segment.';
+    protected $description = 'Email the monthly branch performance report: Deposits (MoM + YTD), Loans (MoM) and NTB per branch.';
 
     public function handle(MonthlyPerformanceReportService $service): int
     {
@@ -29,15 +28,15 @@ class EmailMonthlyPerformanceCommand extends Command
         }
 
         $toOpt = trim((string) ($this->option('to') ?? ''));
-        $to = $this->parseEmails($toOpt !== '' ? $toOpt : config('reports.monthly_performance.to', []));
+        $to = $this->parseEmails($toOpt !== '' ? $toOpt : config('reports.monthly_branches.to', []));
 
         if (empty($to)) {
-            $this->error('No TO recipients configured. Set reports.monthly_performance.to or pass --to=');
+            $this->error('No TO recipients configured. Set reports.monthly_branches.to or pass --to=');
             return self::FAILURE;
         }
 
         $ccOpt = trim((string) ($this->option('cc') ?? ''));
-        $cc = $this->parseEmails($ccOpt !== '' ? $ccOpt : config('reports.monthly_performance.cc', []));
+        $cc = $this->parseEmails($ccOpt !== '' ? $ccOpt : config('reports.monthly_branches.cc', []));
 
         $invalid = array_filter(array_merge($to, $cc), fn($e) => !filter_var($e, FILTER_VALIDATE_EMAIL));
         if (!empty($invalid)) {
@@ -45,26 +44,26 @@ class EmailMonthlyPerformanceCommand extends Command
             return self::FAILURE;
         }
 
-        $this->info("Building monthly performance report for {$month}...");
+        $this->info("Building monthly branch report for {$month}...");
 
         try {
-            $report = $service->build($month, max(1, (int) $this->option('limit')));
+            $report = $service->buildBranches($month);
         } catch (Throwable $e) {
-            $this->error('Monthly performance build failed: ' . $e->getMessage());
+            $this->error('Monthly branch build failed: ' . $e->getMessage());
             return self::FAILURE;
         }
 
-        $dep  = $report['deposits']['periods'];
-        $loan = $report['loans']['periods'];
+        $dep  = $report['deposit_periods'];
+        $loan = $report['loan_periods'];
 
         $this->line("  Deposits : {$dep['month_start']} → {$dep['month_end']} (YTD from {$dep['ytd_start']})");
         $this->line($loan
             ? "  Loans    : {$loan['month_start']} → {$loan['month_end']}"
-            : "  Loans    : no loan snapshot for {$report['loans']['missing']} — section will be empty");
+            : '  Loans    : no loan snapshot for this month or the one before — loan columns will be blank');
 
-        Mail::to($to)->cc($cc)->send(new MonthlyPerformanceReportMail($report));
+        Mail::to($to)->cc($cc)->send(new MonthlyBranchReportMail($report));
 
-        $this->info('Monthly performance email sent.');
+        $this->info('Monthly branch email sent.');
         $this->line('TO: ' . implode(', ', $to));
         $this->line('CC: ' . (empty($cc) ? '(none)' : implode(', ', $cc)));
 

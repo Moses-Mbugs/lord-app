@@ -22,6 +22,11 @@ class WeeklySegmentReportService
     // etibiseg2 / sub_segment_mappings classification (or lack of one).
     private const CIF_SEGMENT_OVERRIDES = [
         '470130430' => ['segment_code' => 'CB', 'sub_segment_name' => 'Regional Corporates'],
+
+        // TEMPORARY manual reclassification (Oct 2026) — revert once corrected at source.
+        '471704700' => ['segment_code' => 'CB', 'sub_segment_name' => 'Local Corporates'],    // BLUE SKY ENERGY LIMITED (was Commercial / SME)
+        '471650332' => ['segment_code' => 'CB', 'sub_segment_name' => 'Local Corporates'],    // MFI TECHNOLOGY SOLUTIONS LIMITED (was Commercial / SME)
+        '471770982' => ['segment_code' => 'CB', 'sub_segment_name' => 'Regional Corporates'], // MASHONALAND TOBACCO COMPANY (was Unmapped)
     ];
 
     private const SEGMENT_MAP = [

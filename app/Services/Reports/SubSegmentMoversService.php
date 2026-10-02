@@ -34,6 +34,11 @@ class SubSegmentMoversService
     // only in the aggregate business_segment_name totals from build().
     private const CIF_SEGMENT_OVERRIDES = [
         '470130430' => ['business' => 'Corporate Banking', 'business_segment_name' => 'Regional Corporates'],
+
+        // TEMPORARY manual reclassification (Oct 2026) — revert once corrected at source.
+        '471704700' => ['business' => 'Corporate Banking', 'business_segment_name' => 'Local Corporates'],    // BLUE SKY ENERGY LIMITED (was Commercial / SME)
+        '471650332' => ['business' => 'Corporate Banking', 'business_segment_name' => 'Local Corporates'],    // MFI TECHNOLOGY SOLUTIONS LIMITED (was Commercial / SME)
+        '471770982' => ['business' => 'Corporate Banking', 'business_segment_name' => 'Regional Corporates'], // MASHONALAND TOBACCO COMPANY (was Unmapped)
     ];
 
     /** @return array{0: string, 1: array} [CASE SQL, bindings] */

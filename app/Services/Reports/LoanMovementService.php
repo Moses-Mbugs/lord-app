@@ -15,6 +15,15 @@ class LoanMovementService
     // Canonical status-bucket display order within each segment
     private const BUCKET_ORDER = ['Performing', 'Watch', 'Substandard', 'Doubtful', 'Loss', 'Other'];
 
+    // Forces these CIFs' loans into a segment / sub-segment regardless of their mapping
+    // (see cifOverrideExpr()). Mirrors CIF_SEGMENT_OVERRIDES in the deposit services.
+    private const CIF_SEGMENT_OVERRIDES = [
+        // TEMPORARY manual reclassification (Oct 2026) — revert once corrected at source.
+        '471704700' => ['business' => 'CORPORATE BANKING', 'sub_segment_name' => 'Local Corporates'],    // BLUE SKY ENERGY LIMITED (was Commercial / SME)
+        '471650332' => ['business' => 'CORPORATE BANKING', 'sub_segment_name' => 'Local Corporates'],    // MFI TECHNOLOGY SOLUTIONS LIMITED (was Commercial / SME)
+        '471770982' => ['business' => 'CORPORATE BANKING', 'sub_segment_name' => 'Regional Corporates'], // MASHONALAND TOBACCO COMPANY (was Unmapped)
+    ];
+
     /**
      * Build loan book movement data for the email report.
      *
@@ -477,14 +486,32 @@ class LoanMovementService
      */
     public function segmentExpr(): string
     {
-        return "COALESCE(csm.business, CASE
+        return $this->cifOverrideExpr('business', "COALESCE(csm.business, CASE
             WHEN UPPER(loan_listings.source_type) = 'CREDIT_CARD'               THEN 'CONSUMER BANKING'
             WHEN UPPER(TRIM(loan_listings.business_segment)) LIKE '%CORPORATE%'  THEN 'CORPORATE BANKING'
             WHEN UPPER(TRIM(loan_listings.business_segment)) LIKE '%COMMERCIAL%'
               OR UPPER(TRIM(loan_listings.business_segment)) LIKE '%COMERCIAL%'  THEN 'COMMERCIAL BANKING'
             WHEN UPPER(TRIM(loan_listings.business_segment)) LIKE '%CONSUMER%'   THEN 'CONSUMER BANKING'
             ELSE loan_listings.business_segment
-        END, 'UNMAPPED')";
+        END, 'UNMAPPED')");
+    }
+
+    /**
+     * Forces CIF_SEGMENT_OVERRIDES onto $fallbackExpr, keyed on loan_listings.cif — the loan
+     * side of WeeklySegmentReportService::CIF_SEGMENT_OVERRIDES. Values are hardcoded
+     * constants, so they're inlined rather than bound (these expressions are reused in
+     * SELECT / GROUP BY / WHERE clauses that each carry their own bindings).
+     *
+     * @param 'business'|'sub_segment_name' $field
+     */
+    public function cifOverrideExpr(string $field, string $fallbackExpr): string
+    {
+        $whens = '';
+        foreach (self::CIF_SEGMENT_OVERRIDES as $cif => $override) {
+            $whens .= " WHEN '{$cif}' THEN '{$override[$field]}'";
+        }
+
+        return $whens === '' ? $fallbackExpr : "CASE loan_listings.cif{$whens} ELSE {$fallbackExpr} END";
     }
 
     private function direction(float $movement): string

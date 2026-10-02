@@ -131,7 +131,8 @@ class ImportDailyBalancesZipCommand extends Command
     /**
      * The first scheduled import of a new month brings in the previous month's last
      * business day (e.g. on Thu 1 Oct it imports Wed 30 Sep; on Mon 2 Nov it imports
-     * Fri 30 Oct), which closes that month — so send the monthly performance report for it.
+     * Fri 30 Oct), which closes that month — so send the monthly Loans & Deposits and
+     * Branch reports for it.
      * Manual --date runs (backfills) never trigger it.
      */
     private function sendMonthlyReportIfMonthClosed(Carbon $importedDate, bool $isManualRun): void
@@ -143,19 +144,21 @@ class ImportDailyBalancesZipCommand extends Command
         }
 
         $month = $importedDate->format('Y-m');
-        $this->info("Imported the last business day of {$month} — sending the monthly performance report...");
+        $this->info("Imported the last business day of {$month} — sending the monthly reports...");
 
-        try {
-            $exit = Artisan::call('reports:email-monthly-performance', ['month' => $month], $this->output);
-        } catch (Throwable $e) {
-            $exit = self::FAILURE;
-            $this->error('reports:email-monthly-performance threw: ' . $e->getMessage());
-        }
+        foreach (['reports:email-monthly-performance', 'reports:email-monthly-branches'] as $command) {
+            try {
+                $exit = Artisan::call($command, ['month' => $month], $this->output);
+            } catch (Throwable $e) {
+                $exit = self::FAILURE;
+                $this->error("{$command} threw: " . $e->getMessage());
+            }
 
-        if ($exit !== self::SUCCESS) {
-            $this->notify('error', 'Monthly report failed', "Balances were imported, but the monthly performance report for {$month} failed. Re-run: php artisan reports:email-monthly-performance {$month}", [
-                'Month' => $month,
-            ]);
+            if ($exit !== self::SUCCESS) {
+                $this->notify('error', 'Monthly report failed', "Balances were imported, but {$command} for {$month} failed. Re-run: php artisan {$command} {$month}", [
+                    'Month' => $month,
+                ]);
+            }
         }
     }
 

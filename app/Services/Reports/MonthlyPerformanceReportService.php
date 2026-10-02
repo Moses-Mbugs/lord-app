@@ -9,12 +9,14 @@ use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 /**
- * Month-on-month + YTD bank performance: Deposits (Bank/LCY/FCY by segment), Loans
- * (performing book by segment) and Branches (deposits, loans, NTB).
- *
- * Every period is anchored on dates that actually exist in the data — the last
+ * Monthly reports, each anchored on dates that actually exist in the data — the last
  * balance_date / as_at_date posted in the month — never on calendar month-ends,
  * since month-ends often fall on weekends with no Flexcube file.
+ *
+ *  - build():         Deposits (Bank/LCY/FCY by segment, MoM + YTD) and Loans (performing
+ *                     book by segment, MoM) — the "Loans & Deposits" email.
+ *  - buildBranches(): per-branch Deposits (MoM + YTD), Loans (MoM) and NTB — the
+ *                     separate monthly branch email.
  */
 class MonthlyPerformanceReportService
 {
@@ -31,28 +33,31 @@ class MonthlyPerformanceReportService
      */
     public function build(string $month, int $limit = 100): array
     {
-        $monthDate = Carbon::createFromFormat('!Y-m', $month);
-        if ($monthDate === false) {
-            throw new RuntimeException("Invalid month '{$month}', expected YYYY-MM.");
-        }
+        [$monthDate, $monthEnd] = $this->resolveMonth($month);
 
-        $monthEnd = $this->latestBalanceDateInMonth($monthDate);
-        if ($monthEnd === null) {
-            throw new RuntimeException("No customer_balances data for {$monthDate->format('F Y')}.");
-        }
-
-        $deposits = $this->buildDeposits($monthEnd, $limit);
-        $loans    = $this->buildLoans($monthDate, $limit);
-        $branches = $this->buildBranches($monthDate, $deposits['periods'], $loans['periods'] ?? null);
-
-        return [
-            'month'          => $monthDate->format('Y-m'),
-            'label'          => $monthDate->format('F Y'),
-            'is_month_closed' => $monthDate->copy()->endOfMonth()->lt(now()->timezone('Africa/Nairobi')->startOfDay()),
-            'deposits'       => $deposits,
-            'loans'          => $loans,
-            'branches'       => $branches,
+        return $this->header($monthDate) + [
+            'deposits' => $this->buildDeposits($monthEnd, $limit),
+            'loans'    => $this->buildLoans($monthDate, $limit),
         ];
+    }
+
+    /** @param string $month YYYY-MM */
+    public function buildBranches(string $month): array
+    {
+        [$monthDate, $monthEnd] = $this->resolveMonth($month);
+
+        $depPeriods = [
+            'month_start' => $this->latestBalanceDateInMonth($monthDate->copy()->subMonthNoOverflow()) ?? $monthEnd,
+            'month_end'   => $monthEnd,
+            'ytd_start'   => $this->depositYtdStart($monthEnd),
+        ];
+
+        $loanPeriods = $this->resolveLoanPeriods($monthDate)['periods'];
+
+        return $this->header($monthDate) + [
+            'deposit_periods' => $depPeriods,
+            'loan_periods'    => $loanPeriods,
+        ] + $this->buildBranchRows($monthDate, $depPeriods, $loanPeriods);
     }
 
     // -------------------------------------------------------------------------
@@ -103,33 +108,41 @@ class MonthlyPerformanceReportService
 
     /**
      * Loans are imported separately from balances, so their dates are resolved on
-     * their own. Returns periods = null when the month (or the month before it) has
-     * no loan snapshot — the email then says so rather than showing a fake movement.
+     * their own. periods = null when the month (or the month before it) has no loan
+     * snapshot — the email then says so rather than showing a fake movement.
+     *
+     * @return array{periods: ?array, missing: ?string}
      */
-    private function buildLoans(Carbon $monthDate, int $limit): array
+    private function resolveLoanPeriods(Carbon $monthDate): array
     {
         $prev       = $monthDate->copy()->subMonthNoOverflow();
         $monthEnd   = $this->loans->latestAvailableInMonth($monthDate->year, $monthDate->month);
         $monthStart = $this->loans->latestAvailableInMonth($prev->year, $prev->month);
 
         if ($monthEnd === null || $monthStart === null) {
-            return [
-                'periods'  => null,
-                'missing'  => $monthEnd === null ? $monthDate->format('F Y') : $prev->format('F Y'),
-                'segments' => [],
-                'top'      => ['gainers' => collect(), 'losers' => collect()],
-            ];
+            return ['periods' => null, 'missing' => $monthEnd === null ? $monthDate->format('F Y') : $prev->format('F Y')];
         }
 
-        $periods = [
-            'month_start' => $monthStart,
-            'month_end'   => $monthEnd,
-            'ytd_start'   => $this->loans->findYtdStart($monthEnd),
-        ];
-
         return [
-            'periods'  => $periods,
-            'missing'  => null,
+            'periods' => [
+                'month_start' => $monthStart,
+                'month_end'   => $monthEnd,
+                'ytd_start'   => $this->loans->findYtdStart($monthEnd),
+            ],
+            'missing' => null,
+        ];
+    }
+
+    private function buildLoans(Carbon $monthDate, int $limit): array
+    {
+        $resolved = $this->resolveLoanPeriods($monthDate);
+        $periods  = $resolved['periods'];
+
+        if ($periods === null) {
+            return $resolved + ['segments' => [], 'top' => ['gainers' => collect(), 'losers' => collect()]];
+        }
+
+        return $resolved + [
             'segments' => $this->loans->buildMonthly($periods['month_start'], $periods['month_end'], $periods['ytd_start']),
             'top'      => $this->loans->topMovers($periods['month_start'], $periods['month_end'], $limit),
         ];
@@ -139,7 +152,8 @@ class MonthlyPerformanceReportService
     // Branches
     // -------------------------------------------------------------------------
 
-    private function buildBranches(Carbon $monthDate, array $depPeriods, ?array $loanPeriods): array
+    /** @return array{periods: array, ntb_periods: array, rows: array, top: array} */
+    private function buildBranchRows(Carbon $monthDate, array $depPeriods, ?array $loanPeriods): array
     {
         $monthEnd = $depPeriods['month_end'];
 
@@ -154,6 +168,11 @@ class MonthlyPerformanceReportService
             'ytd'   => ['start' => $depPeriods['ytd_start'],   'end' => $monthEnd],
         ];
 
+        // Loans are month-on-month only (not enough loan history for a meaningful YTD).
+        $loans = $loanPeriods
+            ? $this->branchMetrics->loanTotals($loanPeriods['month_start'], $loanPeriods['month_end'], false)
+            : [];
+
         $rows = [];
         $top  = [];
 
@@ -167,10 +186,6 @@ class MonthlyPerformanceReportService
                 'losers'  => $topRows->where('direction', 'LOSS')->sortBy('rank')->values(),
             ];
 
-            $loanStart = $loanPeriods[$key === 'month' ? 'month_start' : 'ytd_start'] ?? null;
-            $loans     = $loanPeriods && $loanStart !== $loanPeriods['month_end']
-                ? $this->branchMetrics->loanTotals($loanStart, $loanPeriods['month_end'], false)
-                : [];
             $ntb = $this->branchMetrics->ntbCounts($ntbPeriods[$key]['start'], $ntbPeriods[$key]['end']);
 
             foreach ($summary as $r) {
@@ -180,18 +195,17 @@ class MonthlyPerformanceReportService
                 $rows[$code] ??= [
                     'code' => $code, 'name' => (string) ($r->group_name ?? $code),
                     'dep_month' => 0.0, 'dep_ytd' => 0.0, 'dep_balance' => 0.0,
-                    'loan_month' => 0.0, 'loan_ytd' => 0.0, 'loan_balance' => 0.0,
+                    'loan_month' => 0.0, 'loan_balance' => 0.0,
                     'ntb_month' => 0, 'ntb_ytd' => 0,
                 ];
 
-                $loan = $loans[$code] ?? ['open' => 0.0, 'close' => 0.0];
-
-                $rows[$code]["dep_{$key}"]  = (float) ($r->movement ?? 0);
-                $rows[$code]["loan_{$key}"] = $loan['close'] - $loan['open'];
-                $rows[$code]["ntb_{$key}"]  = (int) ($ntb[$code] ?? 0);
+                $rows[$code]["dep_{$key}"] = (float) ($r->movement ?? 0);
+                $rows[$code]["ntb_{$key}"] = (int) ($ntb[$code] ?? 0);
 
                 if ($key === 'month') {
+                    $loan = $loans[$code] ?? ['open' => 0.0, 'close' => 0.0];
                     $rows[$code]['dep_balance']  = (float) ($r->end_balance ?? 0);
+                    $rows[$code]['loan_month']   = $loan['close'] - $loan['open'];
                     $rows[$code]['loan_balance'] = $loan['close'];
                 }
             }
@@ -217,6 +231,31 @@ class MonthlyPerformanceReportService
     // Helpers
     // -------------------------------------------------------------------------
 
+    /** @return array{0: Carbon, 1: string} [first day of the month, last balance_date in it] */
+    private function resolveMonth(string $month): array
+    {
+        $monthDate = Carbon::createFromFormat('!Y-m', $month);
+        if ($monthDate === false) {
+            throw new RuntimeException("Invalid month '{$month}', expected YYYY-MM.");
+        }
+
+        $monthEnd = $this->latestBalanceDateInMonth($monthDate);
+        if ($monthEnd === null) {
+            throw new RuntimeException("No customer_balances data for {$monthDate->format('F Y')}.");
+        }
+
+        return [$monthDate, $monthEnd];
+    }
+
+    private function header(Carbon $monthDate): array
+    {
+        return [
+            'month'           => $monthDate->format('Y-m'),
+            'label'           => $monthDate->format('F Y'),
+            'is_month_closed' => $monthDate->copy()->endOfMonth()->lt(now()->timezone('Africa/Nairobi')->startOfDay()),
+        ];
+    }
+
     private function latestBalanceDateInMonth(Carbon $monthDate): ?string
     {
         $d = DB::table('customer_balances')
@@ -225,5 +264,22 @@ class MonthlyPerformanceReportService
             ->max('balance_date');
 
         return $d ? Carbon::parse((string) $d)->toDateString() : null;
+    }
+
+    /**
+     * Last balance_date of the previous year, else the earliest one this year —
+     * same rule as WeeklySegmentReportService::findYtdStart().
+     */
+    private function depositYtdStart(string $monthEnd): string
+    {
+        $yearStart = Carbon::parse($monthEnd)->startOfYear()->toDateString();
+
+        $d = DB::table('customer_balances')->where('balance_date', '<', $yearStart)->max('balance_date')
+            ?? DB::table('customer_balances')
+                ->where('balance_date', '>=', $yearStart)
+                ->where('balance_date', '<', $monthEnd)
+                ->min('balance_date');
+
+        return $d ? Carbon::parse((string) $d)->toDateString() : $monthEnd;
     }
 }
