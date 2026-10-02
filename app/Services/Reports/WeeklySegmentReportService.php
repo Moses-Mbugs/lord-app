@@ -18,14 +18,15 @@ class WeeklySegmentReportService
         '470321717', '470291487', '470317567', '470803302', '470251434', '470130430',
     ];
 
-    // Forces this CIF into Corporate / Regional Corporates regardless of its actual
-    // etibiseg2 / sub_segment_mappings classification (or lack of one).
-    private const CIF_SEGMENT_OVERRIDES = [
+    // Forces these CIFs into a segment / sub-segment regardless of their actual
+    // etibiseg2 / sub_segment_mappings classification (or lack of one). Also read by
+    // CifSegment, which every branch "exclude Corporate" filter goes through.
+    public const CIF_SEGMENT_OVERRIDES = [
         '470130430' => ['segment_code' => 'CB', 'sub_segment_name' => 'Regional Corporates'],
 
         // TEMPORARY manual reclassification (Oct 2026) — revert once corrected at source.
-        '471704700' => ['segment_code' => 'CB', 'sub_segment_name' => 'Local Corporates'],    // BLUE SKY ENERGY LIMITED (was Commercial / SME)
-        '471650332' => ['segment_code' => 'CB', 'sub_segment_name' => 'Local Corporates'],    // MFI TECHNOLOGY SOLUTIONS LIMITED (was Commercial / SME)
+        '471704700' => ['segment_code' => 'CM', 'sub_segment_name' => 'Local Corporates'],    // BLUE SKY ENERGY LIMITED (was Commercial / SME)
+        '471650332' => ['segment_code' => 'CM', 'sub_segment_name' => 'Local Corporates'],    // MFI TECHNOLOGY SOLUTIONS LIMITED (was Commercial / SME)
         '471770982' => ['segment_code' => 'CB', 'sub_segment_name' => 'Regional Corporates'], // MASHONALAND TOBACCO COMPANY (was Unmapped)
     ];
 

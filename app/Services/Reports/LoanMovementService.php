@@ -19,8 +19,8 @@ class LoanMovementService
     // (see cifOverrideExpr()). Mirrors CIF_SEGMENT_OVERRIDES in the deposit services.
     private const CIF_SEGMENT_OVERRIDES = [
         // TEMPORARY manual reclassification (Oct 2026) — revert once corrected at source.
-        '471704700' => ['business' => 'CORPORATE BANKING', 'sub_segment_name' => 'Local Corporates'],    // BLUE SKY ENERGY LIMITED (was Commercial / SME)
-        '471650332' => ['business' => 'CORPORATE BANKING', 'sub_segment_name' => 'Local Corporates'],    // MFI TECHNOLOGY SOLUTIONS LIMITED (was Commercial / SME)
+        '471704700' => ['business' => 'COMMERCIAL BANKING', 'sub_segment_name' => 'Local Corporates'],    // BLUE SKY ENERGY LIMITED (was Commercial / SME)
+        '471650332' => ['business' => 'COMMERCIAL BANKING', 'sub_segment_name' => 'Local Corporates'],    // MFI TECHNOLOGY SOLUTIONS LIMITED (was Commercial / SME)
         '471770982' => ['business' => 'CORPORATE BANKING', 'sub_segment_name' => 'Regional Corporates'], // MASHONALAND TOBACCO COMPANY (was Unmapped)
     ];
 

@@ -286,13 +286,7 @@ class GroupMoversService
             ->whereNotNull('cb.cif')
             ->whereRaw("UPPER(TRIM(cb.branch_code)) <> 'P50'")
             ->whereRaw(StaffExclusion::depositSql('cb'))
-            ->whereNotIn('cb.cif', function ($sub) {
-                $sub->from('customer_accounts_imports')
-                    ->select('f12_cif')
-                    ->whereNotNull('f12_cif')
-                    ->whereRaw("UPPER(TRIM(etibiseg2)) LIKE 'CB%'")
-                    ->distinct();
-            })
+            ->whereRaw(CifSegment::notCorporateSql('cb.cif'))
             ->groupByRaw("UPPER(TRIM(cb.branch_code))")
             ->groupBy('cb.cif')
             ->havingRaw("{$moveExpr} <> 0", [$endDate, $startDate])
@@ -577,19 +571,12 @@ class GroupMoversService
                                 ->orWhere("{$alias}.cr_gl", '<>', self::EXCLUDED_CR_GL);
                         });
                     }
-
-                    // Exclude Corporate Banking (etibiseg2 starting with 'CB')
-                    $normal->whereNotIn("{$alias}.cif", function ($sub) {
-                        $sub->from('customer_accounts_imports')
-                            ->select('f12_cif')
-                            ->whereNotNull('f12_cif')
-                            ->whereRaw("UPPER(TRIM(etibiseg2)) LIKE 'CB%'")
-                            ->distinct();
-                    });
                 });
         });
 
-        // Staff accounts are excluded for every CIF, exception list included.
+        // Branch figures exclude all Corporate Banking CIFs (exception list included), using
+        // the same classification as the segment reports (CifSegment), and all staff accounts.
+        $query->whereRaw(CifSegment::notCorporateSql("{$alias}.cif"));
         $query->whereRaw(StaffExclusion::depositSql($alias));
     }
 }

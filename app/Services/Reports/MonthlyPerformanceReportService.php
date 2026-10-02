@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Reports;
 
+use App\Models\Finance\MonthlyReportSnapshot;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -58,6 +59,86 @@ class MonthlyPerformanceReportService
             'deposit_periods' => $depPeriods,
             'loan_periods'    => $loanPeriods,
         ] + $this->buildBranchRows($monthDate, $depPeriods, $loanPeriods);
+    }
+
+    // -------------------------------------------------------------------------
+    // Stored snapshots (monthly_report_snapshots)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Save a build() / buildBranches() result so the email can be (re)sent without rebuilding.
+     *
+     * @param string $type MonthlyReportSnapshot::TYPE_*
+     */
+    public function save(string $type, array $report): void
+    {
+        [$depositsAsAt, $loanPeriods] = $this->dataDates($type, $report);
+
+        MonthlyReportSnapshot::updateOrCreate(
+            ['report_type' => $type, 'month' => $report['month']],
+            [
+                'deposits_as_at' => $depositsAsAt,
+                'loans_start'    => $loanPeriods['month_start'] ?? null,
+                'loans_as_at'    => $loanPeriods['month_end'] ?? null,
+                'payload'        => $report,
+            ]
+        );
+    }
+
+    /**
+     * The stored report for $month, or null when there is none or it is stale — i.e. a newer
+     * balances or loan file has landed for that month (or the month before, for loans) since
+     * it was built, so a rebuild would give different numbers.
+     *
+     * @param string $type MonthlyReportSnapshot::TYPE_*
+     */
+    public function loadFresh(string $type, string $month): ?array
+    {
+        $snapshot = MonthlyReportSnapshot::where('report_type', $type)->where('month', $month)->first();
+        if ($snapshot === null) return null;
+
+        [$monthDate, $monthEnd] = $this->resolveMonth($month);
+        $loanPeriods = $this->resolveLoanPeriods($monthDate)['periods'];
+
+        $isFresh = $snapshot->deposits_as_at->toDateString() === $monthEnd
+            && $snapshot->loans_start?->toDateString() === ($loanPeriods['month_start'] ?? null)
+            && $snapshot->loans_as_at?->toDateString() === ($loanPeriods['month_end'] ?? null);
+
+        if (!$isFresh) return null;
+
+        return $this->hydrate($type, $snapshot->payload) + ['built_at' => $snapshot->updated_at?->toDateTimeString()];
+    }
+
+    /** @return array{0: string, 1: ?array} [deposits month-end date, loan periods or null] */
+    private function dataDates(string $type, array $report): array
+    {
+        return $type === MonthlyReportSnapshot::TYPE_BRANCHES
+            ? [$report['deposit_periods']['month_end'], $report['loan_periods']]
+            : [$report['deposits']['periods']['month_end'], $report['loans']['periods']];
+    }
+
+    /**
+     * JSON turns the top-movers Collections of row objects into plain arrays; the email
+     * views and Excel exports read them as objects ($r->cif), so restore that shape.
+     * is_month_closed is relative to today, so it's recomputed rather than trusted.
+     */
+    private function hydrate(string $type, array $report): array
+    {
+        $rows = fn(array $top) => [
+            'gainers' => collect($top['gainers'] ?? [])->map(fn($r) => (object) $r)->values(),
+            'losers'  => collect($top['losers'] ?? [])->map(fn($r) => (object) $r)->values(),
+        ];
+
+        if ($type === MonthlyReportSnapshot::TYPE_BRANCHES) {
+            foreach ($report['top'] ?? [] as $key => $top) {
+                $report['top'][$key] = $rows($top);
+            }
+        } else {
+            $report['deposits']['top'] = $rows($report['deposits']['top'] ?? []);
+            $report['loans']['top']    = $rows($report['loans']['top'] ?? []);
+        }
+
+        return array_merge($report, $this->header(Carbon::createFromFormat('!Y-m', $report['month'])));
     }
 
     // -------------------------------------------------------------------------

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands\Finance;
 
+use App\Services\Reports\CifSegment;
 use App\Services\Reports\StaffExclusion;
 use App\Exports\Finance\BranchMoversWorkbookExport;
 use App\Mail\BranchMoversReportMail;
@@ -216,7 +217,7 @@ class EmailBranchMoversCommand extends Command
             ->joinSub(
                 DB::table('loan_listings')
                     ->whereIn(DB::raw('DATE(as_at_date)'), [$loanStartDate, $loanEndDate])
-                    ->whereRaw("UPPER(TRIM(COALESCE(business_segment,''))) != 'CORPORATE'")
+                    ->whereRaw(CifSegment::notCorporateLoanSql(''))
                     ->whereRaw("(TRIM(COALESCE(loan_status, '')) = '' OR loan_status IN ('NORM', 'Normal', 'OAEM', 'SUBS', 'Watch'))")
                     ->whereRaw(StaffExclusion::loanSql(''))
                     ->select(DB::raw('DATE(as_at_date) AS snap_date'), 'related_account', DB::raw('MAX(id) AS max_id'))
@@ -307,7 +308,7 @@ class EmailBranchMoversCommand extends Command
             ->joinSub(
                 DB::table('loan_listings')
                     ->whereIn(DB::raw('DATE(as_at_date)'), $dates)
-                    ->whereRaw("UPPER(TRIM(COALESCE(business_segment,''))) != 'CORPORATE'")
+                    ->whereRaw(CifSegment::notCorporateLoanSql(''))
                     ->whereRaw("(TRIM(COALESCE(loan_status, '')) = '' OR loan_status IN ('NORM', 'Normal', 'OAEM', 'SUBS', 'Watch'))")
                     ->whereRaw(StaffExclusion::loanSql(''))
                     ->select(DB::raw('DATE(as_at_date) AS snap_date'), 'related_account', DB::raw('MAX(id) AS max_id'))

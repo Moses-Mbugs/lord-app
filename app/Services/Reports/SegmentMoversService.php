@@ -39,8 +39,8 @@ class SegmentMoversService
         '470130430' => 'CB',
 
         // TEMPORARY manual reclassification (Oct 2026) — revert once corrected at source.
-        '471704700' => 'CB', // BLUE SKY ENERGY LIMITED → Local Corporates (was Commercial / SME)
-        '471650332' => 'CB', // MFI TECHNOLOGY SOLUTIONS LIMITED → Local Corporates (was Commercial / SME)
+        '471704700' => 'CM', // BLUE SKY ENERGY LIMITED → Commercial / Local Corporates (was Commercial / SME)
+        '471650332' => 'CM', // MFI TECHNOLOGY SOLUTIONS LIMITED → Commercial / Local Corporates (was Commercial / SME)
         '471770982' => 'CB', // MASHONALAND TOBACCO COMPANY → Regional Corporates (was Unmapped)
     ];
 
@@ -123,37 +123,9 @@ class SegmentMoversService
 
             LEFT JOIN
             (
-                -- Step 2: Classify each CIF into a segment
-                -- Only CB*, CM*, CS* accounts cast a vote.
-                -- DB*, NAP, BLANK/NULL accounts return NULL and are ignored.
-                -- A CIF with no CB/CM/CS accounts gets NULL here,
-                -- and COALESCE above assigns it to 'OT'.
-                SELECT
-                    x.cif,
-                    CASE
-                        WHEN SUM(CASE WHEN x.segment_code = 'CB' THEN 1 ELSE 0 END) > 0 THEN 'CB'
-                        WHEN SUM(CASE WHEN x.segment_code = 'CM' THEN 1 ELSE 0 END) > 0 THEN 'CM'
-                        WHEN SUM(CASE WHEN x.segment_code = 'CS' THEN 1 ELSE 0 END) > 0 THEN 'CS'
-                        ELSE NULL
-                    END AS segment_code
-                FROM
-                (
-                    SELECT
-                        f12_cif AS cif,
-                        CASE
-                            WHEN UPPER(TRIM(etibiseg2)) LIKE 'CB%' THEN 'CB'
-                            WHEN UPPER(TRIM(etibiseg2)) LIKE 'CM%' THEN 'CM'
-                            WHEN UPPER(TRIM(etibiseg2)) LIKE 'CS%' THEN 'CS'
-                            ELSE NULL
-                        END AS segment_code
-                    FROM customer_accounts_imports
-                    WHERE f12_cif IS NOT NULL
-                      AND etibiseg2 IS NOT NULL
-                      AND TRIM(etibiseg2) <> ''
-                ) x
-                -- Only keep rows that actually voted for a real segment
-                WHERE x.segment_code IS NOT NULL
-                GROUP BY x.cif
+                -- Step 2: Classify each CIF into a segment (mapping table first, MIS prefix
+                -- fallback, Corporate > Commercial > Consumer) — see CifSegment.
+                " . CifSegment::subquerySql() . "
             ) s ON s.cif = m.cif
 
             GROUP BY 1

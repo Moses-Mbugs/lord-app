@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands\Finance;
 
 use App\Mail\MonthlyPerformanceReportMail;
+use App\Models\Finance\MonthlyReportSnapshot;
 use App\Services\Reports\MonthlyPerformanceReportService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Mail;
@@ -16,7 +17,8 @@ class EmailMonthlyPerformanceCommand extends Command
         {month? : Month to report on, YYYY-MM (defaults to the previous calendar month)}
         {--to= : Override TO recipients (comma/semicolon/space separated)}
         {--cc= : Override CC recipients (comma/semicolon/space separated)}
-        {--limit=100 : Top CIF gainers/losers per product in the Excel attachment}
+        {--limit=100 : Top CIF gainers/losers per product in the Excel attachment (applies when building)}
+        {--rebuild : Ignore the stored copy in monthly_report_snapshots and rebuild it}
     ';
 
     protected $description = 'Email the monthly Loans & Deposits performance report: Deposits (MoM + YTD) and Loans (MoM) by segment.';
@@ -45,10 +47,16 @@ class EmailMonthlyPerformanceCommand extends Command
             return self::FAILURE;
         }
 
-        $this->info("Building monthly performance report for {$month}...");
-
         try {
-            $report = $service->build($month, max(1, (int) $this->option('limit')));
+            $report = $this->option('rebuild') ? null : $service->loadFresh(MonthlyReportSnapshot::TYPE_LOANS_DEPOSITS, $month);
+
+            if ($report !== null) {
+                $this->info("Loaded stored Loans & Deposits report for {$month} (built {$report['built_at']}).");
+            } else {
+                $this->info("Building Loans & Deposits report for {$month}...");
+                $report = $service->build($month, max(1, (int) $this->option('limit')));
+                $service->save(MonthlyReportSnapshot::TYPE_LOANS_DEPOSITS, $report);
+            }
         } catch (Throwable $e) {
             $this->error('Monthly performance build failed: ' . $e->getMessage());
             return self::FAILURE;

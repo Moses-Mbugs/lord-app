@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands\Finance;
 
 use App\Mail\MonthlyBranchReportMail;
+use App\Models\Finance\MonthlyReportSnapshot;
 use App\Services\Reports\MonthlyPerformanceReportService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Mail;
@@ -16,6 +17,7 @@ class EmailMonthlyBranchesCommand extends Command
         {month? : Month to report on, YYYY-MM (defaults to the previous calendar month)}
         {--to= : Override TO recipients (comma/semicolon/space separated)}
         {--cc= : Override CC recipients (comma/semicolon/space separated)}
+        {--rebuild : Ignore the stored copy in monthly_report_snapshots and rebuild it}
     ';
 
     protected $description = 'Email the monthly branch performance report: Deposits (MoM + YTD), Loans (MoM) and NTB per branch.';
@@ -44,10 +46,16 @@ class EmailMonthlyBranchesCommand extends Command
             return self::FAILURE;
         }
 
-        $this->info("Building monthly branch report for {$month}...");
-
         try {
-            $report = $service->buildBranches($month);
+            $report = $this->option('rebuild') ? null : $service->loadFresh(MonthlyReportSnapshot::TYPE_BRANCHES, $month);
+
+            if ($report !== null) {
+                $this->info("Loaded stored Branch report for {$month} (built {$report['built_at']}).");
+            } else {
+                $this->info("Building Branch report for {$month}...");
+                $report = $service->buildBranches($month);
+                $service->save(MonthlyReportSnapshot::TYPE_BRANCHES, $report);
+            }
         } catch (Throwable $e) {
             $this->error('Monthly branch build failed: ' . $e->getMessage());
             return self::FAILURE;

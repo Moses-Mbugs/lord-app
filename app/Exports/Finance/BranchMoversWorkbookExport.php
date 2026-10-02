@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Exports\Finance;
 
+use App\Services\Reports\CifSegment;
 use App\Services\Reports\StaffExclusion;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -196,7 +197,7 @@ class BranchSummarySheet implements FromArray, WithTitle, WithHeadings, ShouldAu
             ->joinSub(
                 DB::table('loan_listings')
                     ->whereIn(DB::raw('DATE(as_at_date)'), $dates)
-                    ->whereRaw("UPPER(TRIM(COALESCE(business_segment,''))) != 'CORPORATE'")
+                    ->whereRaw(CifSegment::notCorporateLoanSql(''))
                     ->whereRaw("(TRIM(COALESCE(loan_status, '')) = '' OR loan_status IN ('NORM', 'Normal', 'OAEM', 'SUBS', 'Watch'))")
                     ->whereRaw(StaffExclusion::loanSql(''))
                     ->select(DB::raw('DATE(as_at_date) AS snap_date'), 'related_account', DB::raw('MAX(id) AS max_id'))
@@ -422,13 +423,7 @@ class CifMoversByBranchSheet implements FromArray, WithTitle, ShouldAutoSize, Wi
             ->whereNotNull('cb.cif')
             ->whereRaw("UPPER(TRIM(cb.branch_code)) <> 'P50'")
             ->whereRaw(StaffExclusion::depositSql('cb'))
-            ->whereNotIn('cb.cif', function ($sub) {
-                $sub->from('customer_accounts_imports')
-                    ->select('f12_cif')
-                    ->whereNotNull('f12_cif')
-                    ->whereRaw("UPPER(TRIM(etibiseg2)) LIKE 'CB%'")
-                    ->distinct();
-            })
+            ->whereRaw(CifSegment::notCorporateSql('cb.cif'))
             ->groupByRaw("UPPER(TRIM(cb.branch_code))")
             ->groupBy('cb.cif')
             ->havingRaw("{$moveExpr} <> 0", [$this->endDate, $this->startDate])
@@ -655,7 +650,7 @@ class LoanAccountMoversByBranchSheet implements FromArray, WithTitle, ShouldAuto
             ->joinSub(
                 DB::table('loan_listings')
                     ->whereIn(DB::raw('DATE(as_at_date)'), [$loanStartDate, $loanEndDate])
-                    ->whereRaw("UPPER(TRIM(COALESCE(business_segment,''))) != 'CORPORATE'")
+                    ->whereRaw(CifSegment::notCorporateLoanSql(''))
                     ->whereRaw("(TRIM(COALESCE(loan_status, '')) = '' OR loan_status IN ('NORM', 'Normal', 'OAEM', 'SUBS', 'Watch'))")
                     ->whereRaw(StaffExclusion::loanSql(''))
                     ->select(DB::raw('DATE(as_at_date) AS snap_date'), 'related_account', DB::raw('MAX(id) AS max_id'))

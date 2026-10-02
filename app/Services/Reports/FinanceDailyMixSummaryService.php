@@ -53,8 +53,8 @@ class FinanceDailyMixSummaryService
         '470130430' => 'CB',
 
         // TEMPORARY manual reclassification (Oct 2026) — revert once corrected at source.
-        '471704700' => 'CB', // BLUE SKY ENERGY LIMITED → Local Corporates (was Commercial / SME)
-        '471650332' => 'CB', // MFI TECHNOLOGY SOLUTIONS LIMITED → Local Corporates (was Commercial / SME)
+        '471704700' => 'CM', // BLUE SKY ENERGY LIMITED → Commercial / Local Corporates (was Commercial / SME)
+        '471650332' => 'CM', // MFI TECHNOLOGY SOLUTIONS LIMITED → Commercial / Local Corporates (was Commercial / SME)
         '471770982' => 'CB', // MASHONALAND TOBACCO COMPANY → Regional Corporates (was Unmapped)
     ];
 
@@ -248,15 +248,8 @@ class FinanceDailyMixSummaryService
     {
         $exceptionSql = "'" . implode("','", array_map('addslashes', self::INCLUDED_EXCEPTION_CIFS)) . "'";
 
-        $cifSegmentSub = DB::table('customer_accounts_imports as cai')
-            ->selectRaw("
-                cai.f12_cif AS cif,
-                MIN(LEFT(TRIM(cai.etibiseg2), 2)) AS segment_code
-            ")
-            ->whereNotNull('cai.f12_cif')
-            ->whereNotNull('cai.etibiseg2')
-            ->whereRaw("LEFT(TRIM(cai.etibiseg2), 2) IN ('CB','CM','CS')")
-            ->groupBy('cai.f12_cif');
+        // Mapping table first, MIS prefix fallback, Corporate > Commercial > Consumer — see CifSegment.
+        $cifSegmentSub = CifSegment::subquerySql();
 
         [$segCodeSql, $segCodeBindings] = $this->segmentOverrideCaseSql('cb.cif', "COALESCE(seg.segment_code, 'OT')");
 

@@ -41,8 +41,8 @@ class TopMoversService
         '470130430' => 'CB',
 
         // TEMPORARY manual reclassification (Oct 2026) — revert once corrected at source.
-        '471704700' => 'CB', // BLUE SKY ENERGY LIMITED → Local Corporates (was Commercial / SME)
-        '471650332' => 'CB', // MFI TECHNOLOGY SOLUTIONS LIMITED → Local Corporates (was Commercial / SME)
+        '471704700' => 'CM', // BLUE SKY ENERGY LIMITED → Commercial / Local Corporates (was Commercial / SME)
+        '471650332' => 'CM', // MFI TECHNOLOGY SOLUTIONS LIMITED → Commercial / Local Corporates (was Commercial / SME)
         '471770982' => 'CB', // MASHONALAND TOBACCO COMPANY → Regional Corporates (was Unmapped)
     ];
 
@@ -357,26 +357,7 @@ class TopMoversService
                 SUM(CASE WHEN cb.balance_date = ? AND UPPER(TRIM(cb.currency)) != 'KES' THEN GREATEST(cb.lcy_balance, 0) ELSE 0 END) AS fcy_start,
                 SUM(CASE WHEN cb.balance_date = ? AND UPPER(TRIM(cb.currency)) != 'KES' THEN GREATEST(cb.lcy_balance, 0) ELSE 0 END) AS fcy_end
             FROM customer_balances cb
-            LEFT JOIN (
-                SELECT x.cif,
-                    CASE
-                        WHEN SUM(CASE WHEN x.seg = 'CB' THEN 1 ELSE 0 END) > 0 THEN 'CB'
-                        WHEN SUM(CASE WHEN x.seg = 'CM' THEN 1 ELSE 0 END) > 0 THEN 'CM'
-                        WHEN SUM(CASE WHEN x.seg = 'CS' THEN 1 ELSE 0 END) > 0 THEN 'CS'
-                        ELSE NULL
-                    END AS segment_code
-                FROM (
-                    SELECT f12_cif AS cif,
-                        CASE
-                            WHEN UPPER(TRIM(etibiseg2)) LIKE 'CB%' THEN 'CB'
-                            WHEN UPPER(TRIM(etibiseg2)) LIKE 'CM%' THEN 'CM'
-                            WHEN UPPER(TRIM(etibiseg2)) LIKE 'CS%' THEN 'CS'
-                            ELSE NULL
-                        END AS seg
-                    FROM customer_accounts_imports
-                    WHERE f12_cif IS NOT NULL AND etibiseg2 IS NOT NULL AND TRIM(etibiseg2) <> ''
-                ) x WHERE x.seg IS NOT NULL GROUP BY x.cif
-            ) s ON s.cif = cb.cif
+            LEFT JOIN (" . CifSegment::subquerySql() . ") s ON s.cif = cb.cif
             WHERE cb.balance_date IN (?, ?)
               AND cb.cif IS NOT NULL
               AND (
