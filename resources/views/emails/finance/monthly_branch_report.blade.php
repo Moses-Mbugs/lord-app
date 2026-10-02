@@ -53,7 +53,7 @@
       <table width="100%" cellpadding="0" cellspacing="0" style="mso-table-lspace:0pt;mso-table-rspace:0pt;">
         <tr>
           <td style="vertical-align:top;">
-            <div style="font-size:26px;font-weight:900;color:#ffffff;letter-spacing:-0.6px;line-height:1.1;">Branch Performance</div>
+            <div style="font-size:26px;font-weight:900;color:#ffffff;letter-spacing:-0.6px;line-height:1.1;">{{ \Carbon\Carbon::createFromFormat('!Y-m', $report['month'])->format('F') }} Branch Performance</div>
             <div style="font-size:12px;font-weight:500;color:rgba(255,255,255,0.55);margin-top:5px;letter-spacing:0.2px;">
               <span style="color:#93C5FD;">Deposits</span> &nbsp;·&nbsp; <span style="color:#86EFAC;">Performing Loans</span> &nbsp;·&nbsp; <span style="color:#FCD34D;">NTB</span> &nbsp;·&nbsp; All Branches (P50 excluded)
             </div>

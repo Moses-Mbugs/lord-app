@@ -503,10 +503,12 @@ return [
     'monthly_performance' => [
         'to' => [
             'mmuigai@ecobank.com',
-
+            'MWANJIRU@ecobank.com',
 
         ],
         'cc' => [
+            // 'mmuigai@ecobank.com',
+            // 'ALLEKE-ICT@ecobank.com',
         ],
     ],
 
@@ -514,8 +516,12 @@ return [
     'monthly_branches' => [
         'to' => [
             'mmuigai@ecobank.com',
+            'MWANJIRU@ecobank.com',
+
         ],
         'cc' => [
+            // 'mmuigai@ecobank.com',
+            // 'ALLEKE-ICT@ecobank.com',
         ],
     ],
 ];
