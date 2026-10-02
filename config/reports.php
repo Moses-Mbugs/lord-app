@@ -503,6 +503,7 @@ return [
     'monthly_performance' => [
         'to' => [
             'mmuigai@ecobank.com',
+            'mwanjira@ecobank.com',
 
         ],
         'cc' => [
