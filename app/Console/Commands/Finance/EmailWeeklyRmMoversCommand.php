@@ -6,6 +6,7 @@ namespace App\Console\Commands\Finance;
 
 use App\Exports\Finance\WeeklyRmMoversWorkbookExport;
 use App\Mail\WeeklyRmMoversReportMail;
+use App\Models\Finance\RmTarget;
 use App\Services\Reports\RmLoanMoversService;
 use App\Services\Reports\RmMoversService;
 use App\Services\Reports\RmPortfolioService;
@@ -159,6 +160,24 @@ class EmailWeeklyRmMoversCommand extends Command
         $weekPeriod = $periods['week'];
         $drilldown = $service->drilldownByRmCodes($weekPeriod['start'], $weekPeriod['end'], $rmCodes, $limit);
 
+        // Budget vs Actual: deposit (closing balance) and NTB (YTD count) vs the FY target
+        // for the calendar year this report falls in. Section is omitted entirely if no
+        // RM in scope has a target recorded for that year yet.
+        $targetYear  = Carbon::parse($weekEnd)->year;
+        $targets     = RmTarget::where('period_year', $targetYear)->whereIn('rm_code', $rmCodes)->get()->keyBy('rm_code');
+        $hasBudget   = $targets->isNotEmpty();
+        $budgetData  = [];
+        $budgetGrand = null;
+
+        if ($hasBudget) {
+            foreach ($segments as $segment => $segmentCodes) {
+                $budgetData[$segment] = $this->buildBudgetSegmentData($segmentCodes, $fullSummaryByPeriod, $targets);
+            }
+
+            $allBudgetRows = collect($budgetData)->flatMap(fn ($bd) => $bd['rows']);
+            $budgetGrand   = $this->budgetTotals($allBudgetRows);
+        }
+
         $mailable = new WeeklyRmMoversReportMail(
             $weekEnd,
             $periods,
@@ -166,7 +185,10 @@ class EmailWeeklyRmMoversCommand extends Command
             $grandDataByPeriod,
             $limit,
             collect($drilldown['gainers']),
-            collect($drilldown['losers'])
+            collect($drilldown['losers']),
+            $targetYear,
+            $budgetData,
+            $budgetGrand
         );
 
         $groupedDrilldown     = $service->drilldownGroupedByRmCodes($weekPeriod['start'], $weekPeriod['end'], $orderedCodes, $limit);
@@ -176,7 +198,7 @@ class EmailWeeklyRmMoversCommand extends Command
         $excelBinary = Excel::raw(
             new WeeklyRmMoversWorkbookExport(
                 $weekEnd, $periods, $segmentsData, $grandDataByPeriod, $orderedCodes, RmPortfolioService::names(),
-                $groupedDrilldown, $groupedLoanDrilldown
+                $groupedDrilldown, $groupedLoanDrilldown, $targetYear, $budgetData, $budgetGrand
             ),
             ExcelWriter::XLSX
         );
@@ -219,6 +241,55 @@ class EmailWeeklyRmMoversCommand extends Command
         }
 
         return $data;
+    }
+
+    /**
+     * Deposit actual = current closing balance (the 'week' period's end_balance, same
+     * value regardless of which period we're looking at since 'end' is always $weekEnd).
+     * NTB actual = distinct NTB CIFs year-to-date (the 'ytd' period's ntb_count).
+     */
+    private function buildBudgetSegmentData(array $segmentCodes, array $fullSummaryByPeriod, Collection $targets): array
+    {
+        $weekSummary = $fullSummaryByPeriod['week'];
+        $ytdSummary  = $fullSummaryByPeriod['ytd'];
+
+        $rows = collect($segmentCodes)->map(function ($code) use ($weekSummary, $ytdSummary, $targets) {
+            $target        = $targets->get($code);
+            $depositTarget = $target ? (float) $target->deposit_target : 0.0;
+            $ntbTarget     = $target ? (int) $target->ntb_target : 0;
+            $depositActual = (float) ($weekSummary->get($code)->end_balance ?? 0);
+            $ntbActual     = (int) ($ytdSummary->get($code)->ntb_count ?? 0);
+
+            return (object) [
+                'rm_code'        => $code,
+                'rm_name'        => RmPortfolioService::name($code),
+                'deposit_target' => $depositTarget,
+                'deposit_actual' => $depositActual,
+                'deposit_pct'    => $depositTarget > 0 ? round($depositActual / $depositTarget * 100, 1) : null,
+                'ntb_target'     => $ntbTarget,
+                'ntb_actual'     => $ntbActual,
+                'ntb_pct'        => $ntbTarget > 0 ? round($ntbActual / $ntbTarget * 100, 1) : null,
+            ];
+        })->values();
+
+        return ['rows' => $rows, 'totals' => $this->budgetTotals($rows)];
+    }
+
+    private function budgetTotals(Collection $rows): object
+    {
+        $depositTarget = (float) $rows->sum('deposit_target');
+        $depositActual = (float) $rows->sum('deposit_actual');
+        $ntbTarget     = (int) $rows->sum('ntb_target');
+        $ntbActual     = (int) $rows->sum('ntb_actual');
+
+        return (object) [
+            'deposit_target' => $depositTarget,
+            'deposit_actual' => $depositActual,
+            'deposit_pct'    => $depositTarget > 0 ? round($depositActual / $depositTarget * 100, 1) : null,
+            'ntb_target'     => $ntbTarget,
+            'ntb_actual'     => $ntbActual,
+            'ntb_pct'        => $ntbTarget > 0 ? round($ntbActual / $ntbTarget * 100, 1) : null,
+        ];
     }
 
     private function resolveRmCodes(): array

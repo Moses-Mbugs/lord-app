@@ -158,6 +158,8 @@
 {{-- ═══════════════════════ TABLE SECTION ═══════════════════════ --}}
 <div style="padding:22px 28px 30px;">
 
+  @php $budgetData = $budgetData ?? []; @endphp
+
   @foreach ($segmentsData as $segment => $data)
     <div style="{{ $loop->first ? '' : 'margin-top:28px;' }}">
       @include('emails.finance.partials.weekly_rm_movers_segment', [
@@ -170,6 +172,15 @@
           'fmtDate'   => $fmtDate,
           'fmtShort'  => $fmtShort,
       ])
+
+      @if (isset($budgetData[$segment]))
+        @include('emails.finance.partials.weekly_rm_budget_table', [
+            'segment'    => $segment,
+            'rows'       => $budgetData[$segment]['rows'],
+            'totals'     => $budgetData[$segment]['totals'],
+            'targetYear' => $targetYear ?? now()->year,
+        ])
+      @endif
     </div>
   @endforeach
 
@@ -188,6 +199,9 @@
     Rank is by Deposits WTD Δ, highest first within each segment (Total row excluded from ranking).
     P50 branch and GL 216220001 excluded from deposits, matching the daily RM Movers report. Staff accounts (account_class = KECATF) are also excluded.
     This report is grouped by Job Unit segment (Premier/Advantage/Direct), scoped to a fixed RM portfolio list.
+    @if (!empty($budgetData))
+      Budget vs Actual compares the current deposit closing balance and YTD NTB count against each RM's FY{{ $targetYear ?? now()->year }} target (set via /rm-targets/manage); RMs with no target recorded show "—".
+    @endif
   </div>
 
 </div>

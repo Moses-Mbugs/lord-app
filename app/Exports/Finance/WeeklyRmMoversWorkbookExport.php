@@ -36,6 +36,10 @@ class WeeklyRmMoversWorkbookExport implements WithMultipleSheets
      *        RmMoversService::drilldownGroupedByRmCodes() for the week period, keyed by rm_code
      * @param array<string,array{gainers: array, losers: array}> $groupedLoanDrilldown from
      *        RmLoanMoversService::accountMoversGroupedByRmCodes() for the week period, keyed by rm_code
+     * @param array<string, array{rows: \Illuminate\Support\Collection, totals: object}> $budgetData
+     *        keyed by segment name — deposit/NTB actual vs FY target; empty if no RM has a
+     *        target recorded for $targetYear (in which case no Budget sheet is added)
+     * @param object|null $budgetGrand same shape as a segment's totals, summed across all segments
      */
     public function __construct(
         private readonly string $weekEnd,
@@ -45,7 +49,10 @@ class WeeklyRmMoversWorkbookExport implements WithMultipleSheets
         private readonly array  $rmCodes,
         private readonly array  $rmNames,
         private readonly array  $groupedDrilldown,
-        private readonly array  $groupedLoanDrilldown
+        private readonly array  $groupedLoanDrilldown,
+        private readonly int    $targetYear = 0,
+        private readonly array  $budgetData = [],
+        private readonly ?object $budgetGrand = null
     ) {
     }
 
@@ -53,7 +60,7 @@ class WeeklyRmMoversWorkbookExport implements WithMultipleSheets
     {
         $weekPeriod = $this->periods['week'] ?? ['start' => $this->weekEnd, 'end' => $this->weekEnd];
 
-        return [
+        $sheets = [
             new WeeklyRmSummarySheet($this->weekEnd, $this->periods, $this->segmentsData, $this->grandData),
             new RmDepositMoversSheet(
                 $weekPeriod['start'],
@@ -70,6 +77,12 @@ class WeeklyRmMoversWorkbookExport implements WithMultipleSheets
                 $this->groupedLoanDrilldown
             ),
         ];
+
+        if (!empty($this->budgetData) && $this->budgetGrand) {
+            $sheets[] = new WeeklyRmBudgetSheet($this->targetYear, $this->budgetData, $this->budgetGrand);
+        }
+
+        return $sheets;
     }
 }
 
@@ -339,6 +352,180 @@ class WeeklyRmSummarySheet implements FromArray, WithTitle, ShouldAutoSize, With
 
                 if ($lastRow > $hdr) {
                     $sheet->getStyle("A{$hdr}:N{$lastRow}")->getBorders()->getAllBorders()
+                        ->setBorderStyle(Border::BORDER_HAIR)->getColor()->setRGB('E2E8F0');
+                }
+
+                $sheet->freezePane('A' . ($hdr + 1));
+            },
+        ];
+    }
+}
+
+/**
+ * SHEET 4 (when targets exist): Budget vs Actual for $targetYear — deposit closing balance
+ * and YTD NTB count vs each RM's FY target, grouped by segment with a subtotal row per
+ * segment and a grand Total row, color-coded the same way as the other summary sheets.
+ */
+class WeeklyRmBudgetSheet implements FromArray, WithTitle, ShouldAutoSize, WithColumnFormatting, WithEvents
+{
+    private const NUM_COLS = 9;
+
+    private array $boldRows = [];
+
+    /** @var array<string, array{0: int, 1: int}> segment => [firstRow, lastRow] (inclusive, incl. its TOTAL row) */
+    private array $segmentRowRanges = [];
+
+    /** @param array<string, array{rows: \Illuminate\Support\Collection, totals: object}> $budgetData */
+    public function __construct(
+        private readonly int $targetYear,
+        private readonly array $budgetData,
+        private readonly object $budgetGrand
+    ) {
+    }
+
+    public function title(): string
+    {
+        return 'Budget vs Actual';
+    }
+
+    public function array(): array
+    {
+        $rows   = [];
+        $rowNum = 0;
+
+        $rows[] = array_pad(["ECOBANK KENYA — RM BUDGET VS ACTUAL, FY{$this->targetYear}"], self::NUM_COLS, '');
+        $this->boldRows[] = ++$rowNum;
+
+        $rows[] = array_fill(0, self::NUM_COLS, '');
+        ++$rowNum;
+
+        $headerRow = ++$rowNum;
+        $rows[] = [
+            'Segment', 'RM Code', 'RM Name',
+            'Deposit Target', 'Deposit Actual', 'Deposit %',
+            'NTB Target', 'NTB Actual', 'NTB %',
+        ];
+        $this->boldRows[] = $headerRow;
+
+        foreach ($this->budgetData as $segment => $bd) {
+            $segmentFirstRow = $rowNum + 1;
+
+            foreach ($bd['rows'] as $r) {
+                ++$rowNum;
+                $rows[] = [
+                    $segment, (string) $r->rm_code, (string) $r->rm_name,
+                    (float) $r->deposit_target, (float) $r->deposit_actual,
+                    $r->deposit_pct === null ? '' : ((float) $r->deposit_pct / 100),
+                    (int) $r->ntb_target, (int) $r->ntb_actual,
+                    $r->ntb_pct === null ? '' : ((float) $r->ntb_pct / 100),
+                ];
+            }
+
+            $t = $bd['totals'];
+            ++$rowNum;
+            $rows[] = [
+                $segment . ' TOTAL', '', '',
+                (float) $t->deposit_target, (float) $t->deposit_actual,
+                $t->deposit_pct === null ? '' : ((float) $t->deposit_pct / 100),
+                (int) $t->ntb_target, (int) $t->ntb_actual,
+                $t->ntb_pct === null ? '' : ((float) $t->ntb_pct / 100),
+            ];
+            $this->boldRows[] = $rowNum;
+            $this->segmentRowRanges[$segment] = [$segmentFirstRow, $rowNum];
+        }
+
+        $g = $this->budgetGrand;
+        ++$rowNum;
+        $rows[] = [
+            'GRAND TOTAL', '', '',
+            (float) $g->deposit_target, (float) $g->deposit_actual,
+            $g->deposit_pct === null ? '' : ((float) $g->deposit_pct / 100),
+            (int) $g->ntb_target, (int) $g->ntb_actual,
+            $g->ntb_pct === null ? '' : ((float) $g->ntb_pct / 100),
+        ];
+        $this->boldRows[] = $rowNum;
+
+        $this->headerRowCache = $headerRow;
+
+        return $rows;
+    }
+
+    private int $headerRowCache = 0;
+
+    public function columnFormats(): array
+    {
+        return [
+            'D' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
+            'E' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
+            'F' => '0%',
+            'G' => NumberFormat::FORMAT_NUMBER,
+            'H' => NumberFormat::FORMAT_NUMBER,
+            'I' => '0%',
+        ];
+    }
+
+    public function registerEvents(): array
+    {
+        return [
+            AfterSheet::class => function (AfterSheet $event): void {
+                /** @var Worksheet $sheet */
+                $sheet   = $event->sheet->getDelegate();
+                $hdr     = $this->headerRowCache;
+                $lastRow = $sheet->getHighestRow();
+
+                $sheet->mergeCells('A1:I1');
+                $sheet->getStyle('A1:I1')->applyFromArray([
+                    'font' => ['bold' => true, 'size' => 14, 'color' => ['rgb' => 'FFFFFF']],
+                    'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '002E4A']],
+                ]);
+                $sheet->getRowDimension(1)->setRowHeight(26);
+
+                foreach ($this->boldRows as $r) {
+                    $sheet->getStyle("A{$r}:I{$r}")->applyFromArray([
+                        'font' => ['bold' => true],
+                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'E2E8F0']],
+                    ]);
+                }
+
+                $sheet->getStyle("A{$hdr}:I{$hdr}")->applyFromArray([
+                    'font'      => ['bold' => true, 'size' => 11, 'color' => ['rgb' => 'FFFFFF']],
+                    'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1F3A5F']],
+                    'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+                ]);
+                $sheet->getStyle("C{$hdr}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+
+                $sheet->getStyle("D{$hdr}:F{$hdr}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1D4ED8']]]);
+                $sheet->getStyle("G{$hdr}:I{$hdr}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'B45309']]]);
+
+                // Color-code achievement %: green >=100%, amber 75-99%, red <75%.
+                foreach (['F', 'I'] as $col) {
+                    for ($row = $hdr + 1; $row <= $lastRow; $row++) {
+                        $v = $sheet->getCell("{$col}{$row}")->getValue();
+                        if (!is_numeric($v)) continue;
+                        $pct = (float) $v * 100;
+                        $rgb = $pct >= 100 ? '166534' : ($pct >= 75 ? '92400E' : '991B1B');
+                        $sheet->getStyle("{$col}{$row}")->getFont()->applyFromArray(['bold' => true, 'color' => ['rgb' => $rgb]]);
+                    }
+                }
+
+                // Color-code the Segment column per segment, with a matching left border stripe.
+                foreach ($this->segmentRowRanges as $segment => [$first, $last]) {
+                    $color = \App\Services\Reports\RmPortfolioService::segmentColor($segment);
+
+                    $sheet->getStyle("A{$first}:A{$last}")->applyFromArray([
+                        'fill'    => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => $color['fill']]],
+                        'font'    => ['color' => ['rgb' => $color['fillText']]],
+                        'borders' => ['left' => ['borderStyle' => Border::BORDER_THICK, 'color' => ['rgb' => $color['border']]]],
+                    ]);
+                }
+
+                $sheet->getStyle("A{$lastRow}:I{$lastRow}")->applyFromArray([
+                    'font' => ['bold' => true, 'size' => 11],
+                    'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'CBD5E1']],
+                ]);
+
+                if ($lastRow > $hdr) {
+                    $sheet->getStyle("A{$hdr}:I{$lastRow}")->getBorders()->getAllBorders()
                         ->setBorderStyle(Border::BORDER_HAIR)->getColor()->setRGB('E2E8F0');
                 }
 

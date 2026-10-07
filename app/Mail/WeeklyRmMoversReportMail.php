@@ -22,6 +22,10 @@ class WeeklyRmMoversReportMail extends Mailable
      *        summed across every segment, for the top-level KPI strip
      * @param Collection $topGainers top deposit customer gainers (week period) across all segments combined
      * @param Collection $topLosers  top deposit customer losers (week period) across all segments combined
+     * @param array<string, array{rows: Collection, totals: object}> $budgetData keyed by
+     *        segment name, deposit/NTB actual vs FY target — empty array if no RM in scope
+     *        has a target recorded for $targetYear
+     * @param object|null $budgetGrand same shape as a segment's totals, summed across all segments
      */
     public function __construct(
         public string $weekEnd,
@@ -30,7 +34,10 @@ class WeeklyRmMoversReportMail extends Mailable
         public array  $grandData,
         public int    $limit = 10,
         public Collection $topGainers = new Collection(),
-        public Collection $topLosers = new Collection()
+        public Collection $topLosers = new Collection(),
+        public int $targetYear = 0,
+        public array $budgetData = [],
+        public ?object $budgetGrand = null
     ) {}
 
     public function build(): static
@@ -47,6 +54,9 @@ class WeeklyRmMoversReportMail extends Mailable
                 'limit'        => $this->limit,
                 'topGainers'   => $this->topGainers,
                 'topLosers'    => $this->topLosers,
+                'targetYear'   => $this->targetYear,
+                'budgetData'   => $this->budgetData,
+                'budgetGrand'  => $this->budgetGrand,
             ]);
     }
 }
