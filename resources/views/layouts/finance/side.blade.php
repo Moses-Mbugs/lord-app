@@ -204,22 +204,6 @@
             'children' => [],
             'requiresFinanceAdmin' => true,
         ],
-        [
-            'title' => 'Generate Loan Book',
-            'icon' => 'ti-book-upload',
-            'url' => '/loans/loan-book',
-            'activeCondition' => request()->is('loans/loan-book*'),
-            'badge' => null,
-            'children' => [],
-        ],
-        [
-            'title' => 'Loan Utilization',
-            'icon' => 'ti-chart-pie',
-            'url' => '/loans/loan-utilization',
-            'activeCondition' => request()->is('loans/loan-utilization*'),
-            'badge' => null,
-            'children' => [],
-        ],
     ];
 
     $menuItems = collect($menuItems)
@@ -240,7 +224,6 @@
         'Branches' => ['Branch Dashboard'],
         'Relationship Management' => ['RM Dashboard'],
         'Insights & Reports' => ['Customer Trend', 'Customer Profitability', 'Loans', 'Run Report'],
-        'Loan Book' => ['Generate Loan Book', 'Loan Utilization'],
     ];
 
     $menuByTitle = collect($menuItems)->keyBy('title');

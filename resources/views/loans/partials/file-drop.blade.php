@@ -1,53 +1,53 @@
-{{-- Drag & drop file input in the Finance style.
+{{-- Drag & drop file input for the loans layout.
      Expects: $id, $name; optional: $accept, $required, $hint. --}}
-<label class="loan-drop" for="{{ $id }}" data-loan-drop>
+<label class="file-drop" for="{{ $id }}" data-file-drop>
     <input type="file" id="{{ $id }}" name="{{ $name }}" accept="{{ $accept ?? '.xls,.xlsx,.csv' }}"
         @if ($required ?? true) required @endif>
 
-    <span class="loan-drop__icon" aria-hidden="true">
-        <i class="ti ti-cloud-upload" data-loan-drop-icon></i>
+    <span class="file-drop__icon" aria-hidden="true">
+        <i class="fas fa-cloud-arrow-up" data-file-drop-icon></i>
     </span>
 
-    <span class="loan-drop__copy">
-        <span class="loan-drop__name" data-loan-drop-name>Drag &amp; drop or <u>browse</u></span>
-        <span class="loan-drop__hint" data-loan-drop-hint>{{ $hint ?? 'Excel (.xls, .xlsx) or CSV' }}</span>
+    <span class="file-drop__copy">
+        <span class="file-drop__name" data-file-drop-name>Drag &amp; drop or <u>browse</u></span>
+        <span class="file-drop__hint" data-file-drop-hint>{{ $hint ?? 'Excel (.xls, .xlsx) or CSV' }}</span>
     </span>
 </label>
 
 @once
     @push('styles')
         <style>
-            .loan-drop {
+            .file-drop {
                 position: relative;
                 display: flex;
                 align-items: center;
                 gap: 12px;
-                margin: 0;
-                padding: 14px 16px;
-                background: var(--finance-surface-soft);
-                border: 2px dashed var(--finance-border-strong);
-                border-radius: var(--finance-radius-sm);
+                padding: 14px 15px;
+                background: #FAFBFC;
+                border: 1.5px dashed var(--gray-4);
+                border-radius: 10px;
                 cursor: pointer;
-                transition: border-color .15s ease, background-color .15s ease;
+                transition: border-color .15s ease, background .15s ease;
             }
 
-            .loan-drop:hover,
-            .loan-drop.is-dragover {
-                background: var(--finance-primary-soft);
-                border-color: rgba(8, 117, 225, .45);
+            .file-drop:hover,
+            .file-drop.is-dragover {
+                background: rgba(0, 130, 187, .05);
+                border-color: var(--blue);
             }
 
-            .loan-drop:focus-within {
-                border-color: var(--finance-primary);
+            .file-drop:focus-within {
+                border-color: var(--blue);
+                box-shadow: 0 0 0 3px rgba(0, 130, 187, .08);
             }
 
-            .loan-drop.has-file {
-                background: var(--finance-green-soft);
+            .file-drop.has-file {
+                background: var(--green-soft);
                 border-style: solid;
-                border-color: rgba(0, 168, 107, .35);
+                border-color: rgba(111, 148, 31, .35);
             }
 
-            .loan-drop input[type=file] {
+            .file-drop input[type=file] {
                 position: absolute;
                 inset: 0;
                 width: 100%;
@@ -56,53 +56,53 @@
                 cursor: pointer;
             }
 
-            .loan-drop__icon {
+            .file-drop__icon {
                 width: 38px;
                 height: 38px;
-                flex: 0 0 38px;
-                display: grid;
-                place-items: center;
-                color: var(--finance-primary);
-                background: var(--finance-surface);
-                border: 1px solid var(--finance-border);
-                border-radius: var(--finance-radius-xs);
-                font-size: 18px;
+                flex-shrink: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 10px;
+                background: rgba(0, 130, 187, .08);
+                color: var(--blue);
             }
 
-            .loan-drop.has-file .loan-drop__icon {
-                color: var(--finance-green);
+            .file-drop.has-file .file-drop__icon {
+                background: rgba(111, 148, 31, .14);
+                color: var(--green-dark);
             }
 
-            .loan-drop__copy {
+            .file-drop__copy {
                 min-width: 0;
                 display: flex;
                 flex-direction: column;
-                line-height: 1.35;
+                line-height: 1.4;
             }
 
-            .loan-drop__name {
+            .file-drop__name {
                 overflow: hidden;
-                color: var(--finance-text-strong);
-                font-size: 13px;
+                color: var(--deep-blue);
+                font-size: .74rem;
                 font-weight: 700;
                 text-overflow: ellipsis;
                 white-space: nowrap;
             }
 
-            .loan-drop__hint {
-                color: var(--finance-muted);
-                font-size: 11.5px;
+            .file-drop__hint {
+                color: var(--gray-3);
+                font-size: .62rem;
             }
         </style>
     @endpush
 
     @push('scripts')
         <script>
-            document.querySelectorAll('[data-loan-drop]').forEach(function(zone) {
+            document.querySelectorAll('[data-file-drop]').forEach(function(zone) {
                 var input = zone.querySelector('input[type=file]');
-                var name = zone.querySelector('[data-loan-drop-name]');
-                var hint = zone.querySelector('[data-loan-drop-hint]');
-                var icon = zone.querySelector('[data-loan-drop-icon]');
+                var name = zone.querySelector('[data-file-drop-name]');
+                var hint = zone.querySelector('[data-file-drop-hint]');
+                var icon = zone.querySelector('[data-file-drop-icon]');
                 var emptyName = name.innerHTML;
                 var emptyHint = hint.textContent;
 
@@ -110,7 +110,7 @@
                     var file = input.files && input.files[0];
 
                     zone.classList.toggle('has-file', !!file);
-                    icon.className = file ? 'ti ti-file-spreadsheet' : 'ti ti-cloud-upload';
+                    icon.className = file ? 'fas fa-file-excel' : 'fas fa-cloud-arrow-up';
 
                     if (file) {
                         name.textContent = file.name;
