@@ -64,6 +64,34 @@ return [
             'KKYULU@ecobank.com',
             'OODIEMO@ecobank.com',
             'HMUDUKIZA@ecobank.com',
+            'MKINUTHIA@ecobank.com',
+            'GMIRITI@ecobank.com',
+            'DMPAAKUO@ecobank.com',
+            'KMURITHI@ecobank.com',
+            'KMMWANGI@ecobank.com',
+            'PNJENGA@ecobank.com',
+            // '',
+            // '',
+            // '',
+            // '',
+            // '',
+            // '',
+            // '',
+            // '',
+            // '',
+            // '',
+            // '',
+            // '',
+            // '',
+            // '',
+            // '',
+            // '',
+            // '',
+            // '',
+            // '',
+            // '',
+            // '',
+            // '',
             // '',
             // '',
             // '',
@@ -71,13 +99,6 @@ return [
         ],
 
         'top_movers_cc' => [
-            // 'JJELAGAT@ecobank.com',
-            // 'CRONO@ecobank.com',
-            // 'VMBAABU@ecobank.com',
-            // 'WWACIIRA@ecobank.com',
-            // 'HMUDUKIZA@ecobank.com',
-            // 'MOSOULEYMANE@ecobank.com',
-            // 'ALLEKE-DEVSupport@ecobank.com',
             'ALLEKE-ICT@ecobank.com',
             'mmuigai@ecobank.com',
 
@@ -168,7 +189,7 @@ return [
             // '',
             // '',
             // '',
-            ],
+        ],
 
         'branch_movers_cc' => [
             // 'fidotieno@ecobank.com',
@@ -182,17 +203,9 @@ return [
             'mmuigai@ecobank.com',
             'ALLEKE-ICT@ecobank.com',
             // 'ALLEKE-DEVSupport@ecobank.com',
-            ],
+        ],
 
-        // Test phase — sending to mmuigai@ecobank.com only. Expand once validated.
-
-
-
-
-
-
-
-
+        
 
 
         // RM Moversssss
