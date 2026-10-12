@@ -420,15 +420,23 @@
         ========================================================= */
 
         .loan-hero {
+            --hero-base: linear-gradient(118deg, #003B5C 0%, #005B82 46%, #0082BB 100%);
             position: relative;
             overflow: hidden;
             min-height: 154px;
-            background: linear-gradient(118deg, #003B5C 0%, #005B82 46%, #0082BB 100%);
+            /* Layer 1 is a soft light sweep that travels across; layer 2 is the brand gradient. */
+            background:
+                linear-gradient(105deg, transparent 40%, rgba(255, 255, 255, .10) 50%, transparent 60%) no-repeat,
+                var(--hero-base);
+            background-size: 250% 100%, 100% 100%;
+            background-position: 150% 0, 0 0;
+            animation: heroSweep 7s ease-in-out infinite;
             border-radius: 18px;
             padding: 25px 28px;
             margin-bottom: 20px;
             color: #fff;
             box-shadow: 0 12px 32px rgba(0, 91, 130, .16);
+            transition: box-shadow .6s ease;
         }
 
         .loan-hero::before {
@@ -440,6 +448,7 @@
             right: -90px;
             top: -145px;
             background: rgba(255, 255, 255, .08);
+            animation: heroDrift 14s ease-in-out infinite;
         }
 
         .loan-hero::after {
@@ -451,6 +460,45 @@
             right: 110px;
             bottom: -145px;
             background: rgba(190, 214, 0, .12);
+            animation: heroPulse 9s ease-in-out infinite;
+        }
+
+        .loan-hero .hero-copy {
+            animation: heroIn .7s cubic-bezier(.2, .7, .2, 1) both;
+        }
+
+        .loan-hero .hero-panel {
+            animation: heroIn .7s .15s cubic-bezier(.2, .7, .2, 1) both;
+        }
+
+        @keyframes heroSweep {
+            0%, 35% { background-position: 150% 0, 0 0; }
+            75%, 100% { background-position: -50% 0, 0 0; }
+        }
+
+        @keyframes heroDrift {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            50% { transform: translate(-28px, 18px) scale(1.08); }
+        }
+
+        @keyframes heroPulse {
+            0%, 100% { transform: translate(0, 0) scale(1); opacity: 1; }
+            50% { transform: translate(24px, -10px) scale(1.15); opacity: .65; }
+        }
+
+        @keyframes heroIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: none; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .loan-hero,
+            .loan-hero::before,
+            .loan-hero::after,
+            .loan-hero .hero-copy,
+            .loan-hero .hero-panel {
+                animation: none !important;
+            }
         }
 
         .hero-content {
@@ -1515,6 +1563,190 @@
             });
         });
     </script>
+
+    {{-- =========================================================
+         HALLOWEEN EASTER EGG — type "boo" anywhere (outside a form field).
+         Only shipped 24 Oct – 2 Nov, locally, or with ?boo=1 for testing.
+    ========================================================== --}}
+    @php
+        $today = now();
+        $spookySeason = ($today->month === 10 && $today->day >= 24)
+            || ($today->month === 11 && $today->day <= 2)
+            || app()->environment('local')
+            || request()->boolean('boo');
+    @endphp
+
+    @if ($spookySeason)
+        <style>
+            .loan-hero.is-spooky {
+                --hero-base: linear-gradient(118deg, #1A0B2E 0%, #4B1D6B 46%, #E8651A 100%);
+                box-shadow: 0 12px 40px rgba(232, 101, 26, .35);
+            }
+
+            .loan-hero.is-spooky::after {
+                background: rgba(255, 140, 0, .25);
+            }
+
+            .loan-hero.is-spooky .hero-eyebrow {
+                color: #FFB347;
+            }
+
+            .spooky-layer {
+                position: fixed;
+                inset: 0;
+                z-index: 2000;
+                pointer-events: none;
+                overflow: hidden;
+            }
+
+            .spooky-bat {
+                position: absolute;
+                left: -60px;
+                font-size: 28px;
+                animation: batFly var(--dur, 4s) var(--delay, 0s) ease-in-out forwards;
+            }
+
+            .spooky-ghost {
+                position: absolute;
+                bottom: -90px;
+                right: 12%;
+                font-size: 64px;
+                filter: drop-shadow(0 0 18px rgba(255, 255, 255, .7));
+                animation: ghostRise 6s .6s ease-in-out forwards;
+            }
+
+            .spooky-toast {
+                position: fixed;
+                left: 50%;
+                bottom: 28px;
+                z-index: 2001;
+                padding: 10px 18px;
+                border-radius: 999px;
+                background: #1A0B2E;
+                color: #FFB347;
+                font-size: .78rem;
+                font-weight: 800;
+                box-shadow: 0 10px 30px rgba(26, 11, 46, .35);
+                transform: translate(-50%, 0);
+                animation: heroIn .4s ease both;
+            }
+
+            @keyframes batFly {
+                0% { transform: translate(0, 0) scaleX(1); opacity: 0; }
+                10% { opacity: 1; }
+                25% { transform: translate(28vw, -40px) scaleX(1); }
+                50% { transform: translate(55vw, 30px) scaleX(1); }
+                75% { transform: translate(82vw, -30px) scaleX(1); }
+                100% { transform: translate(112vw, 10px) scaleX(1); opacity: 0; }
+            }
+
+            @keyframes ghostRise {
+                0% { transform: translateY(0); opacity: 0; }
+                15% { opacity: .95; }
+                50% { transform: translate(-40px, -55vh); }
+                85% { opacity: .9; }
+                100% { transform: translate(20px, -110vh); opacity: 0; }
+            }
+
+            @media (prefers-reduced-motion: reduce) {
+                .spooky-bat,
+                .spooky-ghost {
+                    display: none;
+                }
+            }
+        </style>
+
+        <script>
+            (function() {
+                var buffer = '';
+                var active = false;
+
+                console.log('%c🎃 Psst… it\'s spooky season. Try typing "boo" on this page.',
+                    'color:#E8651A;font-weight:bold;');
+
+                document.addEventListener('keydown', function(event) {
+                    var target = event.target;
+                    var tag = (target.tagName || '').toLowerCase();
+
+                    // Never hijack typing in forms.
+                    if (tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable) {
+                        return;
+                    }
+
+                    if (!event.key || event.key.length !== 1) {
+                        return;
+                    }
+
+                    buffer = (buffer + event.key.toLowerCase()).slice(-3);
+
+                    if (buffer === 'boo') {
+                        buffer = '';
+                        haunt();
+                    }
+                });
+
+                function haunt() {
+                    if (active) return;
+                    active = true;
+
+                    var heroes = document.querySelectorAll('.loan-hero');
+                    var titles = document.querySelectorAll('.hero-title');
+                    var original = [];
+
+                    heroes.forEach(function(hero) {
+                        hero.classList.add('is-spooky');
+                    });
+
+                    titles.forEach(function(title, i) {
+                        original[i] = title.textContent;
+                        title.textContent = title.textContent.trim().replace(/Book/, 'Boo-k') + ' 🎃';
+                    });
+
+                    var layer = document.createElement('div');
+                    layer.className = 'spooky-layer';
+                    layer.setAttribute('aria-hidden', 'true');
+
+                    for (var b = 0; b < 9; b++) {
+                        var bat = document.createElement('span');
+                        bat.className = 'spooky-bat';
+                        bat.textContent = '🦇';
+                        bat.style.top = (8 + Math.random() * 60) + 'vh';
+                        bat.style.setProperty('--delay', (Math.random() * 2.5).toFixed(2) + 's');
+                        bat.style.setProperty('--dur', (3 + Math.random() * 2.5).toFixed(2) + 's');
+                        bat.style.fontSize = (20 + Math.random() * 18) + 'px';
+                        layer.appendChild(bat);
+                    }
+
+                    var ghost = document.createElement('span');
+                    ghost.className = 'spooky-ghost';
+                    ghost.textContent = '👻';
+                    layer.appendChild(ghost);
+
+                    var toast = document.createElement('div');
+                    toast.className = 'spooky-toast';
+                    toast.setAttribute('role', 'status');
+                    toast.textContent = '🎃 Happy Halloween from the Loan Book team!';
+
+                    document.body.appendChild(layer);
+                    document.body.appendChild(toast);
+
+                    setTimeout(function() {
+                        heroes.forEach(function(hero) {
+                            hero.classList.remove('is-spooky');
+                        });
+
+                        titles.forEach(function(title, i) {
+                            title.textContent = original[i];
+                        });
+
+                        layer.remove();
+                        toast.remove();
+                        active = false;
+                    }, 8000);
+                }
+            })();
+        </script>
+    @endif
 
     @stack('scripts')
 
