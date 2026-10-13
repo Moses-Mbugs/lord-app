@@ -102,7 +102,7 @@ class Holidays
                 'glow' => 'rgba(201, 162, 39, .45)',
                 'accent' => '#F4D35E',
                 'suffix' => '🌙',
-                'message' => 'Eid Mubarak from the Ecobank team!',
+                'message' => 'Eid Mubarak from the Dev team!',
             ],
             'eid-al-adha' => [
                 'name' => 'Eid al-Adha',
@@ -114,7 +114,7 @@ class Holidays
                 'glow' => 'rgba(201, 162, 39, .45)',
                 'accent' => '#F4D35E',
                 'suffix' => '🌙',
-                'message' => 'Eid Mubarak from the Ecobank team!',
+                'message' => 'Eid Mubarak from the Dev team!',
             ],
             'easter' => [
                 'name' => 'Easter',
@@ -130,7 +130,7 @@ class Holidays
                 'glow' => 'rgba(177, 133, 219, .45)',
                 'accent' => '#FFF3B0',
                 'suffix' => '🐰',
-                'message' => 'Happy Easter from the Ecobank team!',
+                'message' => 'Happy Easter from the Dev team!',
             ],
             'valentines' => [
                 'name' => "Valentine's Day",
@@ -142,7 +142,7 @@ class Holidays
                 'glow' => 'rgba(255, 77, 109, .45)',
                 'accent' => '#FFCCD5',
                 'suffix' => '💖',
-                'message' => "Happy Valentine's from the Ecobank team!",
+                'message' => "Happy Valentine's from the Dev team!",
             ],
             'labour-day' => [
                 'name' => 'Labour Day',
@@ -159,7 +159,7 @@ class Holidays
             'madaraka-day' => $kenya + [
                 'name' => 'Madaraka Day',
                 'windows' => fn (int $year) => [static::span($year, 5, 31, 6, 2)],
-                'message' => 'Happy Madaraka Day from the Ecobank team!',
+                'message' => 'Happy Madaraka Day from the Dev team!',
             ],
             'mashujaa-day' => $kenya + [
                 'name' => 'Mashujaa Day',
@@ -177,12 +177,12 @@ class Holidays
                 'accent' => '#FFB347',
                 'suffix' => '🎃',
                 'twist' => ['Book', 'Boo-k'],
-                'message' => 'Happy Halloween from the Ecobank team!',
+                'message' => 'Happy Halloween from the Dev team!',
             ],
             'jamhuri-day' => $kenya + [
                 'name' => 'Jamhuri Day',
                 'windows' => fn (int $year) => [static::span($year, 12, 11, 12, 13)],
-                'message' => 'Happy Jamhuri Day from the Ecobank team!',
+                'message' => 'Happy Jamhuri Day from the Dev team!',
             ],
             'christmas' => [
                 'name' => 'Christmas',
@@ -194,7 +194,7 @@ class Holidays
                 'glow' => 'rgba(185, 28, 28, .45)',
                 'accent' => '#FDE68A',
                 'suffix' => '🎄',
-                'message' => 'Merry Christmas from the Ecobank team!',
+                'message' => 'Merry Christmas from the Dev team!',
             ],
             'new-year' => [
                 'name' => 'New Year',
@@ -206,7 +206,7 @@ class Holidays
                 'glow' => 'rgba(201, 162, 39, .45)',
                 'accent' => '#F4D35E',
                 'suffix' => '🎉',
-                'message' => 'Happy New Year from the Ecobank team!',
+                'message' => 'Happy New Year from the Dev team!',
             ],
         ];
     }
