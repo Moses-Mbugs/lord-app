@@ -1,14 +1,14 @@
 {{-- =========================================================
      HOLIDAY EASTER EGG
      Include just before </body>. Only renders while a holiday from App\Support\Holidays is active
-     (locally, preview any holiday with ?holiday=<key>). Typing the holiday's secret word anywhere
-     outside a form field sets off an 8-second themed celebration.
+     (HOLIDAY_EGGS_ALL=true activates all anywhere; locally ?holiday=<key> previews one). Typing a holiday's
+     secret word anywhere outside a form field sets off an 8-second themed celebration.
 ========================================================== --}}
 @php
-    $holiday = \App\Support\Holidays::current(request());
+    $holidayThemes = \App\Support\Holidays::active(request());
 @endphp
 
-@if ($holiday)
+@if ($holidayThemes)
     <style>
         .holiday-layer {
             position: fixed;
@@ -107,13 +107,18 @@
 
     <script>
         (function() {
-            var theme = @json($holiday);
-            var word = theme.word.toLowerCase();
+            var themes = @json(array_values($holidayThemes));
+            var maxLength = Math.max.apply(null, themes.map(function(t) { return t.word.length; }));
             var buffer = '';
             var active = false;
 
-            console.log('%c' + theme.suffix + ' Psst… happy ' + theme.name + '! Try typing "' + word + '" on this page.',
-                'color:' + theme.gradient[2] + ';font-weight:bold;');
+            if (themes.length === 1) {
+                console.log('%c' + themes[0].suffix + ' Psst… happy ' + themes[0].name + '! Try typing "' +
+                    themes[0].word + '" on this page.', 'color:' + themes[0].gradient[2] + ';font-weight:bold;');
+            } else {
+                console.log('%c🎉 All holiday easter eggs are active. Words: ' +
+                    themes.map(function(t) { return t.word + ' ' + t.suffix; }).join(', '), 'font-weight:bold;');
+            }
 
             document.addEventListener('keydown', function(event) {
                 var target = event.target;
@@ -128,15 +133,20 @@
                     return;
                 }
 
-                buffer = (buffer + event.key.toLowerCase()).slice(-word.length);
+                buffer = (buffer + event.key.toLowerCase()).slice(-maxLength);
 
-                if (buffer === word) {
-                    buffer = '';
-                    celebrate();
+                for (var t = 0; t < themes.length; t++) {
+                    var word = themes[t].word.toLowerCase();
+
+                    if (buffer.slice(-word.length) === word) {
+                        buffer = '';
+                        celebrate(themes[t]);
+                        break;
+                    }
                 }
             });
 
-            function celebrate() {
+            function celebrate(theme) {
                 if (active) return;
                 active = true;
 

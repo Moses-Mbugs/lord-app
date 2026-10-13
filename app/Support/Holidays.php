@@ -10,7 +10,8 @@ use Illuminate\Http\Request;
  * Holiday calendar for the site-wide easter egg (resources/views/partials/holiday-easter-egg.blade.php).
  *
  * Each holiday has a date window, a secret trigger word and a theme. Only the holiday whose window
- * contains today is shipped to the browser. Locally, ?holiday=<key> previews any holiday.
+ * contains today is shipped to the browser. HOLIDAY_EGGS_ALL=true activates every holiday at once
+ * (any environment), and locally ?holiday=<key> previews a single holiday.
  */
 class Holidays
 {
@@ -21,13 +22,33 @@ class Holidays
     private const EID_AL_FITR = ['2026-03-20', '2027-03-10', '2028-02-27', '2029-02-15', '2030-02-05'];
     private const EID_AL_ADHA = ['2026-05-27', '2027-05-16', '2028-05-05', '2029-04-24', '2030-04-13'];
 
-    public static function current(?Request $request = null): ?array
+    /**
+     * Themes to ship to the browser for this request (usually zero or one).
+     */
+    public static function active(?Request $request = null): array
     {
-        if ($request && app()->environment('local') && $request->filled('holiday')) {
-            return static::find((string) $request->query('holiday'));
+        if (config('holidays.all_eggs')) {
+            return static::all();
         }
 
-        return static::forDate(now());
+        // URL previews stay local-only so nobody can share links that change other people's pages.
+        if ($request && app()->environment('local') && $request->filled('holiday')) {
+            return array_filter([static::find((string) $request->query('holiday'))]);
+        }
+
+        return array_filter([static::forDate(now())]);
+    }
+
+    /**
+     * Every holiday, one per secret word (holidays sharing a word keep the later one).
+     */
+    public static function all(): array
+    {
+        return collect(static::definitions())
+            ->map(fn ($holiday, $key) => static::present($key, $holiday))
+            ->keyBy('word')
+            ->values()
+            ->all();
     }
 
     public static function forDate(CarbonInterface $date): ?array
