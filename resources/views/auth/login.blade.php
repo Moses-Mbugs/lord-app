@@ -633,5 +633,7 @@
     });
 </script>
 
+@include('partials.holiday-easter-egg')
+
 </body>
 </html>

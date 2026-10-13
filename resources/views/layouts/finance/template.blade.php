@@ -1709,5 +1709,7 @@
     @yield('scripts')
     @stack('scripts')
 
+    @include('partials.holiday-easter-egg')
+
 </body>
 </html>

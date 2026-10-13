@@ -337,5 +337,7 @@
         </div>
     </div>
 
+    @include('partials.holiday-easter-egg')
+
 </body>
 </html>
