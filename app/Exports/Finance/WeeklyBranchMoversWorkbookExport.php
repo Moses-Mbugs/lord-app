@@ -8,6 +8,7 @@ use Maatwebsite\Excel\Concerns\FromArray;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithColumnFormatting;
 use Maatwebsite\Excel\Concerns\WithEvents;
+use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 use Maatwebsite\Excel\Concerns\WithTitle;
 use Maatwebsite\Excel\Events\AfterSheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
@@ -17,13 +18,48 @@ use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 /**
- * Single-sheet workbook: branch summary (Deposits WTD/MTD Δ + Closing Balance, Loans
- * WTD/MTD Δ + Closing Balance, NTB WTD/MTD/YTD) followed by the week's top gainers/losers.
+ * Weekly branch workbook: the branch summary sheet, then each branch's top 10 deposit and
+ * loan customer movers over the WTD window — the same "Deposit CIF" and "Loans CIF" sheets
+ * the daily branch movers workbook uses (Corporate and staff excluded).
+ */
+class WeeklyBranchMoversWorkbookExport implements WithMultipleSheets
+{
+    private const CIF_LIMIT = 10;
+
+    /** @param array $periods ['week'|'mtd'|'ytd' => ['start','end','label']] */
+    /** @param array $data    ['week'|'mtd'|'ytd' => ['summary','topGainers','topLosers']] */
+    public function __construct(
+        private readonly string $weekEnd,
+        private readonly array  $periods,
+        private readonly array  $data,
+        private readonly int    $limit = 10
+    ) {}
+
+    public function sheets(): array
+    {
+        $weekStart = (string) ($this->periods['week']['start'] ?? $this->weekEnd);
+        $weekEnd   = (string) ($this->periods['week']['end']   ?? $this->weekEnd);
+
+        // The CIF sheet classes are declared inside BranchMoversWorkbookExport.php, so they
+        // only autoload once that file is loaded.
+        class_exists(BranchMoversWorkbookExport::class);
+
+        return [
+            new WeeklyBranchMoversSummarySheet($this->weekEnd, $this->periods, $this->data, $this->limit),
+            new CifMoversByBranchSheet($weekStart, $weekEnd, self::CIF_LIMIT),
+            new LoanAccountMoversByBranchSheet($weekStart, $weekEnd, self::CIF_LIMIT),
+        ];
+    }
+}
+
+/**
+ * Branch summary (Deposits WTD/MTD Δ + Closing Balance, Loans WTD/MTD Δ + Closing Balance,
+ * NTB WTD/MTD/YTD) followed by the week's top gainers/losers.
  *
  * Columns: A Branch Code, B Branch Name, C-E Deposits (WTD Δ/MTD Δ/Closing Bal), F-H
  * Loans (WTD Δ/MTD Δ/Closing Bal), I-K NTB (WTD/MTD/YTD).
  */
-class WeeklyBranchMoversWorkbookExport implements FromArray, WithTitle, ShouldAutoSize, WithColumnFormatting, WithEvents
+class WeeklyBranchMoversSummarySheet implements FromArray, WithTitle, ShouldAutoSize, WithColumnFormatting, WithEvents
 {
     private const NUM_COLS = 11;
 
