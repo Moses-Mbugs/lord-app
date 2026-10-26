@@ -185,6 +185,7 @@ return [
             'KKYULU@ecobank.com',
             'OODIEMO@ecobank.com',
             'HMUDUKIZA@ecobank.com',
+            'FWAGURA@ecobank.com',
             // '',
             // '',
             // '',
@@ -205,7 +206,7 @@ return [
             // 'ALLEKE-DEVSupport@ecobank.com',
         ],
 
-        
+
 
 
         // RM Moversssss
@@ -682,6 +683,7 @@ return [
             'KKYULU@ecobank.com',
             'OODIEMO@ecobank.com',
             'HMUDUKIZA@ecobank.com',
+            'FWAGURA@ecobank.com',
 
         ],
         'cc' => [
