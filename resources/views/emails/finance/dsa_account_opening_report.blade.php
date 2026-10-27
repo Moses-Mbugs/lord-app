@@ -167,12 +167,12 @@
             @endif
 
             {{-- Notes --}}
-            <div style="font-size:11px; color:#646464; margin-top:16px; padding:10px 12px; background:#f9fbe8; border:1px solid #d8e870; border-left:4px solid #BED600; border-radius:8px; line-height:1.55;">
+            {{--  <div style="font-size:11px; color:#646464; margin-top:16px; padding:10px 12px; background:#f9fbe8; border:1px solid #d8e870; border-left:4px solid #BED600; border-radius:8px; line-height:1.55;">
                 <strong style="color:#2a2a2a; font-weight:900;">Notes:</strong>
                 DSA = account introducer code starting with <strong>CN</strong>; counts are accounts by open date.
                 Staff accounts (KECATF) are excluded. Based on the latest customer accounts import, so accounts closed since opening are not counted.
                 The attached Excel has Summary, Month on Month, Week on Week and the account-level detail (CIF, account, customer name, branch).
-            </div>
+            </div>  --}}
 
         </div>
 

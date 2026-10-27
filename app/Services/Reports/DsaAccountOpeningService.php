@@ -21,6 +21,13 @@ final class DsaAccountOpeningService
     public const INTRODUCER_PREFIX = 'CN';
 
     /**
+     * ac_open_date is stored as free text in D-Mon-YY form (e.g. "3-Jul-26") despite the
+     * migration declaring a DATE column — same as BranchPeriodMetricsService. Y-m-d is
+     * accepted too, which is what CustomerAccountsImportController writes.
+     */
+    private const OPEN_DATE_SQL = "COALESCE(STR_TO_DATE(TRIM(ac_open_date), '%d-%b-%y'), STR_TO_DATE(TRIM(ac_open_date), '%Y-%m-%d'))";
+
+    /**
      * @return array{
      *     asOf: string, wtdStart: string, mtdStart: string,
      *     months: array<string, array{label: string, start: string, end: string}>,
@@ -91,16 +98,17 @@ final class DsaAccountOpeningService
                 TRIM(cust_ac_no)        AS account_no,
                 TRIM(ac_desc)           AS customer_name,
                 TRIM(branch_code)       AS branch_code,
-                ac_open_date
+                " . self::OPEN_DATE_SQL . " AS open_dt
             ")
             ->whereRaw('UPPER(TRIM(introducer)) LIKE ?', [self::INTRODUCER_PREFIX . '%'])
             ->whereRaw(StaffExclusion::accountSql())
-            ->whereBetween('ac_open_date', [$start, $end])
-            ->orderBy('ac_open_date')
+            ->whereRaw("TRIM(COALESCE(ac_open_date, '')) <> ''")
+            ->whereRaw(self::OPEN_DATE_SQL . ' BETWEEN ? AND ?', [$start, $end])
+            ->orderByRaw(self::OPEN_DATE_SQL)
             ->orderBy('introducer')
             ->get()
             ->map(function ($r) {
-                $open = Carbon::parse((string) $r->ac_open_date);
+                $open = Carbon::parse((string) $r->open_dt);
 
                 $r->open_date = $open->toDateString();
                 $r->week_key  = $open->copy()->startOfWeek(Carbon::MONDAY)->toDateString();
