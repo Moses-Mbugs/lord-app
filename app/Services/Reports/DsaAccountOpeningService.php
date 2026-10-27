@@ -10,8 +10,13 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * DSA account opening: accounts in customer_accounts_imports whose introducer starts with
- * CN (the DSA code, e.g. CN314), bucketed by ac_open_date into WTD, MTD, month-on-month
- * (current MTD + N prior full months) and week-on-week (Mon–Sun weeks, current week = WTD).
+ * CN (the DSA code, e.g. CN314).
+ *
+ *  - Opening counts are bucketed by ac_open_date into WTD, MTD, month-on-month (current MTD
+ *    + N prior full months) and week-on-week (Mon–Sun weeks, current week = WTD).
+ *  - The DSA "book" is every account the DSA has ever opened: its latest deposit balance
+ *    (customer_balances, by account) and the customers' performing loan book
+ *    (loan_listings, by CIF — any loan held by a customer the DSA brought in).
  *
  * Staff accounts (account_class KECATF) are excluded. customer_accounts_imports is the latest
  * snapshot, so accounts closed since they were opened won't appear.
@@ -27,9 +32,13 @@ final class DsaAccountOpeningService
      */
     private const OPEN_DATE_SQL = "COALESCE(STR_TO_DATE(TRIM(ac_open_date), '%d-%b-%y'), STR_TO_DATE(TRIM(ac_open_date), '%Y-%m-%d'))";
 
+    /** Same deposit GL exclusion as RmMoversService. */
+    private const EXCLUDED_CR_GL = '216220001';
+
     /**
      * @return array{
      *     asOf: string, wtdStart: string, mtdStart: string,
+     *     depositDate: ?string, loanDate: ?string,
      *     months: array<string, array{label: string, start: string, end: string}>,
      *     weeks: array<string, array{label: string, start: string, end: string}>,
      *     dsaRows: Collection, totals: object, accounts: Collection
@@ -63,33 +72,41 @@ final class DsaAccountOpeningService
             ];
         }
 
-        $windowStart = min(reset($months)['start'], reset($weekCols)['start']);
+        $accounts = $this->fetchAccounts();
 
-        $accounts = $this->fetchAccounts($windowStart, $asOfDate->toDateString());
+        [$depositDate, $deposits] = $this->depositsByAccount($accounts->pluck('account_no')->filter()->unique()->values()->all());
+        [$loanDate, $loans]       = $this->loansByCif($accounts->pluck('cif')->filter()->unique()->values()->all());
 
-        $wtd = $wtdStart->toDateString();
-        $mtd = $mtdStart->toDateString();
+        $accounts->each(function ($a) use ($deposits, $loans) {
+            $a->deposit_balance = (float) ($deposits[$a->account_no] ?? 0);
+            $a->cif_loans       = (float) ($loans[$a->cif] ?? 0);
+        });
+
+        $ctx = [
+            'asOf'     => $asOfDate->toDateString(),
+            'wtdStart' => $wtdStart->toDateString(),
+            'mtdStart' => $mtdStart->toDateString(),
+            'months'   => $months,
+            'weeks'    => $weekCols,
+        ];
 
         $dsaRows = $accounts
             ->groupBy('dsa_code')
-            ->map(fn (Collection $rows, string $code) => $this->summarise($code, $rows, $wtd, $mtd, $months, $weekCols))
-            ->sortBy([['mtd_accounts', 'desc'], ['window_accounts', 'desc'], ['dsa_code', 'asc']])
+            ->map(fn (Collection $rows, string $code) => $this->summarise($code, $rows, $ctx))
+            ->sortBy([['mtd_accounts', 'desc'], ['deposits', 'desc'], ['dsa_code', 'asc']])
             ->values();
 
-        return [
-            'asOf'     => $asOfDate->toDateString(),
-            'wtdStart' => $wtd,
-            'mtdStart' => $mtd,
-            'months'   => $months,
-            'weeks'    => $weekCols,
-            'dsaRows'  => $dsaRows,
-            'totals'   => $this->summarise('TOTAL', $accounts, $wtd, $mtd, $months, $weekCols),
-            'accounts' => $accounts,
+        return $ctx + [
+            'depositDate' => $depositDate,
+            'loanDate'    => $loanDate,
+            'dsaRows'     => $dsaRows,
+            'totals'      => $this->summarise('TOTAL', $accounts, $ctx),
+            'accounts'    => $accounts,
         ];
     }
 
-    /** One row per DSA-introduced account opened in [$start, $end], oldest first. */
-    private function fetchAccounts(string $start, string $end): Collection
+    /** Every DSA-introduced (non-staff) account, oldest first; open_date is null when it doesn't parse. */
+    private function fetchAccounts(): Collection
     {
         return DB::table('customer_accounts_imports')
             ->selectRaw("
@@ -98,42 +115,121 @@ final class DsaAccountOpeningService
                 TRIM(cust_ac_no)        AS account_no,
                 TRIM(ac_desc)           AS customer_name,
                 TRIM(branch_code)       AS branch_code,
+                TRIM(account_class)     AS account_class,
                 " . self::OPEN_DATE_SQL . " AS open_dt
             ")
             ->whereRaw('UPPER(TRIM(introducer)) LIKE ?', [self::INTRODUCER_PREFIX . '%'])
             ->whereRaw(StaffExclusion::accountSql())
-            ->whereRaw("TRIM(COALESCE(ac_open_date, '')) <> ''")
-            ->whereRaw(self::OPEN_DATE_SQL . ' BETWEEN ? AND ?', [$start, $end])
             ->orderByRaw(self::OPEN_DATE_SQL)
             ->orderBy('introducer')
             ->get()
             ->map(function ($r) {
-                $open = Carbon::parse((string) $r->open_dt);
+                $open = $r->open_dt ? Carbon::parse((string) $r->open_dt) : null;
 
-                $r->open_date = $open->toDateString();
-                $r->week_key  = $open->copy()->startOfWeek(Carbon::MONDAY)->toDateString();
-                $r->month_key = $open->format('Y-m');
+                $r->cif        = (string) ($r->cif ?? '');
+                $r->account_no = (string) ($r->account_no ?? '');
+                $r->open_date  = $open?->toDateString();
+                $r->week_key   = $open?->copy()->startOfWeek(Carbon::MONDAY)->toDateString();
+                $r->month_key  = $open?->format('Y-m');
 
                 return $r;
             });
     }
 
-    private function summarise(string $code, Collection $rows, string $wtdStart, string $mtdStart, array $months, array $weeks): object
+    /**
+     * Latest-day LCY deposit balance per account (negatives floored at 0, GL 216220001
+     * excluded — same rules as RmMoversService).
+     *
+     * @return array{0: ?string, 1: array<string, float>} [balance_date, account_no => balance]
+     */
+    private function depositsByAccount(array $accountNos): array
     {
-        $wtd     = $rows->filter(fn ($r) => $r->open_date >= $wtdStart);
-        $mtd     = $rows->filter(fn ($r) => $r->open_date >= $mtdStart);
-        $byMonth = $rows->countBy('month_key');
-        $byWeek  = $rows->countBy('week_key');
+        $date = DB::table('customer_balances')->max('balance_date');
+        if (! $date || empty($accountNos)) {
+            return [$date, []];
+        }
+
+        $balances = [];
+        foreach (array_chunk($accountNos, 1000) as $chunk) {
+            DB::table('customer_balances')
+                ->selectRaw('TRIM(cust_ac_no) AS account_no, SUM(GREATEST(lcy_balance, 0)) AS balance')
+                ->where('balance_date', $date)
+                ->whereIn('cust_ac_no', $chunk)
+                ->where(fn ($q) => $q->whereNull('cr_gl')->orWhere('cr_gl', '<>', self::EXCLUDED_CR_GL))
+                ->groupBy(DB::raw('TRIM(cust_ac_no)'))
+                ->get()
+                ->each(function ($r) use (&$balances) {
+                    $balances[(string) $r->account_no] = (float) $r->balance;
+                });
+        }
+
+        return [Carbon::parse((string) $date)->toDateString(), $balances];
+    }
+
+    /**
+     * Performing, non-Corporate, non-staff loan book per CIF on the latest as_at_date
+     * (one row per related_account, latest id) — same filters as RmLoanMoversService.
+     *
+     * @return array{0: ?string, 1: array<string, float>} [as_at_date, cif => outstanding]
+     */
+    private function loansByCif(array $cifs): array
+    {
+        $date = DB::table('loan_listings')->max('as_at_date');
+        if (! $date || empty($cifs)) {
+            return [$date, []];
+        }
+
+        $loans = [];
+        foreach (array_chunk($cifs, 1000) as $chunk) {
+            $dedup = DB::table('loan_listings')
+                ->where('as_at_date', $date)
+                ->whereIn('cif', $chunk)
+                ->whereRaw(RmLoanMoversService::NON_CORPORATE_FILTER)
+                ->whereRaw(RmLoanMoversService::PERFORMING_FILTER)
+                ->whereRaw(RmLoanMoversService::NON_STAFF_FILTER)
+                ->selectRaw('related_account, MAX(id) AS max_id')
+                ->groupBy('related_account');
+
+            DB::table('loan_listings as ll')
+                ->joinSub($dedup, 'dedup', 'll.id', '=', 'dedup.max_id')
+                ->selectRaw('TRIM(ll.cif) AS cif, SUM(ll.loan_book_outstanding) AS outstanding')
+                ->groupBy(DB::raw('TRIM(ll.cif)'))
+                ->get()
+                ->each(function ($r) use (&$loans) {
+                    $loans[(string) $r->cif] = (float) $r->outstanding;
+                });
+        }
+
+        return [Carbon::parse((string) $date)->toDateString(), $loans];
+    }
+
+    private function summarise(string $code, Collection $rows, array $ctx): object
+    {
+        // Opening counts only use accounts with a parseable open date on or before $asOf.
+        $dated   = $rows->filter(fn ($r) => $r->open_date !== null && $r->open_date <= $ctx['asOf']);
+        $wtd     = $dated->filter(fn ($r) => $r->open_date >= $ctx['wtdStart']);
+        $mtd     = $dated->filter(fn ($r) => $r->open_date >= $ctx['mtdStart']);
+        $byMonth = $dated->countBy('month_key');
+        $byWeek  = $dated->countBy('week_key');
+
+        $monthKeys = array_keys($ctx['months']);
+        $weekKeys  = array_keys($ctx['weeks']);
+
+        // Loans are per customer, so count each CIF once (a CIF can hold several DSA accounts).
+        $customers = $rows->filter(fn ($r) => $r->cif !== '')->unique('cif');
 
         return (object) [
-            'dsa_code'        => $code,
-            'wtd_accounts'    => $wtd->count(),
-            'wtd_customers'   => $wtd->pluck('cif')->filter()->unique()->count(),
-            'mtd_accounts'    => $mtd->count(),
-            'mtd_customers'   => $mtd->pluck('cif')->filter()->unique()->count(),
-            'months'          => array_map(fn ($k) => (int) ($byMonth[$k] ?? 0), array_combine(array_keys($months), array_keys($months))),
-            'weeks'           => array_map(fn ($k) => (int) ($byWeek[$k] ?? 0), array_combine(array_keys($weeks), array_keys($weeks))),
-            'window_accounts' => $rows->count(),
+            'dsa_code'       => $code,
+            'wtd_accounts'   => $wtd->count(),
+            'wtd_customers'  => $wtd->pluck('cif')->filter()->unique()->count(),
+            'mtd_accounts'   => $mtd->count(),
+            'mtd_customers'  => $mtd->pluck('cif')->filter()->unique()->count(),
+            'months'         => array_combine($monthKeys, array_map(fn ($k) => (int) ($byMonth[$k] ?? 0), $monthKeys)),
+            'weeks'          => array_combine($weekKeys, array_map(fn ($k) => (int) ($byWeek[$k] ?? 0), $weekKeys)),
+            'book_accounts'  => $rows->count(),
+            'book_customers' => $customers->count(),
+            'deposits'       => round((float) $rows->sum('deposit_balance'), 2),
+            'loans'          => round((float) $customers->sum('cif_loans'), 2),
         ];
     }
 }

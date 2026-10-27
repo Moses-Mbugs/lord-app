@@ -21,9 +21,9 @@ use Illuminate\Support\Facades\DB;
  */
 class RmLoanMoversService
 {
-    private const NON_CORPORATE_FILTER = "UPPER(TRIM(COALESCE(business_segment,''))) != 'CORPORATE'";
-    private const PERFORMING_FILTER    = "(TRIM(COALESCE(loan_status, '')) = '' OR loan_status IN ('NORM', 'Normal', 'OAEM', 'SUBS', 'Watch'))";
-    private const NON_STAFF_FILTER     = "UPPER(COALESCE(linecode, '')) NOT LIKE '%STAFF%'";
+    public const NON_CORPORATE_FILTER = "UPPER(TRIM(COALESCE(business_segment,''))) != 'CORPORATE'";
+    public const PERFORMING_FILTER    = "(TRIM(COALESCE(loan_status, '')) = '' OR loan_status IN ('NORM', 'Normal', 'OAEM', 'SUBS', 'Watch'))";
+    public const NON_STAFF_FILTER     = "UPPER(COALESCE(linecode, '')) NOT LIKE '%STAFF%'";
 
     /**
      * Performing, non-Corporate, non-staff loan book per RM (open / close), using the

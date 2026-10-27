@@ -85,14 +85,15 @@ class EmailDsaAccountOpeningCommand extends Command
 
         $this->info("DSA account opening as at {$report['asOf']} (WTD from {$report['wtdStart']}, MTD from {$report['mtdStart']})");
         $this->line("WTD: {$t->wtd_accounts} accounts / {$t->wtd_customers} customers | MTD: {$t->mtd_accounts} accounts / {$t->mtd_customers} customers");
+        $this->line('Deposits as at ' . ($report['depositDate'] ?? 'n/a') . ' | Loans as at ' . ($report['loanDate'] ?? 'n/a'));
+
+        $money = fn ($v) => number_format((float) $v, 0);
+        $row   = fn ($d) => [$d->dsa_code, $d->wtd_accounts, $d->mtd_accounts, ...array_values($d->months), $d->book_accounts, $money($d->deposits), $money($d->loans)];
 
         $this->newLine();
         $this->table(
-            ['DSA', 'WTD', 'MTD', ...array_column($report['months'], 'label')],
-            [
-                ...$report['dsaRows']->map(fn ($d) => [$d->dsa_code, $d->wtd_accounts, $d->mtd_accounts, ...array_values($d->months)])->all(),
-                ['TOTAL', $t->wtd_accounts, $t->mtd_accounts, ...array_values($t->months)],
-            ]
+            ['DSA', 'WTD', 'MTD', ...array_column($report['months'], 'label'), 'Accts (all)', 'Deposits', 'Loans'],
+            [...$report['dsaRows']->map($row)->all(), $row($t)]
         );
 
         $this->table(

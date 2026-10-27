@@ -17,8 +17,7 @@
     $topRows  = $dsaRows->take($topLimit);
     $fmtDate  = fn ($d) => \Carbon\Carbon::parse($d)->format('d M Y');
 
-    $monthKeys     = array_keys($months);
-    $prevMonthKey  = $monthKeys[count($monthKeys) - 2] ?? null;
+    $money         = fn ($v) => number_format((float) round($v));
     $activeDsasMtd = $dsaRows->where('mtd_accounts', '>', 0)->count();
 
     $tiles = [
@@ -31,20 +30,20 @@
         [
             'label' => 'Accounts MTD',
             'value' => number_format($t->mtd_accounts),
-            'sub'   => number_format($t->mtd_customers) . ' customers',
+            'sub'   => number_format($t->mtd_customers) . ' customers · ' . $activeDsasMtd . ' active DSAs',
             'fg'    => '#4a6a1a', 'bg' => '#F4FAD4', 'border' => '#D0E06B',
         ],
         [
-            'label' => 'Active DSAs MTD',
-            'value' => number_format($activeDsasMtd),
-            'sub'   => 'opened at least one account',
+            'label' => 'DSA Deposits',
+            'value' => $money($t->deposits),
+            'sub'   => number_format($t->book_accounts) . ' accounts, all time',
             'fg'    => '#4527A0', 'bg' => '#F3EFFB', 'border' => '#D1C4E9',
         ],
         [
-            'label' => $prevMonthKey ? $months[$prevMonthKey]['label'] : 'Prior Month',
-            'value' => number_format($prevMonthKey ? $t->months[$prevMonthKey] : 0),
-            'sub'   => 'accounts, full month',
-            'fg'    => '#646464', 'bg' => '#F5F5F5', 'border' => '#E0E0E0',
+            'label' => 'DSA Customer Loans',
+            'value' => $money($t->loans),
+            'sub'   => number_format($t->book_customers) . ' customers, performing book',
+            'fg'    => '#14532d', 'bg' => '#DCFCE7', 'border' => '#86EFAC',
         ],
     ];
 
@@ -133,7 +132,7 @@
 
             @if ($dsaRows->isEmpty())
                 <div style="font-size:12px; color:#646464; padding:12px; background:#F5F5F5; border-radius:8px;">
-                    No DSA-introduced accounts were opened in this period.
+                    No DSA-introduced accounts found.
                 </div>
             @else
                 <table width="100%" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse;">
@@ -141,29 +140,32 @@
                         <th style="{{ $th }} text-align:left;">DSA Code</th>
                         <th style="{{ $th }} text-align:right;">WTD</th>
                         <th style="{{ $th }} text-align:right;">MTD</th>
-                        @foreach ($months as $m)
-                            <th style="{{ $th }} text-align:right;">{{ $m['label'] }}</th>
-                        @endforeach
+                        <th style="{{ $th }} text-align:right;">Accounts<br><span style="font-weight:700; opacity:0.8;">all time</span></th>
+                        <th style="{{ $th }} text-align:right;">Deposits<br><span style="font-weight:700; opacity:0.8;">{{ $report['depositDate'] ? $fmtDate($report['depositDate']) : '' }}</span></th>
+                        <th style="{{ $th }} text-align:right;">Loans<br><span style="font-weight:700; opacity:0.8;">{{ $report['loanDate'] ? $fmtDate($report['loanDate']) : '' }}</span></th>
                     </tr>
                     @foreach ($topRows as $d)
                         <tr style="background:{{ $loop->even ? '#FAFAFA' : '#ffffff' }};">
                             <td style="{{ $td }} font-weight:800; color:#005B82;">{{ $d->dsa_code }}</td>
                             <td style="{{ $td }} text-align:right;">{{ number_format($d->wtd_accounts) }}</td>
                             <td style="{{ $td }} text-align:right; font-weight:800;">{{ number_format($d->mtd_accounts) }}</td>
-                            @foreach ($months as $key => $m)
-                                <td style="{{ $td }} text-align:right;">{{ number_format($d->months[$key]) }}</td>
-                            @endforeach
+                            <td style="{{ $td }} text-align:right;">{{ number_format($d->book_accounts) }}</td>
+                            <td style="{{ $td }} text-align:right;">{{ $money($d->deposits) }}</td>
+                            <td style="{{ $td }} text-align:right;">{{ $money($d->loans) }}</td>
                         </tr>
                     @endforeach
                     <tr>
                         <td style="{{ $tdTotal }}">TOTAL (all DSAs)</td>
                         <td style="{{ $tdTotal }} text-align:right;">{{ number_format($t->wtd_accounts) }}</td>
                         <td style="{{ $tdTotal }} text-align:right;">{{ number_format($t->mtd_accounts) }}</td>
-                        @foreach ($months as $key => $m)
-                            <td style="{{ $tdTotal }} text-align:right;">{{ number_format($t->months[$key]) }}</td>
-                        @endforeach
+                        <td style="{{ $tdTotal }} text-align:right;">{{ number_format($t->book_accounts) }}</td>
+                        <td style="{{ $tdTotal }} text-align:right;">{{ $money($t->deposits) }}</td>
+                        <td style="{{ $tdTotal }} text-align:right;">{{ $money($t->loans) }}</td>
                     </tr>
                 </table>
+                <div style="font-size:10px; color:#979797; margin-top:6px;">
+                    Deposits = latest LCY balance on every account the DSA has opened. Loans = performing, non-corporate book of those customers (by CIF); a customer brought in by two DSAs counts towards both, but once in the total.
+                </div>
             @endif
 
             {{-- Notes --}}
