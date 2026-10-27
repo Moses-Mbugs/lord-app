@@ -7,8 +7,7 @@ return [
 
         'country_folder' => 'Kenya',
 
-        // Who gets the "started importing / not found, retrying / imported successfully" emails
-        // from the finance:import-daily-balances scheduled command.
+
         'import_status_to' => env('BALANCES_IMPORT_NOTIFY_EMAIL', 'mmuigai@ecobank.com,ALLEKE-ICT@ecobank.com'),
 
 
@@ -253,8 +252,8 @@ return [
         'rm_movers_cc' => [
             // 'ALLEKE-ICT@ecobank.com',
         ],
-        // Falls back to rm_movers_to/_cc above if left empty, same convention as
-        // weekly_branch_movers_to/_cc falling back to branch_movers_to/_cc.
+
+
         'weekly_rm_movers_to' => [
             'mmuigai@ecobank.com',
             'MWANJIRU@ecobank.com',
@@ -267,13 +266,6 @@ return [
             // 'ALLEKE-ICT@ecobank.com',
         ],
 
-        // Fixed RM portfolio tracked by reports:email-rm-movers and reports:email-weekly-rm-movers
-        // (deposits + loans combined — there is no separate RM Loan Movers report).
-        // Single source of truth for both commands — update here only when RMs join/leave
-        // or move segment. 'segment' is the Job Unit (Premier/Advantage/Direct) — each report
-        // is split into one section per segment within a single email.
-        // Excludes James Kivinda Kinanga (KE1222) and Jane Nyawira (KE1296) — left the bank.
-        // Includes Joan Sang (KE1343) — new RM.
         'rm_portfolio' => [
             'KE0827' => ['name' => 'Veronica Nasieku Lalarari',      'segment' => 'Premier'],
             'KE1228' => ['name' => 'James Chisakane Odera',          'segment' => 'Premier'],
@@ -294,6 +286,15 @@ return [
             'KE1229' => ['name' => 'Erick Ochieng Ouma',             'segment' => 'Direct'],
         ],
 
+    ],
+
+    // DSA account opening (introducer CN…) — reports:email-dsa-accounts
+    'dsa_accounts' => [
+        'to' => [
+            'mmuigai@ecobank.com',
+        ],
+        'cc' => [
+        ],
     ],
 
 
