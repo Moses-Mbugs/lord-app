@@ -115,7 +115,6 @@ final class DsaAccountOpeningService
                 TRIM(cust_ac_no)        AS account_no,
                 TRIM(ac_desc)           AS customer_name,
                 TRIM(branch_code)       AS branch_code,
-                TRIM(account_class)     AS account_class,
                 " . self::OPEN_DATE_SQL . " AS open_dt
             ")
             ->whereRaw('UPPER(TRIM(introducer)) LIKE ?', [self::INTRODUCER_PREFIX . '%'])

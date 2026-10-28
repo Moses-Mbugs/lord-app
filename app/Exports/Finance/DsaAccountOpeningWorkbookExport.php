@@ -105,7 +105,7 @@ class DsaAccountOpeningWorkbookExport implements WithMultipleSheets
                 $seenCif[$a->cif] = true;
 
                 return [
-                    $a->dsa_code, $a->cif, $a->account_no, $a->customer_name, $a->branch_code, $a->account_class,
+                    $a->dsa_code, $a->cif, $a->account_no, $a->customer_name, $a->branch_code,
                     $excelDate($a->open_date), $excelDate($a->week_key),
                     $a->month_key ? Carbon::parse($a->month_key . '-01')->format('M Y') : '',
                     $a->deposit_balance,
@@ -122,7 +122,7 @@ class DsaAccountOpeningWorkbookExport implements WithMultipleSheets
             'DSA Account Opening — Account Detail',
             $subtitle . '  ·  Customer loans shown once per CIF',
             [
-                'DSA Code', 'CIF', 'Account No', 'Customer Name', 'Branch', 'Account Class',
+                'DSA Code', 'CIF', 'Account No', 'Customer Name', 'Branch',
                 'Open Date', 'Week Commencing', 'Month', 'Deposit Balance (KES)', 'Customer Loans (KES)',
             ],
             [
@@ -131,7 +131,6 @@ class DsaAccountOpeningWorkbookExport implements WithMultipleSheets
                 ['width' => 17, 'text' => true],
                 ['width' => 38],
                 ['width' => 9, 'align' => Alignment::HORIZONTAL_CENTER],
-                ['width' => 13, 'align' => Alignment::HORIZONTAL_CENTER],
                 ['width' => 12, 'format' => self::DATE, 'align' => Alignment::HORIZONTAL_CENTER],
                 ['width' => 12, 'format' => self::DATE, 'align' => Alignment::HORIZONTAL_CENTER],
                 ['width' => 10, 'align' => Alignment::HORIZONTAL_CENTER],
@@ -139,7 +138,7 @@ class DsaAccountOpeningWorkbookExport implements WithMultipleSheets
                 ['width' => 20, 'format' => self::MONEY],
             ],
             $rows,
-            ['TOTAL', '', '', number_format($t->book_accounts) . ' accounts · ' . number_format($t->book_customers) . ' customers', '', '', '', '', '', $t->deposits, $t->loans],
+            ['TOTAL', '', '', number_format($t->book_accounts) . ' accounts · ' . number_format($t->book_customers) . ' customers', '', '', '', '', $t->deposits, $t->loans],
             'E5',
             true
         );
