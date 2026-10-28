@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Finance;
 
+use App\Services\Reports\AccountOpenDate;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -343,9 +344,8 @@ class RmPerformanceService
 
     /**
      * NTB: unique CIFs whose account opened in a given calendar month, per RM.
-     * ac_open_date is stored as free text in D-Mon-YY form (e.g. "22-Oct-24"), confirmed
-     * against real data — despite the migration declaring a DATE column, STR_TO_DATE is
-     * required to parse it. Rows whose ac_open_date doesn't parse are excluded (their
+     * ac_open_date is a varchar in two formats (D-Mon-YY and Y-m-d) despite the migration
+     * declaring a DATE column — parsed via AccountOpenDate. Rows whose ac_open_date doesn't parse are excluded (their
      * count would be worth surfacing the same way loan value_dt parse failures are, if
      * this turns out to drop a meaningful number of rows in practice).
      *
@@ -353,23 +353,25 @@ class RmPerformanceService
      */
     private function buildNtbByMonth(): array
     {
+        $openDate = AccountOpenDate::sql();
+
         $rows = DB::table('customer_accounts_imports')
             ->whereNotNull('acc_ofcr')
             ->whereRaw("TRIM(acc_ofcr) <> ''")
             ->whereNotNull('f12_cif')
             ->whereNotNull('ac_open_date')
             ->whereRaw("TRIM(ac_open_date) <> ''")
-            ->whereRaw("STR_TO_DATE(ac_open_date, '%d-%b-%y') IS NOT NULL")
+            ->whereRaw(AccountOpenDate::sql() . ' IS NOT NULL')
             ->selectRaw("
                 UPPER(TRIM(acc_ofcr)) AS rm_code,
-                YEAR(STR_TO_DATE(ac_open_date, '%d-%b-%y')) AS y,
-                MONTH(STR_TO_DATE(ac_open_date, '%d-%b-%y')) AS m,
+                YEAR({$openDate}) AS y,
+                MONTH({$openDate}) AS m,
                 COUNT(DISTINCT f12_cif) AS total
             ")
             ->groupByRaw("
                 UPPER(TRIM(acc_ofcr)),
-                YEAR(STR_TO_DATE(ac_open_date, '%d-%b-%y')),
-                MONTH(STR_TO_DATE(ac_open_date, '%d-%b-%y'))
+                YEAR({$openDate}),
+                MONTH({$openDate})
             ")
             ->get();
 

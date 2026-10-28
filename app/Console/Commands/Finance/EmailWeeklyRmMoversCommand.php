@@ -7,6 +7,7 @@ namespace App\Console\Commands\Finance;
 use App\Exports\Finance\WeeklyRmMoversWorkbookExport;
 use App\Mail\WeeklyRmMoversReportMail;
 use App\Models\Finance\RmTarget;
+use App\Services\Reports\AccountOpenDate;
 use App\Services\Reports\RmLoanMoversService;
 use App\Services\Reports\RmMoversService;
 use App\Services\Reports\RmPortfolioService;
@@ -405,8 +406,8 @@ class EmailWeeklyRmMoversCommand extends Command
      * (account_class = KECATF) are excluded.
      *
      * Mirrors EmailWeeklyBranchMoversCommand::fetchBranchNtbCounts exactly, grouped by
-     * acc_ofcr instead of branch_code and scoped to the given RM codes. ac_open_date is
-     * stored as free text D-Mon-YY (e.g. "22-Oct-24") — STR_TO_DATE parses it.
+     * acc_ofcr instead of branch_code and scoped to the given RM codes. ac_open_date is a
+     * varchar in two formats (D-Mon-YY and Y-m-d) — AccountOpenDate parses both.
      */
     private function fetchRmNtbCounts(string $start, string $end, array $rmCodes): array
     {
@@ -422,8 +423,8 @@ class EmailWeeklyRmMoversCommand extends Command
             ->whereRaw("TRIM(ac_open_date) <> ''")
             ->whereRaw("UPPER(TRIM(COALESCE(account_class, ''))) <> 'KECATF'")
             ->whereIn(DB::raw('UPPER(TRIM(acc_ofcr))'), $rmCodes)
-            ->whereRaw("STR_TO_DATE(ac_open_date, '%d-%b-%y') > ?", [$start])
-            ->whereRaw("STR_TO_DATE(ac_open_date, '%d-%b-%y') <= ?", [$end]);
+            ->whereRaw(AccountOpenDate::sql() . ' > ?', [$start])
+            ->whereRaw(AccountOpenDate::sql() . ' <= ?', [$end]);
 
         $rows = (clone $base)
             ->selectRaw("UPPER(TRIM(acc_ofcr)) as rm_code, COUNT(DISTINCT f12_cif) as ntb_count")

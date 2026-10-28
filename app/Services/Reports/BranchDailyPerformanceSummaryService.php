@@ -114,15 +114,13 @@ class BranchDailyPerformanceSummaryService
         $accountBreakdownRows = $this->fetchAccountBreakdown($branchCodes, $corporateMisCodes);
 
         // NTB: unique CIFs whose account was opened from 01-Jan-2026 onwards
-        // ac_open_date is stored as free text in D-Mon-YY form (e.g. "22-Oct-24"), confirmed
-        // against real data — despite the migration declaring a DATE column, STR_TO_DATE is
-        // required to parse it.
+        // ac_open_date is a varchar in two formats (D-Mon-YY and Y-m-d) — see AccountOpenDate.
         $accountRows = DB::table('customer_accounts_imports')
             ->whereIn('branch_code', $branchCodes)
             ->whereNotNull('f12_cif')
             ->whereNotNull('ac_open_date')
             ->whereRaw("TRIM(ac_open_date) <> ''")
-            ->whereRaw("STR_TO_DATE(ac_open_date, '%d-%b-%y') >= '2026-01-01'")
+            ->whereRaw(AccountOpenDate::sql() . " >= '2026-01-01'")
             ->whereRaw(StaffExclusion::accountSql())
             ->select('branch_code', DB::raw('COUNT(DISTINCT f12_cif) as total_accounts'))
             ->groupBy('branch_code')

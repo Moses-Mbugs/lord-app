@@ -7,7 +7,6 @@ namespace App\Console\Commands\Finance;
 use App\Mail\BalancesImportStatusMail;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
@@ -30,8 +29,7 @@ class SyncCustomerAccountsCommand extends Command
 {
     protected $signature = 'finance:sync-customer-accounts
         {--script=* : Only run these script(s), e.g. --script=CORP_CUSTOMERS (default: all configured)}
-        {--keep-files : Keep the downloaded JSON files in storage/app/customer-accounts for inspection}
-        {--no-rebuild : Skip rebuilding rm_workload_summary afterwards}';
+        {--keep-files : Keep the downloaded JSON files in storage/app/customer-accounts for inspection}';
 
     protected $description = 'Sync customer_accounts_imports from the intranet CORP/INDI customer scripts API (insert new, update existing).';
 
@@ -111,12 +109,7 @@ class SyncCustomerAccountsCommand extends Command
             $details['Ignored API fields'] = implode(', ', array_keys($this->unknownFields));
         }
 
-        // ── 3. Downstream summary that is built from this table ────────────────────────────
-        if (!$this->option('no-rebuild')) {
-            $this->info('Rebuilding RM workload summary...');
-            Artisan::call('finance:build-rm-workload', [], $this->output);
-        }
-
+        // rm_workload_summary is rebuilt from this table by the 07:30 balances job, not here.
         $this->notify('success', 'Customer accounts synced', 'customer_accounts_imports was updated from the intranet API.', $details);
 
         return self::SUCCESS;

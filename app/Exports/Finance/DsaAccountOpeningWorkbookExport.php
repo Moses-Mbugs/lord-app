@@ -44,17 +44,18 @@ class DsaAccountOpeningWorkbookExport implements WithMultipleSheets
         $subtitle = "As at {$fmt($r['asOf'])}  ·  WTD from {$fmt($r['wtdStart'])}  ·  MTD from {$fmt($r['mtdStart'])}"
             . "  ·  Deposits as at {$fmt($r['depositDate'])}  ·  Loans as at {$fmt($r['loanDate'])}  ·  Staff accounts excluded";
 
-        $codeCol  = ['width' => 14, 'text' => true];
+        $codeCol  = ['width' => 12, 'text' => true];
+        $nameCol  = ['width' => 30];
         $countCol = ['width' => 13, 'format' => self::COUNT];
         $moneyCol = ['width' => 18, 'format' => self::MONEY];
 
         $summaryRow = fn ($d) => [
-            $d->dsa_code, $d->book_accounts, $d->book_customers,
+            $d->dsa_code, $d->dsa_name, $d->book_accounts, $d->book_customers,
             $d->wtd_accounts, $d->wtd_customers, $d->mtd_accounts, $d->mtd_customers,
             $d->deposits, $d->loans,
         ];
-        $monthRow = fn ($d) => [$d->dsa_code, ...array_values($d->months), array_sum($d->months)];
-        $weekRow  = fn ($d) => [$d->dsa_code, ...array_values($d->weeks), array_sum($d->weeks)];
+        $monthRow = fn ($d) => [$d->dsa_code, $d->dsa_name, ...array_values($d->months), array_sum($d->months)];
+        $weekRow  = fn ($d) => [$d->dsa_code, $d->dsa_name, ...array_values($d->weeks), array_sum($d->weeks)];
 
         return [
             new DsaReportSheet(
@@ -62,11 +63,11 @@ class DsaAccountOpeningWorkbookExport implements WithMultipleSheets
                 'DSA Account Opening — Summary',
                 $subtitle . '  ·  Deposits/Loans cover every account the DSA has opened; loans are by customer (CIF)',
                 [
-                    'DSA Code', 'Accounts Opened (All Time)', 'Customers (All Time)',
+                    'DSA Code', 'DSA Name', 'Accounts Opened (All Time)', 'Customers (All Time)',
                     'WTD Accounts', 'WTD Customers', 'MTD Accounts', 'MTD Customers',
                     'Deposits (KES)', 'Loans (KES)',
                 ],
-                [$codeCol, $countCol + ['width' => 15], $countCol + ['width' => 15], $countCol, $countCol, $countCol, $countCol, $moneyCol, $moneyCol],
+                [$codeCol, $nameCol, $countCol + ['width' => 15], $countCol + ['width' => 15], $countCol, $countCol, $countCol, $countCol, $moneyCol, $moneyCol],
                 $r['dsaRows']->map($summaryRow)->all(),
                 $summaryRow($t)
             ),
@@ -74,8 +75,8 @@ class DsaAccountOpeningWorkbookExport implements WithMultipleSheets
                 'Month on Month',
                 'DSA Account Opening — Month on Month',
                 $subtitle,
-                ['DSA Code', ...array_column($r['months'], 'label'), 'Total'],
-                [$codeCol, ...array_fill(0, count($r['months']) + 1, $countCol + ['width' => 16])],
+                ['DSA Code', 'DSA Name', ...array_column($r['months'], 'label'), 'Total'],
+                [$codeCol, $nameCol, ...array_fill(0, count($r['months']) + 1, $countCol + ['width' => 16])],
                 $r['dsaRows']->map($monthRow)->all(),
                 $monthRow($t)
             ),
@@ -83,8 +84,8 @@ class DsaAccountOpeningWorkbookExport implements WithMultipleSheets
                 'Week on Week',
                 'DSA Account Opening — Week on Week',
                 $subtitle . '  ·  Mon–Sun weeks',
-                ['DSA Code', ...array_column($r['weeks'], 'label'), 'Total'],
-                [$codeCol, ...array_fill(0, count($r['weeks']) + 1, $countCol + ['width' => 15])],
+                ['DSA Code', 'DSA Name', ...array_column($r['weeks'], 'label'), 'Total'],
+                [$codeCol, $nameCol, ...array_fill(0, count($r['weeks']) + 1, $countCol + ['width' => 15])],
                 $r['dsaRows']->map($weekRow)->all(),
                 $weekRow($t)
             ),
@@ -105,7 +106,7 @@ class DsaAccountOpeningWorkbookExport implements WithMultipleSheets
                 $seenCif[$a->cif] = true;
 
                 return [
-                    $a->dsa_code, $a->cif, $a->account_no, $a->customer_name, $a->branch_code,
+                    $a->dsa_code, $a->dsa_name, $a->cif, $a->account_no, $a->customer_name, $a->branch_code,
                     $excelDate($a->open_date), $excelDate($a->week_key),
                     $a->month_key ? Carbon::parse($a->month_key . '-01')->format('M Y') : '',
                     $a->deposit_balance,
@@ -122,11 +123,12 @@ class DsaAccountOpeningWorkbookExport implements WithMultipleSheets
             'DSA Account Opening — Account Detail',
             $subtitle . '  ·  Customer loans shown once per CIF',
             [
-                'DSA Code', 'CIF', 'Account No', 'Customer Name', 'Branch',
+                'DSA Code', 'DSA Name', 'CIF', 'Account No', 'Customer Name', 'Branch',
                 'Open Date', 'Week Commencing', 'Month', 'Deposit Balance (KES)', 'Customer Loans (KES)',
             ],
             [
                 ['width' => 12, 'text' => true],
+                ['width' => 28],
                 ['width' => 13, 'text' => true],
                 ['width' => 17, 'text' => true],
                 ['width' => 38],
@@ -138,7 +140,7 @@ class DsaAccountOpeningWorkbookExport implements WithMultipleSheets
                 ['width' => 20, 'format' => self::MONEY],
             ],
             $rows,
-            ['TOTAL', '', '', number_format($t->book_accounts) . ' accounts · ' . number_format($t->book_customers) . ' customers', '', '', '', '', $t->deposits, $t->loans],
+            ['TOTAL', '', '', '', number_format($t->book_accounts) . ' accounts · ' . number_format($t->book_customers) . ' customers', '', '', '', '', $t->deposits, $t->loans],
             'E5',
             true
         );
@@ -166,7 +168,7 @@ class DsaReportSheet extends DefaultValueBinder implements FromArray, WithTitle,
         private readonly array $columns,
         private readonly array $rows,
         private readonly ?array $totalRow = null,
-        private readonly string $freezeAt = 'B5',
+        private readonly string $freezeAt = 'C5',
         private readonly bool $autoFilter = false
     ) {
     }

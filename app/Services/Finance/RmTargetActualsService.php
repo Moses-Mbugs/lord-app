@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Finance;
 
+use App\Services\Reports\AccountOpenDate;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
@@ -73,18 +74,16 @@ class RmTargetActualsService
             }
 
             // ── NTB per RM — unique CIFs whose account opened during the given year ────
-            // ac_open_date is stored as free text in D-Mon-YY form (e.g. "9-Sep-99") despite
-            // the migration declaring a DATE column and the model casting it as one — confirmed
-            // against real data (MIN/MAX on it return literal D-Mon-YY strings, which a true
-            // DATE column could never produce). STR_TO_DATE is required to parse it.
+            // ac_open_date is a varchar in two formats (D-Mon-YY and Y-m-d) despite the
+            // migration declaring a DATE column — parsed via AccountOpenDate.
             DB::table('customer_accounts_imports')
                 ->whereNotNull('acc_ofcr')
                 ->whereRaw("TRIM(acc_ofcr) <> ''")
                 ->whereNotNull('f12_cif')
                 ->whereNotNull('ac_open_date')
                 ->whereRaw("TRIM(ac_open_date) <> ''")
-                ->whereRaw("STR_TO_DATE(ac_open_date, '%d-%b-%y') >= ?", ["{$year}-01-01"])
-                ->whereRaw("STR_TO_DATE(ac_open_date, '%d-%b-%y') < ?", [($year + 1) . '-01-01'])
+                ->whereRaw(AccountOpenDate::sql() . ' >= ?', ["{$year}-01-01"])
+                ->whereRaw(AccountOpenDate::sql() . ' < ?', [($year + 1) . '-01-01'])
                 ->selectRaw('UPPER(TRIM(acc_ofcr)) AS rm_code, COUNT(DISTINCT f12_cif) AS total')
                 ->groupByRaw('UPPER(TRIM(acc_ofcr))')
                 ->get()

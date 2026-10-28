@@ -138,6 +138,7 @@
                 <table width="100%" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse;">
                     <tr>
                         <th style="{{ $th }} text-align:left;">DSA Code</th>
+                        <th style="{{ $th }} text-align:left;">DSA Name</th>
                         <th style="{{ $th }} text-align:right;">WTD</th>
                         <th style="{{ $th }} text-align:right;">MTD</th>
                         <th style="{{ $th }} text-align:right;">Accounts<br><span style="font-weight:700; opacity:0.8;">all time</span></th>
@@ -147,6 +148,7 @@
                     @foreach ($topRows as $d)
                         <tr style="background:{{ $loop->even ? '#FAFAFA' : '#ffffff' }};">
                             <td style="{{ $td }} font-weight:800; color:#005B82;">{{ $d->dsa_code }}</td>
+                            <td style="{{ $td }} white-space:normal;">{{ $d->dsa_name !== '' ? $d->dsa_name : '—' }}</td>
                             <td style="{{ $td }} text-align:right;">{{ number_format($d->wtd_accounts) }}</td>
                             <td style="{{ $td }} text-align:right; font-weight:800;">{{ number_format($d->mtd_accounts) }}</td>
                             <td style="{{ $td }} text-align:right;">{{ number_format($d->book_accounts) }}</td>
@@ -155,7 +157,7 @@
                         </tr>
                     @endforeach
                     <tr>
-                        <td style="{{ $tdTotal }}">TOTAL (all DSAs)</td>
+                        <td style="{{ $tdTotal }}" colspan="2">TOTAL (all DSAs)</td>
                         <td style="{{ $tdTotal }} text-align:right;">{{ number_format($t->wtd_accounts) }}</td>
                         <td style="{{ $tdTotal }} text-align:right;">{{ number_format($t->mtd_accounts) }}</td>
                         <td style="{{ $tdTotal }} text-align:right;">{{ number_format($t->book_accounts) }}</td>

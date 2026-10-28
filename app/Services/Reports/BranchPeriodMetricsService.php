@@ -132,9 +132,8 @@ class BranchPeriodMetricsService
      * Exclusive of $start / inclusive of $end so back-to-back periods (e.g. this week's end
      * being next week's start) never double-count an account opened on the boundary date.
      *
-     * ac_open_date is stored as free text in D-Mon-YY form (e.g. "22-Oct-24") despite the
-     * migration declaring a DATE column — STR_TO_DATE is required to parse it, mirroring
-     * BranchDailyPerformanceSummaryService's NTB calculation. P50 (Head Office), Corporate
+     * ac_open_date is a varchar in two formats (D-Mon-YY and Y-m-d), parsed via
+     * AccountOpenDate, mirroring BranchDailyPerformanceSummaryService's NTB calculation. P50 (Head Office), Corporate
      * CIFs (CifSegment) and staff accounts are excluded, matching every other figure in the
      * branch reports.
      *
@@ -150,8 +149,8 @@ class BranchPeriodMetricsService
             ->whereRaw("UPPER(TRIM(branch_code)) <> 'P50'")
             ->whereRaw(StaffExclusion::accountSql())
             ->whereRaw(CifSegment::notCorporateSql('f12_cif'))
-            ->whereRaw("STR_TO_DATE(ac_open_date, '%d-%b-%y') > ?", [$start])
-            ->whereRaw("STR_TO_DATE(ac_open_date, '%d-%b-%y') <= ?", [$end]);
+            ->whereRaw(AccountOpenDate::sql() . ' > ?', [$start])
+            ->whereRaw(AccountOpenDate::sql() . ' <= ?', [$end]);
 
         $rows = (clone $base)
             ->selectRaw("UPPER(TRIM(branch_code)) as branch_code, COUNT(DISTINCT f12_cif) as ntb_count")

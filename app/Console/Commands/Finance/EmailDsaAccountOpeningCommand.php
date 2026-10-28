@@ -88,11 +88,11 @@ class EmailDsaAccountOpeningCommand extends Command
         $this->line('Deposits as at ' . ($report['depositDate'] ?? 'n/a') . ' | Loans as at ' . ($report['loanDate'] ?? 'n/a'));
 
         $money = fn ($v) => number_format((float) $v, 0);
-        $row   = fn ($d) => [$d->dsa_code, $d->wtd_accounts, $d->mtd_accounts, ...array_values($d->months), $d->book_accounts, $money($d->deposits), $money($d->loans)];
+        $row   = fn ($d) => [$d->dsa_code, $d->dsa_name, $d->wtd_accounts, $d->mtd_accounts, ...array_values($d->months), $d->book_accounts, $money($d->deposits), $money($d->loans)];
 
         $this->newLine();
         $this->table(
-            ['DSA', 'WTD', 'MTD', ...array_column($report['months'], 'label'), 'Accts (all)', 'Deposits', 'Loans'],
+            ['DSA', 'Name', 'WTD', 'MTD', ...array_column($report['months'], 'label'), 'Accts (all)', 'Deposits', 'Loans'],
             [...$report['dsaRows']->map($row)->all(), $row($t)]
         );
 

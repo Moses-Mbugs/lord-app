@@ -7,6 +7,7 @@ namespace App\Services\Reports;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * DSA account opening: accounts in customer_accounts_imports whose introducer starts with
@@ -24,13 +25,6 @@ use Illuminate\Support\Facades\DB;
 final class DsaAccountOpeningService
 {
     public const INTRODUCER_PREFIX = 'CN';
-
-    /**
-     * ac_open_date is stored as free text in D-Mon-YY form (e.g. "3-Jul-26") despite the
-     * migration declaring a DATE column — same as BranchPeriodMetricsService. Y-m-d is
-     * accepted too, which is what CustomerAccountsImportController writes.
-     */
-    private const OPEN_DATE_SQL = "COALESCE(STR_TO_DATE(TRIM(ac_open_date), '%d-%b-%y'), STR_TO_DATE(TRIM(ac_open_date), '%Y-%m-%d'))";
 
     /** Same deposit GL exclusion as RmMoversService. */
     private const EXCLUDED_CR_GL = '216220001';
@@ -100,31 +94,41 @@ final class DsaAccountOpeningService
             'depositDate' => $depositDate,
             'loanDate'    => $loanDate,
             'dsaRows'     => $dsaRows,
-            'totals'      => $this->summarise('TOTAL', $accounts, $ctx),
+            'totals'      => tap($this->summarise('TOTAL', $accounts, $ctx), fn ($t) => $t->dsa_name = ''),
             'accounts'    => $accounts,
         ];
     }
 
-    /** Every DSA-introduced (non-staff) account, oldest first; open_date is null when it doesn't parse. */
+    /**
+     * Every DSA-introduced (non-staff) account, oldest first; open_date is null when it doesn't
+     * parse. For CN introducers, account_initiator_name is the DSA's name (filled by
+     * finance:sync-customer-accounts; blank until that has run).
+     */
     private function fetchAccounts(): Collection
     {
+        $initiator = Schema::hasColumn('customer_accounts_imports', 'account_initiator_name')
+            ? 'TRIM(account_initiator_name)'
+            : 'NULL';
+
         return DB::table('customer_accounts_imports')
             ->selectRaw("
                 UPPER(TRIM(introducer)) AS dsa_code,
+                {$initiator}            AS dsa_name,
                 TRIM(f12_cif)           AS cif,
                 TRIM(cust_ac_no)        AS account_no,
                 TRIM(ac_desc)           AS customer_name,
                 TRIM(branch_code)       AS branch_code,
-                " . self::OPEN_DATE_SQL . " AS open_dt
+                " . AccountOpenDate::sql() . " AS open_dt
             ")
             ->whereRaw('UPPER(TRIM(introducer)) LIKE ?', [self::INTRODUCER_PREFIX . '%'])
             ->whereRaw(StaffExclusion::accountSql())
-            ->orderByRaw(self::OPEN_DATE_SQL)
+            ->orderByRaw(AccountOpenDate::sql())
             ->orderBy('introducer')
             ->get()
             ->map(function ($r) {
                 $open = $r->open_dt ? Carbon::parse((string) $r->open_dt) : null;
 
+                $r->dsa_name   = (string) ($r->dsa_name ?? '');
                 $r->cif        = (string) ($r->cif ?? '');
                 $r->account_no = (string) ($r->account_no ?? '');
                 $r->open_date  = $open?->toDateString();
@@ -219,6 +223,8 @@ final class DsaAccountOpeningService
 
         return (object) [
             'dsa_code'       => $code,
+            // A code's accounts can carry slightly different spellings; show the most common.
+            'dsa_name'       => (string) $rows->pluck('dsa_name')->filter()->countBy()->sortDesc()->keys()->first(),
             'wtd_accounts'   => $wtd->count(),
             'wtd_customers'  => $wtd->pluck('cif')->filter()->unique()->count(),
             'mtd_accounts'   => $mtd->count(),
