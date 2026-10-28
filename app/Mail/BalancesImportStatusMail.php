@@ -22,15 +22,17 @@ class BalancesImportStatusMail extends Mailable
         public string $message,
         public array $details = [],
         protected ?array $recipients = null,
+        public string $source = 'Balances Import',
     ) {
     }
 
     public function build()
     {
         return $this->to($this->recipients())
-            ->subject("[Balances Import] {$this->heading}")
+            ->subject("[{$this->source}] {$this->heading}")
             ->view('emails.finance.balances-import-status')
             ->with([
+                'source' => $this->source,
                 'level' => $this->level,
                 'heading' => $this->heading,
                 'statusMessage' => $this->message,

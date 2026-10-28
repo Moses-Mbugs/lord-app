@@ -1,6 +1,15 @@
 <?php
 
 return [
+    // Nightly sync of customer_accounts_imports from the intranet scripts API
+    // (finance:sync-customer-accounts). Each script returns { data: [ {row}, ... ] }.
+    'customer_accounts' => [
+        'api_url' => env('CUSTOMER_ACCOUNTS_API_URL', 'http://10.8.32.3:400/api/scripts/execute'),
+        'scripts' => ['CORP_CUSTOMERS', 'INDI_CUSTOMERS'],
+        'timeout_seconds' => (int) env('CUSTOMER_ACCOUNTS_API_TIMEOUT', 1800),
+        'notify_to' => env('CUSTOMER_ACCOUNTS_NOTIFY_EMAIL', 'mmuigai@ecobank.com'),
+    ],
+
     'balances' => [
 
         'base_dir' => '/mnt/eke_dailyflexcubereports',

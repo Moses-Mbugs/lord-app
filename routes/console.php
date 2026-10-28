@@ -23,6 +23,16 @@ Artisan::command('inspire', function () {
         ->runInBackground()
         ->appendOutputTo(storage_path('logs/balances-pipeline.log'));
 
+    // Nightly pull of CORP + INDI customers from the intranet scripts API into
+    // customer_accounts_imports (insert new / update existing, never deletes).
+    // Replaces the manual export:customers → CSV → DBeaver import.
+    Schedule::command('finance:sync-customer-accounts')
+        ->timezone('Africa/Nairobi')
+        ->dailyAt('01:00')
+        ->withoutOverlapping(120)
+        ->runInBackground()
+        ->appendOutputTo(storage_path('logs/customer-accounts-sync.log'));
+
     // Prune customer_balances daily detail down to month-end snapshots overnight,
     // well clear of the 07:15 weekday balances import above.
     Schedule::command('finance:prune-balances')

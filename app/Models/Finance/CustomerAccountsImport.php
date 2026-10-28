@@ -10,6 +10,7 @@ class CustomerAccountsImport extends Model
 
     protected $fillable = [
         'introducer',
+        'account_initiator_name',
         'cust_category',
         'eti_cif_class_category',
         'etibiseg2',
