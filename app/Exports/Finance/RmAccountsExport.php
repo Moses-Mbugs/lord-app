@@ -61,7 +61,7 @@ class RmAccountsExport implements
         return substr($this->rmCode, 0, 31) ?: 'RM Accounts';
     }
 
-    public function styles(Worksheet $sheet)
+    public function styles(Worksheet $sheet): array
     {
         $sheet->getStyle('1')->getFont()->setBold(true);
 

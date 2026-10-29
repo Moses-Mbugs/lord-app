@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace App\Exports\Finance;
 
 use Illuminate\Support\Collection;
+use Maatwebsite\Excel\Concerns\Export;
 use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 
-class TopMoversWorkbookExport implements WithMultipleSheets
+class TopMoversWorkbookExport implements Export, WithMultipleSheets
 {
     public function __construct(
         private array      $grouped,

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Exports\Finance;
 
 use Carbon\Carbon;
+use Maatwebsite\Excel\Concerns\Export;
 use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 
 /**
@@ -12,7 +13,7 @@ use Maatwebsite\Excel\Concerns\WithMultipleSheets;
  * month's top/bottom branches by deposit movement, and each branch's top 20 deposit
  * and loan customer movers.
  */
-class MonthlyBranchWorkbookExport implements WithMultipleSheets
+class MonthlyBranchWorkbookExport implements Export, WithMultipleSheets
 {
     /** @param array $report MonthlyPerformanceReportService::buildBranches() result */
     public function __construct(private readonly array $report) {}

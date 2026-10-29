@@ -9,6 +9,7 @@ use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithColumnFormatting;
 use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Concerns\WithHeadings;
+use Maatwebsite\Excel\Concerns\Export;
 use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithTitle;
@@ -24,7 +25,7 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
  * customer gainers/losers, and per RM the top loan account gainers/losers — same shape as
  * BranchMoversWorkbookExport.
  */
-class RmMoversWorkbookExport implements WithMultipleSheets
+class RmMoversWorkbookExport implements Export, WithMultipleSheets
 {
     /**
      * @param array<string, array{rmRows: \Illuminate\Support\Collection, totals: object}> $segmentsData

@@ -7,6 +7,7 @@ namespace App\Exports\Finance;
 use Maatwebsite\Excel\Concerns\FromArray;
 use Maatwebsite\Excel\Concerns\WithColumnWidths;
 use Maatwebsite\Excel\Concerns\WithEvents;
+use Maatwebsite\Excel\Concerns\Export;
 use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 use Maatwebsite\Excel\Concerns\WithTitle;
 use Maatwebsite\Excel\Events\AfterSheet;
@@ -16,7 +17,7 @@ use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
-class WeeklyLoanWorkbookExport implements WithMultipleSheets
+class WeeklyLoanWorkbookExport implements Export, WithMultipleSheets
 {
     // Order + sheet title for each top-level segment in the (now-segmented) drilldown.
     private const DRILLDOWN_SEGMENT_TITLES = [

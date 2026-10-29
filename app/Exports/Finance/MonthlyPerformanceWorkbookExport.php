@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Exports\Finance;
 
 use Carbon\Carbon;
+use Maatwebsite\Excel\Concerns\Export;
 use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 
 /**
@@ -12,7 +13,7 @@ use Maatwebsite\Excel\Concerns\WithMultipleSheets;
  * segment), and the month's top CIF gainers/losers for each. Branches have their own
  * workbook (MonthlyBranchWorkbookExport).
  */
-class MonthlyPerformanceWorkbookExport implements WithMultipleSheets
+class MonthlyPerformanceWorkbookExport implements Export, WithMultipleSheets
 {
     /** @param array $report MonthlyPerformanceReportService::build() result */
     public function __construct(private readonly array $report) {}

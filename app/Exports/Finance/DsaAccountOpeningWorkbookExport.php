@@ -9,6 +9,7 @@ use Illuminate\Support\Collection;
 use Maatwebsite\Excel\Concerns\FromArray;
 use Maatwebsite\Excel\Concerns\WithCustomValueBinder;
 use Maatwebsite\Excel\Concerns\WithEvents;
+use Maatwebsite\Excel\Concerns\Export;
 use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 use Maatwebsite\Excel\Concerns\WithTitle;
 use Maatwebsite\Excel\Events\AfterSheet;
@@ -26,7 +27,7 @@ use PhpOffice\PhpSpreadsheet\Worksheet\PageSetup;
  * DSA account opening workbook: Summary (book + WTD/MTD), Month on Month, Week on Week, and
  * the account-level detail behind them. $report is DsaAccountOpeningService::build().
  */
-class DsaAccountOpeningWorkbookExport implements WithMultipleSheets
+class DsaAccountOpeningWorkbookExport implements Export, WithMultipleSheets
 {
     private const COUNT = '#,##0';
     private const MONEY = '#,##0';
