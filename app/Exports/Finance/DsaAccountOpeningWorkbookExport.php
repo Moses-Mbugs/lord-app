@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Exports\Finance;
 
 use Carbon\Carbon;
+use Illuminate\Support\Collection;
 use Maatwebsite\Excel\Concerns\FromArray;
 use Maatwebsite\Excel\Concerns\WithCustomValueBinder;
 use Maatwebsite\Excel\Concerns\WithEvents;
@@ -40,9 +41,13 @@ class DsaAccountOpeningWorkbookExport implements WithMultipleSheets
         $r = $this->report;
         $t = $r['totals'];
 
+        $daily  = $r['newStart'] !== null;
+        $prefix = $daily ? 'DSA Daily Report' : 'DSA Weekly Report';
+
         $fmt      = fn (?string $d) => $d ? Carbon::parse($d)->format('d M Y') : 'n/a';
         $subtitle = "As at {$fmt($r['asOf'])}  ·  WTD from {$fmt($r['wtdStart'])}  ·  MTD from {$fmt($r['mtdStart'])}"
             . "  ·  Deposits as at {$fmt($r['depositDate'])}  ·  Loans as at {$fmt($r['loanDate'])}  ·  Staff accounts excluded";
+        $newRange = $daily ? "New = opened {$fmt($r['newStart'])} – {$fmt($r['asOf'])}" : '';
 
         $codeCol  = ['width' => 12, 'text' => true];
         $nameCol  = ['width' => 30];
@@ -50,7 +55,7 @@ class DsaAccountOpeningWorkbookExport implements WithMultipleSheets
         $moneyCol = ['width' => 18, 'format' => self::MONEY];
 
         $summaryRow = fn ($d) => [
-            $d->dsa_code, $d->dsa_name, $d->book_accounts, $d->book_customers,
+            $d->dsa_code, $d->dsa_name, ...($daily ? [$d->new_accounts] : []), $d->book_accounts, $d->book_customers,
             $d->wtd_accounts, $d->wtd_customers, $d->mtd_accounts, $d->mtd_customers,
             $d->deposits, $d->loans,
         ];
@@ -58,22 +63,32 @@ class DsaAccountOpeningWorkbookExport implements WithMultipleSheets
         $weekRow  = fn ($d) => [$d->dsa_code, $d->dsa_name, ...array_values($d->weeks), array_sum($d->weeks)];
 
         return [
+            ...($daily ? [$this->accountSheet(
+                $r['newAccounts'],
+                'New Accounts',
+                "{$prefix} — New Accounts",
+                $newRange . '  ·  ' . $subtitle . '  ·  Customer loans shown once per CIF',
+                'No DSA-introduced accounts were opened in this period.'
+            )] : []),
             new DsaReportSheet(
                 'Summary',
-                'DSA Account Opening — Summary',
-                $subtitle . '  ·  Deposits/Loans cover every account the DSA has opened; loans are by customer (CIF)',
+                "{$prefix} — Summary",
+                ($daily ? $newRange . '  ·  ' : '') . $subtitle . '  ·  Deposits/Loans cover every account the DSA has opened; loans are by customer (CIF)',
                 [
-                    'DSA Code', 'DSA Name', 'Accounts Opened (All Time)', 'Customers (All Time)',
+                    'DSA Code', 'DSA Name', ...($daily ? ['New Accounts'] : []), 'Accounts Opened (All Time)', 'Customers (All Time)',
                     'WTD Accounts', 'WTD Customers', 'MTD Accounts', 'MTD Customers',
                     'Deposits (KES)', 'Loans (KES)',
                 ],
-                [$codeCol, $nameCol, $countCol + ['width' => 15], $countCol + ['width' => 15], $countCol, $countCol, $countCol, $countCol, $moneyCol, $moneyCol],
+                [
+                    $codeCol, $nameCol, ...($daily ? [$countCol] : []), $countCol + ['width' => 15], $countCol + ['width' => 15],
+                    $countCol, $countCol, $countCol, $countCol, $moneyCol, $moneyCol,
+                ],
                 $r['dsaRows']->map($summaryRow)->all(),
                 $summaryRow($t)
             ),
             new DsaReportSheet(
                 'Month on Month',
-                'DSA Account Opening — Month on Month',
+                "{$prefix} — Month on Month",
                 $subtitle,
                 ['DSA Code', 'DSA Name', ...array_column($r['months'], 'label'), 'Total'],
                 [$codeCol, $nameCol, ...array_fill(0, count($r['months']) + 1, $countCol + ['width' => 16])],
@@ -82,28 +97,36 @@ class DsaAccountOpeningWorkbookExport implements WithMultipleSheets
             ),
             new DsaReportSheet(
                 'Week on Week',
-                'DSA Account Opening — Week on Week',
+                "{$prefix} — Week on Week",
                 $subtitle . '  ·  Mon–Sun weeks',
                 ['DSA Code', 'DSA Name', ...array_column($r['weeks'], 'label'), 'Total'],
                 [$codeCol, $nameCol, ...array_fill(0, count($r['weeks']) + 1, $countCol + ['width' => 15])],
                 $r['dsaRows']->map($weekRow)->all(),
                 $weekRow($t)
             ),
-            $this->detailSheet($subtitle),
+            $this->accountSheet(
+                $r['accounts'],
+                'Account Detail',
+                "{$prefix} — Account Detail (all DSA accounts)",
+                $subtitle . '  ·  Customer loans shown once per CIF'
+            ),
         ];
     }
 
-    private function detailSheet(string $subtitle): DsaReportSheet
+    /** Account-level list (newest first) with a TOTAL row computed from the accounts given. */
+    private function accountSheet(Collection $accounts, string $sheetTitle, string $heading, string $subtitle, string $emptyMessage = 'No DSA-introduced accounts found.'): DsaReportSheet
     {
         $excelDate = fn (?string $d) => $d ? ExcelDate::stringToExcel($d) : '';
 
         // Loans are per customer: show them on the CIF's first row only, so the column sums correctly.
         $seenCif = [];
-        $rows = $this->report['accounts']
+        $loanTotal = 0.0;
+        $rows = $accounts
             ->sortBy([fn ($a, $b) => strcmp($b->open_date ?? '', $a->open_date ?? '') ?: strcmp($a->dsa_code, $b->dsa_code)])
-            ->map(function ($a) use ($excelDate, &$seenCif) {
+            ->map(function ($a) use ($excelDate, &$seenCif, &$loanTotal) {
                 $firstForCif = $a->cif !== '' && ! isset($seenCif[$a->cif]);
                 $seenCif[$a->cif] = true;
+                $loanTotal += $firstForCif ? $a->cif_loans : 0;
 
                 return [
                     $a->dsa_code, $a->dsa_name, $a->cif, $a->account_no, $a->customer_name, $a->branch_code,
@@ -116,12 +139,12 @@ class DsaAccountOpeningWorkbookExport implements WithMultipleSheets
             ->values()
             ->all();
 
-        $t = $this->report['totals'];
+        $customers = $accounts->pluck('cif')->filter()->unique()->count();
 
         return new DsaReportSheet(
-            'Account Detail',
-            'DSA Account Opening — Account Detail',
-            $subtitle . '  ·  Customer loans shown once per CIF',
+            $sheetTitle,
+            $heading,
+            $subtitle,
             [
                 'DSA Code', 'DSA Name', 'CIF', 'Account No', 'Customer Name', 'Branch',
                 'Open Date', 'Week Commencing', 'Month', 'Deposit Balance (KES)', 'Customer Loans (KES)',
@@ -140,9 +163,13 @@ class DsaAccountOpeningWorkbookExport implements WithMultipleSheets
                 ['width' => 20, 'format' => self::MONEY],
             ],
             $rows,
-            ['TOTAL', '', '', '', number_format($t->book_accounts) . ' accounts · ' . number_format($t->book_customers) . ' customers', '', '', '', '', $t->deposits, $t->loans],
+            [
+                'TOTAL', '', '', '', number_format($accounts->count()) . ' accounts · ' . number_format($customers) . ' customers',
+                '', '', '', '', round((float) $accounts->sum('deposit_balance'), 2), round($loanTotal, 2),
+            ],
             'E5',
-            true
+            true,
+            $emptyMessage
         );
     }
 }
@@ -169,7 +196,8 @@ class DsaReportSheet extends DefaultValueBinder implements FromArray, WithTitle,
         private readonly array $rows,
         private readonly ?array $totalRow = null,
         private readonly string $freezeAt = 'C5',
-        private readonly bool $autoFilter = false
+        private readonly bool $autoFilter = false,
+        private readonly string $emptyMessage = 'No DSA-introduced accounts found.'
     ) {
     }
 
@@ -181,7 +209,7 @@ class DsaReportSheet extends DefaultValueBinder implements FromArray, WithTitle,
     public function array(): array
     {
         $body = empty($this->rows)
-            ? [['No DSA-introduced accounts found.']]
+            ? [[$this->emptyMessage]]
             : [...$this->rows, ...($this->totalRow ? [$this->totalRow] : [])];
 
         return [[$this->heading], [$this->subtitle], [''], $this->headings, ...$body];

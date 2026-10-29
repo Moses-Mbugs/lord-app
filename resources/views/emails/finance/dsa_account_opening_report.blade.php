@@ -20,9 +20,26 @@
     $money         = fn ($v) => number_format((float) round($v));
     $activeDsasMtd = $dsaRows->where('mtd_accounts', '>', 0)->count();
 
+    // Daily: "new" = opened since the previous weekday's report. Weekly: WTD is the full Mon–Sun week.
+    $daily       = ($report['newStart'] ?? null) !== null;
+    $newAccounts = $report['newAccounts'] ?? collect();
+    $newLimit    = 30;
+    $newRange    = $daily
+        ? ($report['newStart'] === $report['asOf']
+            ? \Carbon\Carbon::parse($report['asOf'])->format('D d M Y')
+            : \Carbon\Carbon::parse($report['newStart'])->format('D d M') . ' – ' . \Carbon\Carbon::parse($report['asOf'])->format('D d M Y'))
+        : null;
+    $weekLabel   = $daily ? 'WTD' : 'Week';
+
     $tiles = [
+        ...($daily ? [[
+            'label' => 'New Accounts',
+            'value' => number_format($t->new_accounts),
+            'sub'   => $newRange,
+            'fg'    => '#7a4b00', 'bg' => '#FFF4DB', 'border' => '#F6D58E',
+        ]] : []),
         [
-            'label' => 'Accounts WTD',
+            'label' => $daily ? 'Accounts WTD' : 'Accounts This Week',
             'value' => number_format($t->wtd_accounts),
             'sub'   => number_format($t->wtd_customers) . ' customers',
             'fg'    => '#005B82', 'bg' => '#E8F4FB', 'border' => '#B3D9ED',
@@ -61,15 +78,18 @@
             <tr>
                 <td style="padding:18px 22px 16px; background:#005B82;" bgcolor="#005B82">
                     <div style="font-size:18px; font-weight:900; letter-spacing:-0.2px; margin:0 0 4px 0; color:#ffffff;">
-                        DSA Account Opening Report
+                        {{ $daily ? 'DSA Daily Report' : 'DSA Weekly Report' }}
                     </div>
                     <div style="font-size:11px; font-weight:600; color:#ccecf7;">
                         Accounts opened by Direct Sales Agents (introducer CN…) — Finance Analytics
                     </div>
                     <div style="margin-top:10px;">
                         <span style="display:inline-block; padding:4px 10px; border-radius:999px; background:rgba(255,255,255,0.16); border:1px solid rgba(255,255,255,0.28); font-size:11px; font-weight:800; color:#ffffff; white-space:nowrap;">
-                            As at&nbsp;<strong style="font-weight:900; color:#BED600;">{{ $fmtDate($report['asOf']) }}</strong>
-                            &nbsp;·&nbsp; WTD from <strong style="font-weight:900; color:#BED600;">{{ $fmtDate($report['wtdStart']) }}</strong>
+                            @if ($daily)
+                                New accounts&nbsp;<strong style="font-weight:900; color:#BED600;">{{ $newRange }}</strong>
+                            @else
+                                Week&nbsp;<strong style="font-weight:900; color:#BED600;">{{ \Carbon\Carbon::parse($report['wtdStart'])->format('d M') }} – {{ $fmtDate($report['asOf']) }}</strong>
+                            @endif
                             &nbsp;·&nbsp; MTD from <strong style="font-weight:900; color:#BED600;">{{ $fmtDate($report['mtdStart']) }}</strong>
                         </span>
                     </div>
@@ -84,7 +104,7 @@
             <table width="100%" cellpadding="0" cellspacing="0" style="width:100%; margin:0 0 16px; mso-table-lspace:0pt; mso-table-rspace:0pt;">
                 <tr>
                     @foreach ($tiles as $tile)
-                        <td width="25%" style="padding:0 {{ $loop->first ? 0 : 4 }}px 0 {{ $loop->last ? 0 : 4 }}px; vertical-align:top;">
+                        <td width="{{ floor(100 / count($tiles)) }}%" style="padding:0 {{ $loop->first ? 0 : 4 }}px 0 {{ $loop->last ? 0 : 4 }}px; vertical-align:top;">
                             <div style="background:{{ $tile['bg'] }}; border:1px solid {{ $tile['border'] }}; border-radius:10px; padding:10px 10px;">
                                 <div style="font-size:8.5px; text-transform:uppercase; letter-spacing:0.6px; font-weight:900; color:{{ $tile['fg'] }}; opacity:0.85; margin-bottom:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                                     {{ $tile['label'] }}
@@ -101,32 +121,73 @@
                 </tr>
             </table>
 
-            {{-- SECTION: WEEK ON WEEK (all DSAs) --}}
-            <div style="margin:0 0 10px; padding-bottom:8px; border-bottom:2px solid #E0E0E0;">
-                <span style="display:inline-block; width:5px; height:16px; background:linear-gradient(180deg,#BED600 0%,#669438 100%); border-radius:3px; vertical-align:middle; margin-right:8px;"></span>
-                <span style="font-size:14px; font-weight:900; color:#005B82; letter-spacing:-0.15px;">Week on Week</span>
-                <span style="font-size:11px; font-weight:700; color:#979797;"> — accounts opened, all DSAs (Mon–Sun weeks)</span>
-            </div>
+            @if ($daily)
+                {{-- SECTION: NEW ACCOUNTS (daily) --}}
+                <div style="margin:0 0 10px; padding-bottom:8px; border-bottom:2px solid #E0E0E0;">
+                    <span style="display:inline-block; width:5px; height:16px; background:linear-gradient(180deg,#F6D58E 0%,#B7791F 100%); border-radius:3px; vertical-align:middle; margin-right:8px;"></span>
+                    <span style="font-size:14px; font-weight:900; color:#005B82; letter-spacing:-0.15px;">New Accounts</span>
+                    <span style="font-size:11px; font-weight:700; color:#979797;">
+                        — opened {{ $newRange }}@if ($newAccounts->count() > $newLimit); first {{ $newLimit }} of {{ $newAccounts->count() }}, full list in the attachment @endif
+                    </span>
+                </div>
 
-            <table width="100%" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin:0 0 20px;">
-                <tr>
-                    @foreach ($weeks as $w)
-                        <th style="{{ $th }} text-align:right;">{{ $w['label'] }}</th>
-                    @endforeach
-                </tr>
-                <tr>
-                    @foreach ($weeks as $key => $w)
-                        <td style="{{ $tdTotal }} text-align:right;">{{ number_format($t->weeks[$key]) }}</td>
-                    @endforeach
-                </tr>
-            </table>
+                @if ($newAccounts->isEmpty())
+                    <div style="font-size:12px; color:#646464; padding:12px; background:#F5F5F5; border-radius:8px; margin:0 0 20px;">
+                        No DSA-introduced accounts were opened in this period.
+                    </div>
+                @else
+                    <table width="100%" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin:0 0 20px;">
+                        <tr>
+                            <th style="{{ $th }} text-align:left;">Opened</th>
+                            <th style="{{ $th }} text-align:left;">DSA</th>
+                            <th style="{{ $th }} text-align:left;">Customer</th>
+                            <th style="{{ $th }} text-align:left;">Account</th>
+                            <th style="{{ $th }} text-align:left;">Branch</th>
+                            <th style="{{ $th }} text-align:right;">Deposit</th>
+                        </tr>
+                        @foreach ($newAccounts->sortBy([['open_date', 'desc'], ['dsa_code', 'asc']])->take($newLimit) as $a)
+                            <tr style="background:{{ $loop->even ? '#FAFAFA' : '#ffffff' }};">
+                                <td style="{{ $td }}">{{ \Carbon\Carbon::parse($a->open_date)->format('D d M') }}</td>
+                                <td style="{{ $td }} white-space:normal;">
+                                    <strong style="color:#005B82;">{{ $a->dsa_code }}</strong>
+                                    @if ($a->dsa_name !== '')<br><span style="font-size:10px; color:#646464;">{{ $a->dsa_name }}</span>@endif
+                                </td>
+                                <td style="{{ $td }} white-space:normal;">{{ $a->customer_name }}<br><span style="font-size:10px; color:#979797;">CIF {{ $a->cif }}</span></td>
+                                <td style="{{ $td }}">{{ $a->account_no }}</td>
+                                <td style="{{ $td }}">{{ $a->branch_code }}</td>
+                                <td style="{{ $td }} text-align:right;">{{ $money($a->deposit_balance) }}</td>
+                            </tr>
+                        @endforeach
+                    </table>
+                @endif
+            @else
+                {{-- SECTION: WEEK ON WEEK (weekly only) --}}
+                <div style="margin:0 0 10px; padding-bottom:8px; border-bottom:2px solid #E0E0E0;">
+                    <span style="display:inline-block; width:5px; height:16px; background:linear-gradient(180deg,#BED600 0%,#669438 100%); border-radius:3px; vertical-align:middle; margin-right:8px;"></span>
+                    <span style="font-size:14px; font-weight:900; color:#005B82; letter-spacing:-0.15px;">Week on Week</span>
+                    <span style="font-size:11px; font-weight:700; color:#979797;"> — accounts opened, all DSAs (Mon–Sun weeks)</span>
+                </div>
+
+                <table width="100%" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin:0 0 20px;">
+                    <tr>
+                        @foreach ($weeks as $w)
+                            <th style="{{ $th }} text-align:right;">{{ $w['label'] }}</th>
+                        @endforeach
+                    </tr>
+                    <tr>
+                        @foreach ($weeks as $key => $w)
+                            <td style="{{ $tdTotal }} text-align:right;">{{ number_format($t->weeks[$key]) }}</td>
+                        @endforeach
+                    </tr>
+                </table>
+            @endif
 
             {{-- SECTION: DSA TABLE --}}
             <div style="margin:0 0 10px; padding-bottom:8px; border-bottom:2px solid #E0E0E0;">
                 <span style="display:inline-block; width:5px; height:16px; background:linear-gradient(180deg,#BED600 0%,#669438 100%); border-radius:3px; vertical-align:middle; margin-right:8px;"></span>
                 <span style="font-size:14px; font-weight:900; color:#005B82; letter-spacing:-0.15px;">Accounts Opened by DSA</span>
                 <span style="font-size:11px; font-weight:700; color:#979797;">
-                    — top {{ min($topLimit, $dsaRows->count()) }} of {{ $dsaRows->count() }} DSAs by MTD; all DSAs in the attachment
+                    — top {{ min($topLimit, $dsaRows->count()) }} of {{ $dsaRows->count() }} DSAs by {{ $daily ? 'new accounts, then MTD' : 'MTD' }}; all DSAs in the attachment
                 </span>
             </div>
 
@@ -139,7 +200,8 @@
                     <tr>
                         <th style="{{ $th }} text-align:left;">DSA Code</th>
                         <th style="{{ $th }} text-align:left;">DSA Name</th>
-                        <th style="{{ $th }} text-align:right;">WTD</th>
+                        @if ($daily)<th style="{{ $th }} text-align:right;">New</th>@endif
+                        <th style="{{ $th }} text-align:right;">{{ $weekLabel }}</th>
                         <th style="{{ $th }} text-align:right;">MTD</th>
                         <th style="{{ $th }} text-align:right;">Accounts<br><span style="font-weight:700; opacity:0.8;">all time</span></th>
                         <th style="{{ $th }} text-align:right;">Deposits<br><span style="font-weight:700; opacity:0.8;">{{ $report['depositDate'] ? $fmtDate($report['depositDate']) : '' }}</span></th>
@@ -149,6 +211,7 @@
                         <tr style="background:{{ $loop->even ? '#FAFAFA' : '#ffffff' }};">
                             <td style="{{ $td }} font-weight:800; color:#005B82;">{{ $d->dsa_code }}</td>
                             <td style="{{ $td }} white-space:normal;">{{ $d->dsa_name !== '' ? $d->dsa_name : '—' }}</td>
+                            @if ($daily)<td style="{{ $td }} text-align:right; font-weight:800; color:#7a4b00;">{{ number_format($d->new_accounts) }}</td>@endif
                             <td style="{{ $td }} text-align:right;">{{ number_format($d->wtd_accounts) }}</td>
                             <td style="{{ $td }} text-align:right; font-weight:800;">{{ number_format($d->mtd_accounts) }}</td>
                             <td style="{{ $td }} text-align:right;">{{ number_format($d->book_accounts) }}</td>
@@ -158,6 +221,7 @@
                     @endforeach
                     <tr>
                         <td style="{{ $tdTotal }}" colspan="2">TOTAL (all DSAs)</td>
+                        @if ($daily)<td style="{{ $tdTotal }} text-align:right;">{{ number_format($t->new_accounts) }}</td>@endif
                         <td style="{{ $tdTotal }} text-align:right;">{{ number_format($t->wtd_accounts) }}</td>
                         <td style="{{ $tdTotal }} text-align:right;">{{ number_format($t->mtd_accounts) }}</td>
                         <td style="{{ $tdTotal }} text-align:right;">{{ number_format($t->book_accounts) }}</td>

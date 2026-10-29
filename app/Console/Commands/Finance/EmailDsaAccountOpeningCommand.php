@@ -16,7 +16,9 @@ use Maatwebsite\Excel\Facades\Excel;
 class EmailDsaAccountOpeningCommand extends Command
 {
     protected $signature = 'reports:email-dsa-accounts
-        {date? : As-at date YYYY-MM-DD (defaults to today)}
+        {date? : As-at date YYYY-MM-DD (defaults to yesterday — accounts sync overnight, so today has none yet)}
+        {--daily : Daily version: accounts opened since the last daily report (Mon covers Fri–Sun) + WTD/MTD}
+        {--weekly : Weekly version (the default): full report incl. week-on-week and month-on-month}
         {--to= : Override TO recipients (comma/semicolon/space separated)}
         {--cc= : Override CC recipients (comma/semicolon/space separated)}
         {--weeks=8 : Number of week-on-week columns (current week included)}
@@ -29,13 +31,26 @@ class EmailDsaAccountOpeningCommand extends Command
 
     public function handle(DsaAccountOpeningService $service): int
     {
-        $asOf = Carbon::parse((string) ($this->argument('date') ?: today()->toDateString()))->toDateString();
+        if ($this->option('daily') && $this->option('weekly')) {
+            $this->error('Pass either --daily or --weekly, not both.');
+            return self::FAILURE;
+        }
+
+        $daily = (bool) $this->option('daily');
+        $asOf  = Carbon::parse((string) ($this->argument('date') ?: today()->subDay()->toDateString()))->toDateString();
+
+        // Daily runs on weekdays the morning after $asOf, so "new" covers every day since the
+        // previous weekday's run: Tue–Fri → just $asOf, Mon → Fri, Sat and Sun.
+        $newSince = $daily
+            ? Carbon::parse($asOf)->addDay()->previousWeekday()->toDateString()
+            : null;
 
         $report = $service->build(
             $asOf,
             max(1, (int) $this->option('weeks')),
-            max(0, (int) $this->option('months'))
-        );
+            max(0, (int) $this->option('months')),
+            $newSince
+        ) + ['mode' => $daily ? 'daily' : 'weekly'];
 
         if ($this->option('dry-run')) {
             $this->printReport($report);
@@ -65,16 +80,17 @@ class EmailDsaAccountOpeningCommand extends Command
 
         $mailable->attachData(
             Excel::raw(new DsaAccountOpeningWorkbookExport($report), ExcelWriter::XLSX),
-            "DSA_Account_Opening_{$asOf}.xlsx",
+            'DSA_' . ($daily ? 'Daily' : 'Weekly') . "_Account_Opening_{$asOf}.xlsx",
             ['mime' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
         );
 
         Mail::to($to)->cc($cc)->send($mailable);
 
-        $this->info('DSA account opening email sent (with Excel attachment).');
+        $this->info("DSA {$report['mode']} email sent (with Excel attachment).");
         $this->line('TO: ' . implode(', ', $to));
         $this->line('CC: ' . (empty($cc) ? '(none)' : implode(', ', $cc)));
-        $this->line("As at {$asOf} | WTD: {$report['totals']->wtd_accounts} | MTD: {$report['totals']->mtd_accounts} | DSAs: {$report['dsaRows']->count()}");
+        $this->line("As at {$asOf}" . ($daily ? " | New since {$newSince}: {$report['totals']->new_accounts}" : '')
+            . " | WTD: {$report['totals']->wtd_accounts} | MTD: {$report['totals']->mtd_accounts} | DSAs: {$report['dsaRows']->count()}");
 
         return self::SUCCESS;
     }
@@ -87,14 +103,29 @@ class EmailDsaAccountOpeningCommand extends Command
         $this->line("WTD: {$t->wtd_accounts} accounts / {$t->wtd_customers} customers | MTD: {$t->mtd_accounts} accounts / {$t->mtd_customers} customers");
         $this->line('Deposits as at ' . ($report['depositDate'] ?? 'n/a') . ' | Loans as at ' . ($report['loanDate'] ?? 'n/a'));
 
+        $daily = $report['newStart'] !== null;
         $money = fn ($v) => number_format((float) $v, 0);
-        $row   = fn ($d) => [$d->dsa_code, $d->dsa_name, $d->wtd_accounts, $d->mtd_accounts, ...array_values($d->months), $d->book_accounts, $money($d->deposits), $money($d->loans)];
+        $row   = fn ($d) => [
+            $d->dsa_code, $d->dsa_name, ...($daily ? [$d->new_accounts] : []), $d->wtd_accounts, $d->mtd_accounts,
+            ...array_values($d->months), $d->book_accounts, $money($d->deposits), $money($d->loans),
+        ];
+
+        if ($daily) {
+            $this->line("Mode: daily — new = opened {$report['newStart']} → {$report['asOf']}: {$t->new_accounts} accounts");
+        }
 
         $this->newLine();
         $this->table(
-            ['DSA', 'Name', 'WTD', 'MTD', ...array_column($report['months'], 'label'), 'Accts (all)', 'Deposits', 'Loans'],
+            ['DSA', 'Name', ...($daily ? ['New'] : []), 'WTD', 'MTD', ...array_column($report['months'], 'label'), 'Accts (all)', 'Deposits', 'Loans'],
             [...$report['dsaRows']->map($row)->all(), $row($t)]
         );
+
+        if ($daily && $report['newAccounts']->isNotEmpty()) {
+            $this->table(
+                ['Opened', 'DSA', 'Customer', 'CIF', 'Account', 'Branch'],
+                $report['newAccounts']->map(fn ($a) => [$a->open_date, $a->dsa_code, $a->customer_name, $a->cif, $a->account_no, $a->branch_code])->all()
+            );
+        }
 
         $this->table(
             array_column($report['weeks'], 'label'),

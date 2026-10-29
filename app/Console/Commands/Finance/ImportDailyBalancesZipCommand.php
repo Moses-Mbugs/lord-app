@@ -101,6 +101,8 @@ class ImportDailyBalancesZipCommand extends Command
                 $this->info('Rebuilding RM workload summary...');
                 Artisan::call('finance:build-rm-workload', [], $this->output);
 
+                $this->sendDsaReport($dateOpt !== '');
+
                 $this->sendMonthlyReportIfMonthClosed($date, $dateOpt !== '');
 
                 return self::SUCCESS;
@@ -126,6 +128,39 @@ class ImportDailyBalancesZipCommand extends Command
         }
 
         return self::FAILURE;
+    }
+
+    /**
+     * DSA account opening report, sent only once fresh balances are in so its deposit figures
+     * are current. Monday sends the weekly (the full Mon–Sun week just ended, which also
+     * covers Fri–Sun openings); Tue–Fri send the daily for yesterday. Both are "as at"
+     * yesterday, since customer accounts sync overnight. Manual --date runs (backfills)
+     * never trigger it. A failure here is reported but doesn't fail the import.
+     */
+    private function sendDsaReport(bool $isManualRun): void
+    {
+        if ($isManualRun) {
+            return;
+        }
+
+        $today = now()->timezone(self::TIMEZONE);
+        $mode  = $today->isMonday() ? '--weekly' : '--daily';
+        $asOf  = $today->copy()->subDay()->toDateString();
+
+        $this->info("Sending DSA report ({$mode}, as at {$asOf})...");
+
+        try {
+            $exit = Artisan::call('reports:email-dsa-accounts', ['date' => $asOf, $mode => true], $this->output);
+        } catch (Throwable $e) {
+            $exit = self::FAILURE;
+            $this->error('reports:email-dsa-accounts threw: ' . $e->getMessage());
+        }
+
+        if ($exit !== self::SUCCESS) {
+            $this->notify('error', 'DSA report failed', "Balances were imported, but the DSA report failed. Re-run: php artisan reports:email-dsa-accounts {$asOf} {$mode}", [
+                'As at' => $asOf,
+            ]);
+        }
     }
 
     /**

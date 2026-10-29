@@ -25,7 +25,11 @@ class DsaAccountOpeningReportMail extends Mailable
     {
         $asOf = \Carbon\Carbon::parse($this->report['asOf'])->format('d M Y');
 
-        return $this->subject("DSA Account Opening Report — as at {$asOf}")
+        $subject = ($this->report['newStart'] ?? null) !== null
+            ? "DSA Daily Report — {$asOf}"
+            : 'DSA Weekly Report — week ending ' . $asOf;
+
+        return $this->subject($subject)
             ->view('emails.finance.dsa_account_opening_report')
             ->with([
                 'report'   => $this->report,

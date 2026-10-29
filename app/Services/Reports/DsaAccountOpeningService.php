@@ -35,32 +35,36 @@ final class DsaAccountOpeningService
      *     depositDate: ?string, loanDate: ?string,
      *     months: array<string, array{label: string, start: string, end: string}>,
      *     weeks: array<string, array{label: string, start: string, end: string}>,
+     *     newStart: ?string, newAccounts: Collection,
      *     dsaRows: Collection, totals: object, accounts: Collection
      * }
+     *
+     * @param ?string $newSince daily report only: accounts opened from this date to $asOf count
+     *        as "new" (the days since the previous daily report); null for no new-accounts window
      */
-    public function build(string $asOf, int $weeks = 8, int $priorMonths = 2): array
+    public function build(string $asOf, int $weeks = 8, int $priorMonths = 2, ?string $newSince = null): array
     {
         $asOfDate = Carbon::parse($asOf)->startOfDay();
         $wtdStart = $asOfDate->copy()->startOfWeek(Carbon::MONDAY);
         $mtdStart = $asOfDate->copy()->startOfMonth();
 
-        // Month columns, oldest first; the current month runs to $asOf (MTD).
+        // Month columns, oldest first; the current month runs to $asOf (MTD unless it's month-end).
         $months = [];
         for ($i = $priorMonths; $i >= 0; $i--) {
             $start = $mtdStart->copy()->subMonthsNoOverflow($i);
             $months[$start->format('Y-m')] = [
-                'label' => $start->format('M Y') . ($i === 0 ? ' (MTD)' : ''),
+                'label' => $start->format('M Y') . ($i === 0 && ! $asOfDate->isLastOfMonth() ? ' (MTD)' : ''),
                 'start' => $start->toDateString(),
                 'end'   => $i === 0 ? $asOfDate->toDateString() : $start->copy()->endOfMonth()->toDateString(),
             ];
         }
 
-        // Week columns (keyed by Monday), oldest first; the current week runs to $asOf (WTD).
+        // Week columns (keyed by Monday), oldest first; the current week runs to $asOf (WTD unless it's a Sunday).
         $weekCols = [];
         for ($i = $weeks - 1; $i >= 0; $i--) {
             $start = $wtdStart->copy()->subWeeks($i);
             $weekCols[$start->toDateString()] = [
-                'label' => 'W/c ' . $start->format('d M') . ($i === 0 ? ' (WTD)' : ''),
+                'label' => 'W/c ' . $start->format('d M') . ($i === 0 && ! $asOfDate->isSunday() ? ' (WTD)' : ''),
                 'start' => $start->toDateString(),
                 'end'   => $i === 0 ? $asOfDate->toDateString() : $start->copy()->addDays(6)->toDateString(),
             ];
@@ -80,6 +84,7 @@ final class DsaAccountOpeningService
             'asOf'     => $asOfDate->toDateString(),
             'wtdStart' => $wtdStart->toDateString(),
             'mtdStart' => $mtdStart->toDateString(),
+            'newStart' => $newSince ? Carbon::parse($newSince)->toDateString() : null,
             'months'   => $months,
             'weeks'    => $weekCols,
         ];
@@ -87,10 +92,15 @@ final class DsaAccountOpeningService
         $dsaRows = $accounts
             ->groupBy('dsa_code')
             ->map(fn (Collection $rows, string $code) => $this->summarise($code, $rows, $ctx))
-            ->sortBy([['mtd_accounts', 'desc'], ['deposits', 'desc'], ['dsa_code', 'asc']])
+            ->sortBy([['new_accounts', 'desc'], ['mtd_accounts', 'desc'], ['deposits', 'desc'], ['dsa_code', 'asc']])
             ->values();
 
+        $newAccounts = $ctx['newStart'] === null
+            ? collect()
+            : $accounts->filter(fn ($a) => $this->isNew($a, $ctx))->values();
+
         return $ctx + [
+            'newAccounts' => $newAccounts,
             'depositDate' => $depositDate,
             'loanDate'    => $loanDate,
             'dsaRows'     => $dsaRows,
@@ -206,6 +216,15 @@ final class DsaAccountOpeningService
         return [Carbon::parse((string) $date)->toDateString(), $loans];
     }
 
+    /** Opened inside the daily "new since the last report" window ($ctx['newStart'] → asOf). */
+    private function isNew(object $account, array $ctx): bool
+    {
+        return $ctx['newStart'] !== null
+            && $account->open_date !== null
+            && $account->open_date >= $ctx['newStart']
+            && $account->open_date <= $ctx['asOf'];
+    }
+
     private function summarise(string $code, Collection $rows, array $ctx): object
     {
         // Opening counts only use accounts with a parseable open date on or before $asOf.
@@ -225,6 +244,7 @@ final class DsaAccountOpeningService
             'dsa_code'       => $code,
             // A code's accounts can carry slightly different spellings; show the most common.
             'dsa_name'       => (string) $rows->pluck('dsa_name')->filter()->countBy()->sortDesc()->keys()->first(),
+            'new_accounts'   => $rows->filter(fn ($r) => $this->isNew($r, $ctx))->count(),
             'wtd_accounts'   => $wtd->count(),
             'wtd_customers'  => $wtd->pluck('cif')->filter()->unique()->count(),
             'mtd_accounts'   => $mtd->count(),
