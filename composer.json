@@ -10,7 +10,8 @@
         "halaxa/json-machine": "^1.2",
         "laravel/framework": "^13.8",
         "laravel/tinker": "^3.0",
-        "phpoffice/phpspreadsheet": "^5.9"
+        "phpoffice/phpspreadsheet": "^5.9",
+        "spatie/laravel-permission": "~6.0"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",
