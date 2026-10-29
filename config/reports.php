@@ -300,9 +300,13 @@ return [
     // DSA account opening (introducer CN…) — reports:email-dsa-accounts
     'dsa_accounts' => [
         'to' => [
-            'mmuigai@ecobank.com',
+            'MWANJIRU@ecobank.com',
+            'hobiero@ecobank.com',
+            'LMAGERO@ecobank.com',
+            'BMuthini@ecobank.com',
         ],
         'cc' => [
+            'mmuigai@ecobank.com',
         ],
     ],
 
