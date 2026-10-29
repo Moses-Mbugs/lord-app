@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Exports\Finance;
 
+use App\Services\Reports\FinanceDailyMixSummaryService;
 use Maatwebsite\Excel\Concerns\FromArray;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithColumnFormatting;
@@ -11,6 +12,7 @@ use Maatwebsite\Excel\Concerns\WithColumnWidths;
 use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Concerns\Export;
 use Maatwebsite\Excel\Concerns\WithMultipleSheets;
+use Maatwebsite\Excel\Concerns\WithStrictNullComparison;
 use Maatwebsite\Excel\Concerns\WithTitle;
 use Maatwebsite\Excel\Events\AfterSheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
@@ -44,8 +46,14 @@ class WeeklySegmentWorkbookExport implements Export, WithMultipleSheets
             new WeeklySegmentSummarySheet($this->data, 'bank'),
             new WeeklySegmentSummarySheet($this->data, 'lcy'),
             new WeeklySegmentSummarySheet($this->data, 'fcy'),
-            new WeeklySegmentDrilldownSheet($this->drilldown, $this->data['periods'] ?? []),
         ];
+
+        $depositMix = $this->buildDepositMix($this->data['periods'] ?? []);
+        if ($depositMix !== null) {
+            $sheets[] = new WeeklySegmentDepositMixSheet($depositMix, $this->data['periods'] ?? []);
+        }
+
+        $sheets[] = new WeeklySegmentDrilldownSheet($this->drilldown, $this->data['periods'] ?? []);
 
         foreach (self::DRILLDOWN_SEGMENT_TITLES as $code => $title) {
             $subSegments = $this->drilldownBySegment[$code] ?? [];
@@ -57,6 +65,293 @@ class WeeklySegmentWorkbookExport implements Export, WithMultipleSheets
         $sheets[] = new WeeklySegmentHistoricalSheet($this->historicalSection);
 
         return $sheets;
+    }
+
+    /**
+     * CASA / Term split per segment at week end, compared with week start, read from the
+     * nightly finance_daily_mix_summaries rows (GL 211/212/213 only). Each date falls back
+     * to the latest summary on or before it. Returns null when nothing is built for week end.
+     */
+    private function buildDepositMix(array $periods): ?array
+    {
+        $weekStart = $periods['week_start'] ?? null;
+        $weekEnd   = $periods['week_end'] ?? null;
+        if (!$weekStart || !$weekEnd) return null;
+
+        $mixService = app(FinanceDailyMixSummaryService::class);
+
+        $targets = [];
+        foreach (WeeklySegmentDepositMixSheet::SEGMENT_NAMES as $code => $name) {
+            $targets[$code] = ['SEGMENT', $code, $name];
+        }
+        $targets['ALL'] = ['OVERALL', 'ALL', 'Total'];
+
+        $rows = [];
+        $endDates = [];
+        $startDates = [];
+
+        foreach ($targets as $code => [$scope, $segmentCode, $name]) {
+            $end   = $mixService->findSummaryOnOrBefore($weekEnd, $scope, $segmentCode);
+            $start = $mixService->findSummaryOnOrBefore($weekStart, $scope, $segmentCode);
+
+            if ($end) $endDates[] = $end['balance_date'];
+            if ($start) $startDates[] = $start['balance_date'];
+
+            $endMix   = $this->depositMixFigures($end);
+            $startMix = $this->depositMixFigures($start);
+
+            $rows[] = array_merge($endMix, [
+                'code'            => $code,
+                'name'            => $name,
+                'start_casa_pct'  => $start ? $startMix['casa_pct'] : null,
+                'casa_pct_change' => $start && $end ? round($endMix['casa_pct'] - $startMix['casa_pct'], 2) : null,
+                'term_change'     => $start && $end ? round($endMix['term'] - $startMix['term'], 2) : null,
+            ]);
+        }
+
+        if (empty($endDates)) return null;
+
+        return [
+            'end_date'   => max($endDates),
+            'start_date' => $startDates ? max($startDates) : null,
+            'rows'       => $rows,
+        ];
+    }
+
+    private function depositMixFigures(?array $summary): array
+    {
+        $current = (float) ($summary['current_amount'] ?? 0);
+        $savings = (float) ($summary['savings_amount'] ?? 0);
+        $term    = (float) ($summary['term_amount'] ?? 0);
+        $total   = $current + $savings + $term;
+
+        $pct = fn(float $v) => $total > 0 ? round(($v / $total) * 100, 2) : 0.0;
+
+        return [
+            'current'  => round($current, 2),
+            'savings'  => round($savings, 2),
+            'casa'     => round($current + $savings, 2),
+            'casa_pct' => $pct($current + $savings),
+            'term'     => round($term, 2),
+            'term_pct' => $pct($term),
+            'total'    => round($total, 2),
+        ];
+    }
+}
+
+// =============================================================================
+// SHEET — Deposit Mix (CASA vs Term Deposit by segment, week end vs week start)
+// =============================================================================
+
+// WithStrictNullComparison so genuine zeros (e.g. no TD movement) are written as 0, not blank.
+class WeeklySegmentDepositMixSheet implements FromArray, WithTitle, WithColumnWidths, WithEvents, WithStrictNullComparison
+{
+    public const SEGMENT_NAMES = [
+        'CB' => 'Corporate',
+        'CM' => 'Commercial',
+        'CS' => 'Consumer',
+        'OT' => 'Others',
+    ];
+
+    private const SEG_FILL = [
+        'CB' => 'DBEAFE',
+        'CM' => 'EDE9FE',
+        'CS' => 'FEF3C7',
+        'OT' => 'F1F5F9',
+    ];
+
+    private const LAST_COL = 'K';
+
+    private array $segRowCodes = [];   // [rowNo => segCode]
+    private ?int  $totalRow    = null;
+    private int   $headerRow   = 0;
+    private int   $titleRow    = 0;
+
+    public function __construct(
+        private readonly array $mix,
+        private readonly array $periods
+    ) {}
+
+    public function title(): string { return 'Deposit Mix'; }
+
+    public function columnWidths(): array
+    {
+        return [
+            'A' => 22, 'B' => 18, 'C' => 18, 'D' => 18, 'E' => 10, 'F' => 18,
+            'G' => 10, 'H' => 18, 'I' => 16, 'J' => 14, 'K' => 20,
+        ];
+    }
+
+    public function array(): array
+    {
+        $blank  = array_fill(0, 11, '');
+        $rows   = [];
+        $rowNum = 0;
+
+        $meta = fn(string $label, string $value) => array_replace($blank, [0 => $label, 1 => $value]);
+
+        $this->titleRow = ++$rowNum;
+        $rows[] = array_replace($blank, [0 => 'WEEKLY DEPOSIT MIX BY SEGMENT — CASA vs TERM DEPOSIT']);
+
+        $rows[] = $blank; $rowNum++;
+        $rows[] = $meta('Week', ($this->periods['week_start'] ?? '') . '  →  ' . ($this->periods['week_end'] ?? '')); $rowNum++;
+        $rows[] = $meta('Mix as at', (string) ($this->mix['end_date'] ?? '')); $rowNum++;
+        $rows[] = $meta('Compared with', (string) ($this->mix['start_date'] ?? 'n/a')); $rowNum++;
+        $rows[] = $meta('Basis', 'GL 211 current, 212 savings, 213 term deposits (KES eq.); CASA = current + savings'); $rowNum++;
+        $rows[] = $meta('Generated', now()->timezone(config('app.timezone', 'Africa/Nairobi'))->format('d M Y  H:i')); $rowNum++;
+        $rows[] = $blank; $rowNum++;
+
+        $this->headerRow = ++$rowNum;
+        $rows[] = [
+            'Segment',
+            'Current',
+            'Savings',
+            'CASA',
+            'CASA %',
+            'Term Deposit',
+            'TD %',
+            'Total (CASA + TD)',
+            'CASA % (wk start)',
+            'Δ CASA % (pts)',
+            'Δ Term Deposit (wk)',
+        ];
+
+        foreach ($this->mix['rows'] ?? [] as $row) {
+            $rowNo = ++$rowNum;
+
+            $rows[] = [
+                $row['name'],
+                $row['current'],
+                $row['savings'],
+                $row['casa'],
+                $row['casa_pct'],
+                $row['term'],
+                $row['term_pct'],
+                $row['total'],
+                $row['start_casa_pct'] ?? '',
+                $row['casa_pct_change'] ?? '',
+                $row['term_change'] ?? '',
+            ];
+
+            if ($row['code'] === 'ALL') {
+                $this->totalRow = $rowNo;
+            } else {
+                $this->segRowCodes[$rowNo] = $row['code'];
+            }
+        }
+
+        return $rows;
+    }
+
+    public function registerEvents(): array
+    {
+        return [
+            AfterSheet::class => function (AfterSheet $event): void {
+                /** @var Worksheet $sheet */
+                $sheet   = $event->sheet->getDelegate();
+                $lastRow = $sheet->getHighestRow();
+                $hdr     = $this->headerRow;
+                $lc      = self::LAST_COL;
+
+                // ── Title ──────────────────────────────────────────────────
+                $sheet->mergeCells("A{$this->titleRow}:{$lc}{$this->titleRow}");
+                $sheet->getStyle("A{$this->titleRow}:{$lc}{$this->titleRow}")->applyFromArray([
+                    'font'      => ['bold' => true, 'size' => 16, 'color' => ['rgb' => 'FFFFFF']],
+                    'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1F3A5F']],
+                    'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT,
+                                    'vertical'   => Alignment::VERTICAL_CENTER],
+                ]);
+                $sheet->getRowDimension($this->titleRow)->setRowHeight(32);
+
+                // ── Meta rows ──────────────────────────────────────────────
+                for ($r = $this->titleRow + 2; $r <= $hdr - 2; $r++) {
+                    $sheet->getStyle("A{$r}:{$lc}{$r}")->applyFromArray([
+                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F8FAFC']],
+                    ]);
+                    $sheet->getStyle("A{$r}")->applyFromArray([
+                        'font' => ['bold' => true, 'color' => ['rgb' => '1F3A5F']],
+                    ]);
+                    $sheet->getStyle("B{$r}")->applyFromArray([
+                        'font' => ['color' => ['rgb' => '334155']],
+                    ]);
+                }
+
+                // ── Column header ──────────────────────────────────────────
+                $sheet->getStyle("A{$hdr}:{$lc}{$hdr}")->applyFromArray([
+                    'font'      => ['bold' => true, 'size' => 11, 'color' => ['rgb' => 'FFFFFF']],
+                    'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1F3A5F']],
+                    'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER,
+                                    'vertical'   => Alignment::VERTICAL_CENTER,
+                                    'wrapText'   => true],
+                    'borders'   => [
+                        'bottom' => ['borderStyle' => Border::BORDER_MEDIUM, 'color' => ['rgb' => '0F2744']],
+                    ],
+                ]);
+                $sheet->getStyle("A{$hdr}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
+                $sheet->getRowDimension($hdr)->setRowHeight(30);
+                $sheet->freezePane('B' . ($hdr + 1));
+
+                // ── Segment rows ───────────────────────────────────────────
+                foreach ($this->segRowCodes as $r => $code) {
+                    $sheet->getStyle("A{$r}:{$lc}{$r}")->applyFromArray([
+                        'font'    => ['bold' => true, 'size' => 11, 'color' => ['rgb' => '0F172A']],
+                        'fill'    => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => self::SEG_FILL[$code] ?? 'F1F5F9']],
+                        'borders' => [
+                            'top' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'CBD5E1']],
+                        ],
+                    ]);
+                    $sheet->getRowDimension($r)->setRowHeight(18);
+                }
+
+                // ── Total row ──────────────────────────────────────────────
+                if ($this->totalRow !== null) {
+                    $r = $this->totalRow;
+                    $sheet->getStyle("A{$r}:{$lc}{$r}")->applyFromArray([
+                        'font'    => ['bold' => true, 'size' => 11, 'color' => ['rgb' => '1E3A5F']],
+                        'fill'    => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'E2E8F0']],
+                        'borders' => [
+                            'top'    => ['borderStyle' => Border::BORDER_MEDIUM, 'color' => ['rgb' => '94A3B8']],
+                            'bottom' => ['borderStyle' => Border::BORDER_MEDIUM, 'color' => ['rgb' => '94A3B8']],
+                        ],
+                    ]);
+                    $sheet->getRowDimension($r)->setRowHeight(18);
+                }
+
+                // ── Number formats + movement colours ──────────────────────
+                $dataRows = array_keys($this->segRowCodes);
+                if ($this->totalRow !== null) $dataRows[] = $this->totalRow;
+
+                foreach ($dataRows as $r) {
+                    $sheet->getStyle("B{$r}:{$lc}{$r}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+
+                    foreach (['B', 'C', 'D', 'F', 'H'] as $col) {
+                        $sheet->getStyle("{$col}{$r}")->getNumberFormat()->setFormatCode('#,##0');
+                    }
+                    foreach (['E', 'G', 'I'] as $col) {
+                        $sheet->getStyle("{$col}{$r}")->getNumberFormat()->setFormatCode('0.0"%"');
+                    }
+                    $sheet->getStyle("J{$r}")->getNumberFormat()->setFormatCode('+0.0" pts";-0.0" pts";0.0" pts"');
+                    $sheet->getStyle("K{$r}")->getNumberFormat()->setFormatCode('+#,##0;-#,##0;0');
+
+                    foreach (['J', 'K'] as $col) {
+                        $val = $sheet->getCell("{$col}{$r}")->getValue();
+                        if (!is_numeric($val)) continue;
+                        $v = (float) $val;
+                        if ($v > 0)     $sheet->getStyle("{$col}{$r}")->getFont()->getColor()->setRGB('166534');
+                        elseif ($v < 0) $sheet->getStyle("{$col}{$r}")->getFont()->getColor()->setRGB('991B1B');
+                    }
+                }
+
+                // ── Outer border ───────────────────────────────────────────
+                if ($lastRow > $hdr) {
+                    $sheet->getStyle("A{$hdr}:{$lc}{$lastRow}")->applyFromArray([
+                        'borders' => [
+                            'outline' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'CBD5E1']],
+                        ],
+                    ]);
+                }
+            },
+        ];
     }
 }
 

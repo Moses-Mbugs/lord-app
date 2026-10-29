@@ -1467,6 +1467,35 @@
                             </section>
                         </div>
                     </article>
+
+                    <article class="panel-card" aria-labelledby="segmentDepositMixTitle">
+                        <div class="panel-header">
+                            <div class="panel-heading-group">
+                                <h2 class="panel-title" id="segmentDepositMixTitle">Deposit mix by segment</h2>
+                                <p class="panel-subtitle" id="segmentDepositMixSub">CASA (current + savings) versus term
+                                    deposits per business segment; GL 211/212/213 only.</p>
+                            </div>
+                            <div class="panel-actions">
+                                <button type="button" class="panel-action" data-toggle-table="segmentDepositMixTableWrap"
+                                    aria-controls="segmentDepositMixTableWrap" aria-expanded="false">View data</button>
+                                <button type="button" class="panel-action" data-export-key="segmentDepositMix">Export
+                                    CSV</button>
+                            </div>
+                        </div>
+
+                        <div class="chart-shell medium skeleton">
+                            <canvas id="segmentDepositMixChart" role="img"
+                                aria-label="Stacked horizontal bar chart of current, savings and term deposit shares by segment"></canvas>
+                            <div class="chart-empty" id="segmentDepositMixEmpty" hidden>No segment deposit mix data is
+                                available.</div>
+                        </div>
+
+                        <div class="data-table-wrap" id="segmentDepositMixTableWrap" hidden>
+                            <table class="data-table" id="segmentDepositMixTable">
+                                <caption>Deposit mix by segment</caption>
+                            </table>
+                        </div>
+                    </article>
                 </section>
 
                 <section class="tab-pane" id="tab-movement" role="tabpanel" aria-labelledby="movementTab" hidden>
@@ -1622,6 +1651,7 @@
 
                 const chartPayload = @json($chartPayload ?? []);
                 const mtdYtdPayload = @json($mtdYtdPayload ?? []);
+                const segmentDepositMixPayload = @json($segmentDepositMixPayload ?? []);
                 const asOfDateForFile = @json($asOfFileDate);
 
                 const PERIOD_COPY = {
@@ -1660,6 +1690,7 @@
                     overall: null,
                     segment: null,
                     mtdYtd: null,
+                    segmentDepositMix: null,
                     segmentMix: null,
                     currencyMix: null,
                     depositMix: null,
@@ -2297,6 +2328,146 @@
                                     ticks: {
                                         color: '#5F6F82',
                                         callback: fAxis
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+
+                function buildSegmentDepositMixChart() {
+                    const canvas = document.getElementById('segmentDepositMixChart');
+                    const rows = safeArray(segmentDepositMixPayload?.rows);
+                    const hasData = rows.some(row => (asNumber(row.total_amount) ?? 0) > 0);
+
+                    setChartAvailability('segmentDepositMixChart', 'segmentDepositMixEmpty', hasData);
+
+                    const balanceDate = segmentDepositMixPayload?.balance_date;
+                    const subtitle = document.getElementById('segmentDepositMixSub');
+                    if (subtitle && balanceDate) {
+                        subtitle.textContent =
+                            `CASA (current + savings) versus term deposits per business segment as at ${balanceDate}; GL 211/212/213 only.`;
+                    }
+
+                    const headers = ['Segment', 'Current', 'Savings', 'CASA', 'CASA %', 'Term deposit', 'TD %', 'Total'];
+                    buildTable('segmentDepositMixTable', 'Deposit mix by segment', headers, rows.map(row => [
+                        String(row.name),
+                        fKesExact(row.current_amount),
+                        fKesExact(row.savings_amount),
+                        fKesExact(row.casa_amount),
+                        fPercent(row.casa_pct),
+                        fKesExact(row.term_amount),
+                        fPercent(row.term_pct),
+                        fKesExact(row.total_amount)
+                    ]));
+                    exportData.segmentDepositMix = {
+                        filename: `finance-segment-deposit-mix-${asOfDateForFile}.csv`,
+                        headers,
+                        rows: rows.map(row => [row.name, row.current_amount, row.savings_amount, row.casa_amount,
+                            row.casa_pct, row.term_amount, row.term_pct, row.total_amount
+                        ])
+                    };
+
+                    if (!hasData) return null;
+
+                    const series = [{
+                        label: 'Current Account',
+                        pct: 'current_pct',
+                        amount: 'current_amount',
+                        color: '#005B82'
+                    }, {
+                        label: 'Savings Account',
+                        pct: 'savings_pct',
+                        amount: 'savings_amount',
+                        color: '#008FC7'
+                    }, {
+                        label: 'Term Deposit',
+                        pct: 'term_pct',
+                        amount: 'term_amount',
+                        color: '#10B981'
+                    }];
+
+                    return new Chart(canvas.getContext('2d'), {
+                        type: 'bar',
+                        data: {
+                            labels: rows.map(row => row.name),
+                            datasets: series.map(item => ({
+                                label: item.label,
+                                data: rows.map(row => asNumber(row[item.pct]) ?? 0),
+                                rawValues: rows.map(row => asNumber(row[item.amount]) ?? 0),
+                                backgroundColor: item.color,
+                                borderColor: item.color,
+                                borderWidth: 1,
+                                borderSkipped: false,
+                                maxBarThickness: 28
+                            }))
+                        },
+                        options: {
+                            indexAxis: 'y',
+                            maintainAspectRatio: false,
+                            responsive: true,
+                            plugins: {
+                                legend: {
+                                    position: 'bottom',
+                                    labels: {
+                                        usePointStyle: true,
+                                        pointStyle: 'circle',
+                                        padding: 14,
+                                        boxWidth: 8,
+                                        color: '#243746',
+                                        font: {
+                                            size: 11,
+                                            weight: '700'
+                                        }
+                                    }
+                                },
+                                tooltip: Object.assign({}, tip, {
+                                    callbacks: {
+                                        label(context) {
+                                            const rawValue = context.dataset.rawValues?.[context
+                                                .dataIndex] ?? 0;
+                                            return ` ${context.dataset.label}: ${fKes(rawValue)} (${fPercent(context.parsed.x)})`;
+                                        },
+                                        footer(items) {
+                                            const row = rows[items[0]?.dataIndex];
+                                            return row ? `CASA ${fPercent(row.casa_pct)} · TD ${fPercent(row.term_pct)}` : '';
+                                        }
+                                    }
+                                }),
+                                datalabels: {
+                                    display: context => (context.dataset.data[context.dataIndex] ?? 0) >= 6,
+                                    color: '#FFFFFF',
+                                    font: {
+                                        size: 11,
+                                        weight: '800'
+                                    },
+                                    formatter: value => fPercent(value)
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    stacked: true,
+                                    beginAtZero: true,
+                                    max: 100,
+                                    grid: {
+                                        color: 'rgba(36,55,70,0.07)'
+                                    },
+                                    ticks: {
+                                        callback: value => `${value}%`,
+                                        maxTicksLimit: 6
+                                    }
+                                },
+                                y: {
+                                    stacked: true,
+                                    grid: {
+                                        display: false
+                                    },
+                                    ticks: {
+                                        color: '#243746',
+                                        font: {
+                                            size: 11,
+                                            weight: '700'
+                                        }
                                     }
                                 }
                             }
@@ -3004,6 +3175,7 @@
                     charts.overall = buildOverallChart();
                     charts.segment = buildSegmentChart();
                     charts.mtdYtd = buildMtdYtdChart();
+                    charts.segmentDepositMix = buildSegmentDepositMixChart();
                     charts.segmentMix = buildMixChart('segmentMixChart', 'segmentMixEmpty', 'segmentMixBreakdown',
                         chartPayload?.segmentPie);
                     charts.currencyMix = buildMixChart('currencyMixChart', 'currencyMixEmpty',

@@ -222,6 +222,7 @@ class FinanceHomeController extends Controller
             'asOfDate' => $asOfDate,
             'summaryCards' => $this->buildSummaryCards($overallSeries, $asOfDate, $mixSummary),
             'mtdYtdPayload' => $this->buildMtdYtdPayload($segmentSeries, $asOfDate),
+            'segmentDepositMixPayload' => $this->buildSegmentDepositMixPayload($asOfDate),
             'chartPayload' => [
                 'overall' => [
                     'daily' => $this->buildOverallMovementPayload($overallSeries, $dailyClosings),
@@ -710,6 +711,46 @@ class FinanceHomeController extends Controller
         );
     }
 
+    // Current / Savings / Term split per business segment, read from the SEGMENT-scope rows of
+    // finance_daily_mix_summaries (GL 211/212/213 only — same basis as the overall Deposit Mix card).
+    private function buildSegmentDepositMixPayload(string $asOfDate): array
+    {
+        $rows = [];
+
+        foreach (self::SEGMENT_MAP as $code => $name) {
+            $mix = $this->fetchDailyMixSummaryOnOrBefore($asOfDate, self::SUMMARY_SCOPE_SEGMENT, $code);
+
+            $current = (float) $mix['current_amount'];
+            $savings = (float) $mix['savings_amount'];
+            $term = (float) $mix['term_amount'];
+            $total = $current + $savings + $term;
+
+            $pct = fn(float $value) => $total > 0 ? round(($value / $total) * 100, 2) : 0.0;
+
+            $rows[] = [
+                'code' => $code,
+                'name' => $name,
+                'balance_date' => $mix['balance_date'],
+                'current_amount' => round($current, 2),
+                'savings_amount' => round($savings, 2),
+                'term_amount' => round($term, 2),
+                'casa_amount' => round($current + $savings, 2),
+                'total_amount' => round($total, 2),
+                'current_pct' => $pct($current),
+                'savings_pct' => $pct($savings),
+                'term_pct' => $pct($term),
+                'casa_pct' => $pct($current + $savings),
+            ];
+        }
+
+        $dates = array_filter(array_column($rows, 'balance_date'));
+
+        return [
+            'balance_date' => $dates ? max($dates) : null,
+            'rows' => $rows,
+        ];
+    }
+
     private function normalizeStoredPiePayload(?array $stored, array $fallbackMap): array
     {
         if ($stored) {
@@ -970,6 +1011,7 @@ class FinanceHomeController extends Controller
             'asOfDate' => null,
             'summaryCards' => [],
             'mtdYtdPayload' => ['labels' => [], 'mtd' => [], 'ytd' => [], 'colors' => []],
+            'segmentDepositMixPayload' => ['balance_date' => null, 'rows' => []],
             'chartPayload' => [
                 'overall' => ['daily' => [], 'weekly' => [], 'monthly' => []],
                 'overallBreakdown' => ['daily' => [], 'weekly' => [], 'monthly' => []],
