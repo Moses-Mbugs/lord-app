@@ -75,7 +75,7 @@ class LoanImportService
         $highestColIdx = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($highestCol);
 
         for ($c = 1; $c <= $highestColIdx; $c++) {
-            $header = trim((string) $ws->getCellByColumnAndRow($c, 1)->getValue());
+            $header = trim((string) $ws->getCell([$c, 1])->getValue());
             if ($header !== '') {
                 $headerMap[$header] = $c;
             }
@@ -101,10 +101,10 @@ class LoanImportService
 
         try {
             for ($row = 2; $row <= $highestRow; $row++) {
-                $get = fn(string $col) => trim((string) ($ws->getCellByColumnAndRow($headerMap[$col], $row)->getValue() ?? ''));
+                $get = fn(string $col) => trim((string) ($ws->getCell([$headerMap[$col], $row])->getValue() ?? ''));
                 // Safe getter for optional columns that may not exist in every file version
                 $getSafe = fn(string $col) => isset($headerMap[$col])
-                    ? trim((string) ($ws->getCellByColumnAndRow($headerMap[$col], $row)->getValue() ?? ''))
+                    ? trim((string) ($ws->getCell([$headerMap[$col], $row])->getValue() ?? ''))
                     : '';
 
                 $account  = $get('related_account');
