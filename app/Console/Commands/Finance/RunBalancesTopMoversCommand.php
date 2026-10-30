@@ -30,9 +30,10 @@ class RunBalancesTopMoversCommand extends Command
         {--cc= : Override CC recipients (comma/semicolon/space separated)}
         {--branch-to= : Override Branch Movers TO recipients}
         {--branch-cc= : Override Branch Movers CC recipients}
+        {--no-dsa : Skip the DSA account opening email (recipients always come from reports.dsa_accounts)}
     ';
 
-    protected $description = 'Run balances pipeline (import) -> build top movers -> build segment movers -> build sub-segment movers -> build branch movers -> build rm movers -> build daily mix summary -> build branch daily summary -> email reports (weekend/holiday safe).';
+    protected $description = 'Run balances pipeline (import) -> build top movers -> build segment movers -> build sub-segment movers -> build branch movers -> build rm movers -> build daily mix summary -> build branch daily summary -> email reports -> email DSA report (weekend/holiday safe).';
 
     public function handle(): int
     {
@@ -110,17 +111,17 @@ class RunBalancesTopMoversCommand extends Command
             $this->line("Branch movers limit: {$branchLimit}");
 
             if ($noImport) {
-                $this->warn('1/11 Skipping import (--no-import).');
+                $this->warn('1/13 Skipping import (--no-import).');
             } else {
                 if ($importPath === '') {
-                    $this->warn('1/11 Skipping import (no --import-path provided).');
+                    $this->warn('1/13 Skipping import (no --import-path provided).');
                 } else {
                     if (! is_dir($importPath)) {
                         $this->error("Import path not found or not a directory: {$importPath}");
                         return self::FAILURE;
                     }
 
-                    $this->runStep("1/11 Importing balances from: {$importPath}", 'import:balances', [
+                    $this->runStep("1/13 Importing balances from: {$importPath}", 'import:balances', [
                         'path' => $importPath,
                     ]);
                 }
@@ -135,7 +136,7 @@ class RunBalancesTopMoversCommand extends Command
                 return self::FAILURE;
             }
 
-            $this->runStep('2/11 Building top movers (CIF ONLY - LCY equivalent)', 'reports:build-top-movers', [
+            $this->runStep('2/13 Building top movers (CIF ONLY - LCY equivalent)', 'reports:build-top-movers', [
                 'start'        => $startDate,
                 'end'          => $endDate,
                 'currencyType' => 'LCY',
@@ -143,40 +144,40 @@ class RunBalancesTopMoversCommand extends Command
                 '--scope'      => 'cif_only',
             ]);
 
-            $this->runStep('3/11 Building segment movers (CB/CM/CS - LCY equivalent)', 'reports:build-segment-movers', [
+            $this->runStep('3/13 Building segment movers (CB/CM/CS - LCY equivalent)', 'reports:build-segment-movers', [
                 'start' => $startDate,
                 'end'   => $endDate,
             ]);
 
-            $this->runStep('4/11 Building sub-segment movers (CIF-only LCY equivalent)', 'reports:build-sub-segment-movers', [
+            $this->runStep('4/13 Building sub-segment movers (CIF-only LCY equivalent)', 'reports:build-sub-segment-movers', [
                 'start' => $startDate,
                 'end'   => $endDate,
             ]);
 
-            $this->runStep('5/11 Building branch movers (P50 excluded)', 'reports:build-branch-movers', [
+            $this->runStep('5/13 Building branch movers (P50 excluded)', 'reports:build-branch-movers', [
                 'start'   => $startDate,
                 'end'     => $endDate,
                 '--limit' => $branchLimit,
             ]);
 
-            $this->runStep('6/12 Building RM movers', 'reports:build-rm-movers', [
+            $this->runStep('6/13 Building RM movers', 'reports:build-rm-movers', [
                 'start' => $startDate,
                 'end'   => $endDate,
             ]);
 
-            $this->runStep('7/12 Building daily finance mix summary', 'finance:build-daily-mix', [
+            $this->runStep('7/13 Building daily finance mix summary', 'finance:build-daily-mix', [
                 'date' => $endDate,
                 '--fresh' => true,
             ]);
 
-            $this->runStep('8/12 Building branch daily performance summary', 'finance:build-branch-daily-summary', [
+            $this->runStep('8/13 Building branch daily performance summary', 'finance:build-branch-daily-summary', [
                 'date' => $endDate,
                 '--fresh' => true,
             ]);
 
             $this->runStep('Pruning old branch daily performance summary rows...', 'finance:prune-branch-daily-summary');
 
-            $this->runStep('9/12 Building top movers (CIF + Currency) LCY', 'reports:build-top-movers', [
+            $this->runStep('9/13 Building top movers (CIF + Currency) LCY', 'reports:build-top-movers', [
                 'start'        => $startDate,
                 'end'          => $endDate,
                 'currencyType' => 'LCY',
@@ -184,7 +185,7 @@ class RunBalancesTopMoversCommand extends Command
                 '--scope'      => 'cif_currency',
             ]);
 
-            $this->runStep('10/12 Building top movers (CIF + Currency) FCY', 'reports:build-top-movers', [
+            $this->runStep('10/13 Building top movers (CIF + Currency) FCY', 'reports:build-top-movers', [
                 'start'        => $startDate,
                 'end'          => $endDate,
                 'currencyType' => 'FCY',
@@ -195,7 +196,7 @@ class RunBalancesTopMoversCommand extends Command
             $toStr = implode(',', $toList);
             $ccStr = implode(',', $ccList);
 
-            $this->runStep("11/12 Emailing top movers to: {$toStr}", 'reports:email-top-movers', [
+            $this->runStep("11/13 Emailing top movers to: {$toStr}", 'reports:email-top-movers', [
                 'start'   => $startDate,
                 'end'     => $endDate,
                 '--to'    => $toStr,
@@ -206,13 +207,15 @@ class RunBalancesTopMoversCommand extends Command
             $bToStr = implode(',', $branchToList);
             $bCcStr = implode(',', $branchCcList);
 
-            $this->runStep("12/12 Emailing branch movers to: {$bToStr}", 'reports:email-branch-movers', [
+            $this->runStep("12/13 Emailing branch movers to: {$bToStr}", 'reports:email-branch-movers', [
                 'start'   => $startDate,
                 'end'     => $endDate,
                 '--to'    => $bToStr,
                 '--cc'    => $bCcStr,
                 '--limit' => $branchLimit,
             ]);
+
+            $this->sendDsaReport();
 
             $this->info("Done. Pipeline complete for {$startDate} → {$endDate}");
 
@@ -243,6 +246,35 @@ class RunBalancesTopMoversCommand extends Command
         $start = microtime(true);
         Artisan::call($command, $params, $this->output);
         $this->timings[$label] = (int) round((microtime(true) - $start) * 1000);
+    }
+
+    /**
+     * DSA account opening report, sent last so it goes out after the branch movers email.
+     * Monday sends the weekly (the full Mon–Sun week just ended, which also covers Fri–Sun
+     * openings); other days send the daily. Both are "as at" yesterday, since customer
+     * accounts sync overnight. Recipients come from reports.dsa_accounts, not --to/--cc.
+     * A failure here is reported but doesn't fail the pipeline — the other emails are out.
+     */
+    private function sendDsaReport(): void
+    {
+        if ($this->option('no-dsa')) {
+            $this->warn('13/13 Skipping DSA report (--no-dsa).');
+            return;
+        }
+
+        $today = now()->timezone('Africa/Nairobi');
+        $mode  = $today->isMonday() ? '--weekly' : '--daily';
+        $asOf  = $today->copy()->subDay()->toDateString();
+
+        try {
+            $this->runStep("13/13 Emailing DSA report ({$mode}, as at {$asOf})", 'reports:email-dsa-accounts', [
+                'date' => $asOf,
+                $mode  => true,
+            ]);
+        } catch (Throwable $e) {
+            $this->error('reports:email-dsa-accounts threw: ' . $e->getMessage());
+            Log::error('DSA report failed in balances pipeline', ['as_of' => $asOf, 'mode' => $mode, 'error' => $e->getMessage()]);
+        }
     }
 
     private function buildImportPath(string $endDate): string

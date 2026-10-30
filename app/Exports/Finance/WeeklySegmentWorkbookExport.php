@@ -15,6 +15,7 @@ use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 use Maatwebsite\Excel\Concerns\WithStrictNullComparison;
 use Maatwebsite\Excel\Concerns\WithTitle;
 use Maatwebsite\Excel\Events\AfterSheet;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
@@ -48,9 +49,50 @@ class WeeklySegmentWorkbookExport implements Export, WithMultipleSheets
             new WeeklySegmentSummarySheet($this->data, 'fcy'),
         ];
 
-        $depositMix = $this->buildDepositMix($this->data['periods'] ?? []);
+        $periods = $this->data['periods'] ?? [];
+
+        $depositMix = $this->buildMix($periods, fn(?array $s) => $this->depositMixFigures($s), 'casa_pct', 'term');
         if ($depositMix !== null) {
-            $sheets[] = new WeeklySegmentDepositMixSheet($depositMix, $this->data['periods'] ?? []);
+            $sheets[] = new WeeklySegmentMixSheet(
+                'Deposit Mix',
+                'WEEKLY DEPOSIT MIX BY SEGMENT — CASA vs TERM DEPOSIT',
+                'GL 211 current, 212 savings, 213 term deposits (KES eq.); CASA = current + savings',
+                $periods,
+                $depositMix,
+                [
+                    ['Current',             'current',      'amount'],
+                    ['Savings',             'savings',      'amount'],
+                    ['CASA',                'casa',         'amount'],
+                    ['CASA %',              'casa_pct',     'pct'],
+                    ['Term Deposit',        'term',         'amount'],
+                    ['TD %',                'term_pct',     'pct'],
+                    ['Total (CASA + TD)',   'total',        'amount'],
+                    ['CASA % (wk start)',   'start_pct',    'pct'],
+                    ['Δ CASA % (pts)',      'pct_change',   'pts'],
+                    ['Δ Term Deposit (wk)', 'amount_change', 'delta'],
+                ]
+            );
+        }
+
+        $currencyMix = $this->buildMix($periods, fn(?array $s) => $this->currencyMixFigures($s), 'fcy_pct', 'fcy');
+        if ($currencyMix !== null) {
+            $sheets[] = new WeeklySegmentMixSheet(
+                'Currency Mix',
+                'WEEKLY CURRENCY MIX BY SEGMENT — LCY vs FCY',
+                'All positive customer balances in KES equivalent; LCY = KES accounts, FCY = all other currencies',
+                $periods,
+                $currencyMix,
+                [
+                    ['LCY (KES)',          'lcy',           'amount'],
+                    ['LCY %',              'lcy_pct',       'pct'],
+                    ['FCY (KES eq.)',      'fcy',           'amount'],
+                    ['FCY %',              'fcy_pct',       'pct'],
+                    ['Total (LCY + FCY)',  'total',         'amount'],
+                    ['FCY % (wk start)',   'start_pct',     'pct'],
+                    ['Δ FCY % (pts)',      'pct_change',    'pts'],
+                    ['Δ FCY (wk)',         'amount_change', 'delta'],
+                ]
+            );
         }
 
         $sheets[] = new WeeklySegmentDrilldownSheet($this->drilldown, $this->data['periods'] ?? []);
@@ -68,11 +110,13 @@ class WeeklySegmentWorkbookExport implements Export, WithMultipleSheets
     }
 
     /**
-     * CASA / Term split per segment at week end, compared with week start, read from the
-     * nightly finance_daily_mix_summaries rows (GL 211/212/213 only). Each date falls back
-     * to the latest summary on or before it. Returns null when nothing is built for week end.
+     * Per-segment mix (plus bank Total) at week end, compared with week start, read from the
+     * nightly finance_daily_mix_summaries rows. Each date falls back to the latest summary on
+     * or before it. $figures turns a summary row into the mix columns; $pctKey / $amountKey
+     * pick the share and amount whose week-on-week change is reported. Returns null when
+     * nothing is built for week end.
      */
-    private function buildDepositMix(array $periods): ?array
+    private function buildMix(array $periods, callable $figures, string $pctKey, string $amountKey): ?array
     {
         $weekStart = $periods['week_start'] ?? null;
         $weekEnd   = $periods['week_end'] ?? null;
@@ -81,7 +125,7 @@ class WeeklySegmentWorkbookExport implements Export, WithMultipleSheets
         $mixService = app(FinanceDailyMixSummaryService::class);
 
         $targets = [];
-        foreach (WeeklySegmentDepositMixSheet::SEGMENT_NAMES as $code => $name) {
+        foreach (WeeklySegmentMixSheet::SEGMENT_NAMES as $code => $name) {
             $targets[$code] = ['SEGMENT', $code, $name];
         }
         $targets['ALL'] = ['OVERALL', 'ALL', 'Total'];
@@ -97,15 +141,15 @@ class WeeklySegmentWorkbookExport implements Export, WithMultipleSheets
             if ($end) $endDates[] = $end['balance_date'];
             if ($start) $startDates[] = $start['balance_date'];
 
-            $endMix   = $this->depositMixFigures($end);
-            $startMix = $this->depositMixFigures($start);
+            $endMix   = $figures($end);
+            $startMix = $figures($start);
 
             $rows[] = array_merge($endMix, [
-                'code'            => $code,
-                'name'            => $name,
-                'start_casa_pct'  => $start ? $startMix['casa_pct'] : null,
-                'casa_pct_change' => $start && $end ? round($endMix['casa_pct'] - $startMix['casa_pct'], 2) : null,
-                'term_change'     => $start && $end ? round($endMix['term'] - $startMix['term'], 2) : null,
+                'code'          => $code,
+                'name'          => $name,
+                'start_pct'     => $start ? $startMix[$pctKey] : null,
+                'pct_change'    => $start && $end ? round($endMix[$pctKey] - $startMix[$pctKey], 2) : null,
+                'amount_change' => $start && $end ? round($endMix[$amountKey] - $startMix[$amountKey], 2) : null,
             ]);
         }
 
@@ -137,14 +181,33 @@ class WeeklySegmentWorkbookExport implements Export, WithMultipleSheets
             'total'    => round($total, 2),
         ];
     }
+
+    private function currencyMixFigures(?array $summary): array
+    {
+        $lcy   = (float) ($summary['lcy_amount'] ?? 0);
+        $fcy   = (float) ($summary['fcy_amount'] ?? 0);
+        $total = $lcy + $fcy;
+
+        $pct = fn(float $v) => $total > 0 ? round(($v / $total) * 100, 2) : 0.0;
+
+        return [
+            'lcy'     => round($lcy, 2),
+            'lcy_pct' => $pct($lcy),
+            'fcy'     => round($fcy, 2),
+            'fcy_pct' => $pct($fcy),
+            'total'   => round($total, 2),
+        ];
+    }
 }
 
 // =============================================================================
-// SHEET — Deposit Mix (CASA vs Term Deposit by segment, week end vs week start)
+// SHEET — Deposit Mix / Currency Mix (share by segment, week end vs week start)
 // =============================================================================
 
+// One row per segment plus a bank Total; the value columns come from $columns as
+// [header, row key, format] where format is amount | pct | pts | delta.
 // WithStrictNullComparison so genuine zeros (e.g. no TD movement) are written as 0, not blank.
-class WeeklySegmentDepositMixSheet implements FromArray, WithTitle, WithColumnWidths, WithEvents, WithStrictNullComparison
+class WeeklySegmentMixSheet implements FromArray, WithTitle, WithColumnWidths, WithEvents, WithStrictNullComparison
 {
     public const SEGMENT_NAMES = [
         'CB' => 'Corporate',
@@ -160,78 +223,74 @@ class WeeklySegmentDepositMixSheet implements FromArray, WithTitle, WithColumnWi
         'OT' => 'F1F5F9',
     ];
 
-    private const LAST_COL = 'K';
+    private const FORMATS = [
+        'amount' => '#,##0',
+        'pct'    => '0.0"%"',
+        'pts'    => '+0.0" pts";-0.0" pts";0.0" pts"',
+        'delta'  => '+#,##0;-#,##0;0',
+    ];
 
-    private array $segRowCodes = [];   // [rowNo => segCode]
-    private ?int  $totalRow    = null;
-    private int   $headerRow   = 0;
-    private int   $titleRow    = 0;
+    private const WIDTHS = ['amount' => 18, 'pct' => 11, 'pts' => 14, 'delta' => 20];
 
+    private array  $segRowCodes = [];   // [rowNo => segCode]
+    private ?int   $totalRow    = null;
+    private int    $headerRow   = 0;
+    private int    $titleRow    = 0;
+    private string $lastCol;
+
+    /** @param array<int, array{0: string, 1: string, 2: string}> $columns [header, row key, format] */
     public function __construct(
+        private readonly string $sheetTitle,
+        private readonly string $heading,
+        private readonly string $basis,
+        private readonly array $periods,
         private readonly array $mix,
-        private readonly array $periods
-    ) {}
+        private readonly array $columns
+    ) {
+        $this->lastCol = Coordinate::stringFromColumnIndex(count($columns) + 1);
+    }
 
-    public function title(): string { return 'Deposit Mix'; }
+    public function title(): string { return $this->sheetTitle; }
 
     public function columnWidths(): array
     {
-        return [
-            'A' => 22, 'B' => 18, 'C' => 18, 'D' => 18, 'E' => 10, 'F' => 18,
-            'G' => 10, 'H' => 18, 'I' => 16, 'J' => 14, 'K' => 20,
-        ];
+        $widths = ['A' => 22];
+        foreach ($this->columns as $i => [, , $format]) {
+            $widths[Coordinate::stringFromColumnIndex($i + 2)] = self::WIDTHS[$format];
+        }
+        return $widths;
     }
 
     public function array(): array
     {
-        $blank  = array_fill(0, 11, '');
+        $blank  = array_fill(0, count($this->columns) + 1, '');
         $rows   = [];
         $rowNum = 0;
 
         $meta = fn(string $label, string $value) => array_replace($blank, [0 => $label, 1 => $value]);
 
         $this->titleRow = ++$rowNum;
-        $rows[] = array_replace($blank, [0 => 'WEEKLY DEPOSIT MIX BY SEGMENT — CASA vs TERM DEPOSIT']);
+        $rows[] = array_replace($blank, [0 => $this->heading]);
 
         $rows[] = $blank; $rowNum++;
         $rows[] = $meta('Week', ($this->periods['week_start'] ?? '') . '  →  ' . ($this->periods['week_end'] ?? '')); $rowNum++;
         $rows[] = $meta('Mix as at', (string) ($this->mix['end_date'] ?? '')); $rowNum++;
         $rows[] = $meta('Compared with', (string) ($this->mix['start_date'] ?? 'n/a')); $rowNum++;
-        $rows[] = $meta('Basis', 'GL 211 current, 212 savings, 213 term deposits (KES eq.); CASA = current + savings'); $rowNum++;
+        $rows[] = $meta('Basis', $this->basis); $rowNum++;
         $rows[] = $meta('Generated', now()->timezone(config('app.timezone', 'Africa/Nairobi'))->format('d M Y  H:i')); $rowNum++;
         $rows[] = $blank; $rowNum++;
 
         $this->headerRow = ++$rowNum;
-        $rows[] = [
-            'Segment',
-            'Current',
-            'Savings',
-            'CASA',
-            'CASA %',
-            'Term Deposit',
-            'TD %',
-            'Total (CASA + TD)',
-            'CASA % (wk start)',
-            'Δ CASA % (pts)',
-            'Δ Term Deposit (wk)',
-        ];
+        $rows[] = array_merge(['Segment'], array_column($this->columns, 0));
 
         foreach ($this->mix['rows'] ?? [] as $row) {
             $rowNo = ++$rowNum;
 
-            $rows[] = [
-                $row['name'],
-                $row['current'],
-                $row['savings'],
-                $row['casa'],
-                $row['casa_pct'],
-                $row['term'],
-                $row['term_pct'],
-                $row['total'],
-                $row['start_casa_pct'] ?? '',
-                $row['casa_pct_change'] ?? '',
-                $row['term_change'] ?? '',
-            ];
+            $values = [$row['name']];
+            foreach ($this->columns as [, $key]) {
+                $values[] = $row[$key] ?? '';
+            }
+            $rows[] = $values;
 
             if ($row['code'] === 'ALL') {
                 $this->totalRow = $rowNo;
@@ -251,7 +310,7 @@ class WeeklySegmentDepositMixSheet implements FromArray, WithTitle, WithColumnWi
                 $sheet   = $event->sheet->getDelegate();
                 $lastRow = $sheet->getHighestRow();
                 $hdr     = $this->headerRow;
-                $lc      = self::LAST_COL;
+                $lc      = $this->lastCol;
 
                 // ── Title ──────────────────────────────────────────────────
                 $sheet->mergeCells("A{$this->titleRow}:{$lc}{$this->titleRow}");
@@ -324,16 +383,12 @@ class WeeklySegmentDepositMixSheet implements FromArray, WithTitle, WithColumnWi
                 foreach ($dataRows as $r) {
                     $sheet->getStyle("B{$r}:{$lc}{$r}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
 
-                    foreach (['B', 'C', 'D', 'F', 'H'] as $col) {
-                        $sheet->getStyle("{$col}{$r}")->getNumberFormat()->setFormatCode('#,##0');
-                    }
-                    foreach (['E', 'G', 'I'] as $col) {
-                        $sheet->getStyle("{$col}{$r}")->getNumberFormat()->setFormatCode('0.0"%"');
-                    }
-                    $sheet->getStyle("J{$r}")->getNumberFormat()->setFormatCode('+0.0" pts";-0.0" pts";0.0" pts"');
-                    $sheet->getStyle("K{$r}")->getNumberFormat()->setFormatCode('+#,##0;-#,##0;0');
+                    foreach ($this->columns as $i => [, , $format]) {
+                        $col = Coordinate::stringFromColumnIndex($i + 2);
+                        $sheet->getStyle("{$col}{$r}")->getNumberFormat()->setFormatCode(self::FORMATS[$format]);
 
-                    foreach (['J', 'K'] as $col) {
+                        // Week-on-week change columns: green for up, red for down
+                        if ($format !== 'pts' && $format !== 'delta') continue;
                         $val = $sheet->getCell("{$col}{$r}")->getValue();
                         if (!is_numeric($val)) continue;
                         $v = (float) $val;
