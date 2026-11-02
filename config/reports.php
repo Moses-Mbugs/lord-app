@@ -78,6 +78,8 @@ return [
             'KMURITHI@ecobank.com',
             'KMMWANGI@ecobank.com',
             'PNJENGA@ecobank.com',
+            'SKYALO@ecobank.com',
+            'CABONDO@ecobank.com',
             // '',
             // '',
             // '',
@@ -194,6 +196,14 @@ return [
             'OODIEMO@ecobank.com',
             'HMUDUKIZA@ecobank.com',
             'FWAGURA@ecobank.com',
+            'SKYALO@ecobank.com',
+            'CABONDO@ecobank.com',
+            // '',
+            // '',
+            // '',
+            // '',
+            // '',
+            // '',
             // '',
             // '',
             // '',
@@ -385,6 +395,8 @@ return [
             'KKYULU@ecobank.com',
             'OODIEMO@ecobank.com',
             'HMUDUKIZA@ecobank.com',
+            'SKYALO@ecobank.com',
+            'CABONDO@ecobank.com',
             // '',
             // '',
 
@@ -457,6 +469,8 @@ return [
             'FYEGO@ecobank.com',
             'JoMUTHAMA@ecobank.com',
             'EMBANO@ecobank.com',
+            'SKYALO@ecobank.com',
+            'CABONDO@ecobank.com',
             'oogeto@ecobank.com',
             // '',
 
@@ -469,8 +483,6 @@ return [
 
     'weekly_loan' => [
         'to' => [
-            // Test phase — sending to mmuigai@ecobank.com only. Expand once validated.
-            // 'mmuigai@ecobank.com',
             'RMBITHI@ecobank.com',
             'JMOKUA@ecobank.com',
             'MWANJIRU@ecobank.com',
@@ -529,6 +541,8 @@ return [
             'FYEGO@ecobank.com',
             'JoMUTHAMA@ecobank.com',
             'EMBANO@ecobank.com',
+            'SKYALO@ecobank.com',
+            'CABONDO@ecobank.com',
             'JKKORIR@ecobank.com',
             // '',
             // '',
@@ -618,7 +632,6 @@ return [
     // Monthly Branch performance (deposits, loans, NTB per branch) — sent alongside the one above.
     'monthly_branches' => [
         'to' => [
-            // 'mmuigai@ecobank.com',
             'RMBITHI@ecobank.com',
             'JMOKUA@ecobank.com',
             'MWANJIRU@ecobank.com',
@@ -698,6 +711,19 @@ return [
             'OODIEMO@ecobank.com',
             'HMUDUKIZA@ecobank.com',
             'FWAGURA@ecobank.com',
+            'SKYALO@ecobank.com',
+            'CABONDO@ecobank.com',
+            // '',
+            // '',
+            // '',
+            // '',
+            // '',
+            // '',
+            // '',
+            // '',
+            // '',
+            // '',
+
 
         ],
         'cc' => [
