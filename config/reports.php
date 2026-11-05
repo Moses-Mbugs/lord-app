@@ -735,6 +735,38 @@ return [
 
 
 
+// mounting
+
+    /*
+
+
+        sudo umount -l /mnt/eke_dailyflexcubereports
+        sudo mount -t cifs //10.32.1.49/eke_dailyflexcubereports /mnt/eke_dailyflexcubereports \
+        -o username=mmuigai,vers=3.0,uid=0,gid=0,file_mode=0755,dir_mode=0755,soft
+
+        sudo bash -c 'cat > /etc/cifs-eke.cred <<EOF
+        username=mmuigai
+        password=YOUR_PASSWORD
+        EOF'
+        sudo chmod 600 /etc/cifs-eke.cred
+
+        
+    */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
