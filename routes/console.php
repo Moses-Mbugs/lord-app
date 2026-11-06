@@ -60,14 +60,14 @@ Artisan::command('inspire', function () {
         ->appendOutputTo(storage_path('logs/weekly-segment.log'));
 
     // Weekly loan movement — build snapshot then email, in one command (every Friday at 12:10)
-    Schedule::command('reports:run-weekly-loan --auto')
-        ->weeklyOn(5, '12:10')
-        ->timezone('Africa/Nairobi')
-        ->withoutOverlapping(60)
-        ->before(fn () => Mail::raw('The weekly loan movement report run is starting now.', function ($m) {
-            $m->to('mmuigai@ecobank.com')->subject('[Reports] Weekly Loans run starting');
-        }))
-        ->appendOutputTo(storage_path('logs/weekly-loan.log'));
+    // Schedule::command('reports:run-weekly-loan --auto')
+    //     ->weeklyOn(5, '12:10')
+    //     ->timezone('Africa/Nairobi')
+    //     ->withoutOverlapping(60)
+    //     ->before(fn () => Mail::raw('The weekly loan movement report run is starting now.', function ($m) {
+    //         $m->to('mmuigai@ecobank.com')->subject('[Reports] Weekly Loans run starting');
+    //     }))
+    //     ->appendOutputTo(storage_path('logs/weekly-loan.log'));
 
     // Weekly branch movers — build all three periods (Weekly/MTD/YTD) then email (every Friday at 12:15)
     Schedule::command('reports:email-weekly-branch-movers --auto-build')
