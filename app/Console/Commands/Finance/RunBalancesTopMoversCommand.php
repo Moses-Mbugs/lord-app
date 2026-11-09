@@ -204,16 +204,18 @@ class RunBalancesTopMoversCommand extends Command
                 '--limit' => $limit,
             ]);
 
-            $bToStr = implode(',', $branchToList);
-            $bCcStr = implode(',', $branchCcList);
-
-            $this->runStep("12/13 Emailing branch movers to: {$bToStr}", 'reports:email-branch-movers', [
-                'start'   => $startDate,
-                'end'     => $endDate,
-                '--to'    => $bToStr,
-                '--cc'    => $bCcStr,
-                '--limit' => $branchLimit,
-            ]);
+            // TEMP disabled 2026-11-09: branch movers email paused (data is still built in step 5).
+            // $bToStr = implode(',', $branchToList);
+            // $bCcStr = implode(',', $branchCcList);
+            //
+            // $this->runStep("12/13 Emailing branch movers to: {$bToStr}", 'reports:email-branch-movers', [
+            //     'start'   => $startDate,
+            //     'end'     => $endDate,
+            //     '--to'    => $bToStr,
+            //     '--cc'    => $bCcStr,
+            //     '--limit' => $branchLimit,
+            // ]);
+            $this->line('12/13 Branch movers email skipped (temporarily disabled).');
 
             $this->sendDsaReport();
 
