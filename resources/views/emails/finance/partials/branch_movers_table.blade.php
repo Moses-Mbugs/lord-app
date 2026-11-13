@@ -40,11 +40,6 @@
                     style="padding:5px {{ $pad }}px; background:#D8E9F3; text-transform:uppercase; font-size:9px; letter-spacing:0.8px; font-weight:900; color:#005B82; text-align:center; border-bottom:1px solid #A8C9DE; border-left:1px solid #A8C9DE;">
                     Deposits
                 </th>
-
-                <th colspan="3"
-                    style="padding:5px {{ $pad }}px; background:#BBF7D0; text-transform:uppercase; font-size:9px; letter-spacing:0.8px; font-weight:900; color:#14532d; text-align:center; border-bottom:1px solid #86EFAC; border-left:2px solid #86EFAC;">
-                    Performing Loans
-                </th>
             </tr>
 
             {{-- Column header row --}}
@@ -56,36 +51,23 @@
                 @endif
 
                 <th
-                    style="padding:{{ $pad }}px; background:#EDEDED; text-transform:uppercase; font-size:9px; letter-spacing:0.6px; font-weight:900; color:#464646; border-bottom:2px solid #D0D0D0; text-align:left; width:{{ $showRank ? '17%' : '22%' }};">
+                    style="padding:{{ $pad }}px; background:#EDEDED; text-transform:uppercase; font-size:9px; letter-spacing:0.6px; font-weight:900; color:#464646; border-bottom:2px solid #D0D0D0; text-align:left; width:{{ $showRank ? '35%' : '40%' }};">
                     Branch
                 </th>
 
                 <th
-                    style="padding:{{ $pad }}px; background:#EDEDED; text-transform:uppercase; font-size:9px; letter-spacing:0.6px; font-weight:900; color:#464646; border-bottom:2px solid #D0D0D0; text-align:right; width:14%; border-left:1px solid #A8C9DE;">
+                    style="padding:{{ $pad }}px; background:#EDEDED; text-transform:uppercase; font-size:9px; letter-spacing:0.6px; font-weight:900; color:#464646; border-bottom:2px solid #D0D0D0; text-align:right; width:20%; border-left:1px solid #A8C9DE;">
                     {{ $start ? \Carbon\Carbon::parse($start)->format('d M') : 'Start' }}
                 </th>
 
                 <th
-                    style="padding:{{ $pad }}px; background:#EDEDED; text-transform:uppercase; font-size:9px; letter-spacing:0.6px; font-weight:900; color:#464646; border-bottom:2px solid #D0D0D0; text-align:right; width:14%;">
+                    style="padding:{{ $pad }}px; background:#EDEDED; text-transform:uppercase; font-size:9px; letter-spacing:0.6px; font-weight:900; color:#464646; border-bottom:2px solid #D0D0D0; text-align:right; width:20%;">
                     {{ $end ? \Carbon\Carbon::parse($end)->format('d M') : 'End' }}
                 </th>
 
                 <th
-                    style="padding:{{ $pad }}px; background:#EDEDED; text-transform:uppercase; font-size:9px; letter-spacing:0.6px; font-weight:900; color:#464646; border-bottom:2px solid #D0D0D0; text-align:right; width:13%;">
+                    style="padding:{{ $pad }}px; background:#EDEDED; text-transform:uppercase; font-size:9px; letter-spacing:0.6px; font-weight:900; color:#464646; border-bottom:2px solid #D0D0D0; text-align:right; width:20%;">
                     Dep Move
-                </th>
-
-                <th
-                    style="padding:{{ $pad }}px; background:#DCFCE7; text-transform:uppercase; font-size:9px; letter-spacing:0.6px; font-weight:900; color:#166534; border-bottom:2px solid #BBF7D0; text-align:right; width:12%; border-left:2px solid #BBF7D0;">
-                    Open
-                </th>
-                <th
-                    style="padding:{{ $pad }}px; background:#DCFCE7; text-transform:uppercase; font-size:9px; letter-spacing:0.6px; font-weight:900; color:#166534; border-bottom:2px solid #BBF7D0; text-align:right; width:12%;">
-                    Close
-                </th>
-                <th
-                    style="padding:{{ $pad }}px; background:#DCFCE7; text-transform:uppercase; font-size:9px; letter-spacing:0.6px; font-weight:900; color:#166534; border-bottom:2px solid #BBF7D0; text-align:right; width:13%;">
-                    Move
                 </th>
             </tr>
         </thead>
@@ -103,23 +85,12 @@
                     $eb = (float) ($r->end_balance ?? 0);
                     $mv = (float) ($r->movement ?? 0);
 
-                    $loanOpen = (float) ($r->loan_open ?? 0);
-                    $loanClose = (float) ($r->loan_close ?? 0);
-                    $loanMv = (float) ($r->loan_movement ?? 0);
-
                     $isGain = $mv > 0;
-                    $isLoanGain = $loanMv > 0;
                     $arrow = $isGain ? '▲' : '▼';
-                    $loanArrow = $isLoanGain ? '▲' : '▼';
 
                     $startTxt = number_format((int) round($sb), 0);
                     $endTxt = number_format((int) round($eb), 0);
                     $moveTxt = number_format((int) round(abs($mv)), 0);
-                    $loanOpenTxt = number_format((int) round($loanOpen), 0);
-                    $loanCloseTxt = number_format((int) round($loanClose), 0);
-                    $loanMvTxt = number_format((int) round(abs($loanMv)), 0);
-
-                    $loanRowBg = $i % 2 === 0 ? '#F0FDF4' : '#DCFCE7';
 
                     $rank = $r->rank ?? null;
                     $isTotal =
@@ -170,34 +141,6 @@
                             <span
                                 style="display:inline-block; padding:4px 8px; border-radius:8px; font-weight:900; font-size:{{ $font }}px; white-space:nowrap; background:#fff0f0; color:#a11818; border:1px solid #ffb3b3;">
                                 {{ $arrow }} {{ $moveTxt }}
-                            </span>
-                        @endif
-                    </td>
-
-                    {{-- Performing Loans Open --}}
-                    <td
-                        style="padding:{{ $pad }}px; border-bottom:{{ $rowBorder }}; background:{{ $loanRowBg }}; text-align:right; font-family:ui-monospace,'Courier New',monospace; font-weight:900; color:#166534; line-height:1.2; border-left:2px solid #BBF7D0;">
-                        {{ $loanOpenTxt }}
-                    </td>
-
-                    {{-- Performing Loans Close --}}
-                    <td
-                        style="padding:{{ $pad }}px; border-bottom:{{ $rowBorder }}; background:{{ $loanRowBg }}; text-align:right; font-family:ui-monospace,'Courier New',monospace; font-weight:900; color:#166534; line-height:1.2;">
-                        {{ $loanCloseTxt }}
-                    </td>
-
-                    {{-- Performing Loans Move --}}
-                    <td
-                        style="padding:{{ $pad }}px; border-bottom:{{ $rowBorder }}; background:{{ $loanRowBg }}; text-align:right;">
-                        @if ($loanMv >= 0)
-                            <span
-                                style="display:inline-block; padding:4px 8px; border-radius:8px; font-weight:900; font-size:{{ $font }}px; white-space:nowrap; background:#bbf7d0; color:#14532d; border:1px solid #86efac;">
-                                {{ $loanArrow }} {{ $loanMvTxt }}
-                            </span>
-                        @else
-                            <span
-                                style="display:inline-block; padding:4px 8px; border-radius:8px; font-weight:900; font-size:{{ $font }}px; white-space:nowrap; background:#fecaca; color:#7f1d1d; border:1px solid #fca5a5;">
-                                {{ $loanArrow }} {{ $loanMvTxt }}
                             </span>
                         @endif
                     </td>

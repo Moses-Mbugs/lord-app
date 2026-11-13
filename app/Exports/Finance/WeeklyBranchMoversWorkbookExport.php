@@ -19,9 +19,9 @@ use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 /**
- * Weekly branch workbook: the branch summary sheet, then each branch's top 10 deposit and
- * loan customer movers over the WTD window — the same "Deposit CIF" and "Loans CIF" sheets
- * the daily branch movers workbook uses (Corporate and staff excluded).
+ * Weekly branch workbook (deposits only): the branch summary sheet, then each branch's top 10
+ * deposit customer movers over the WTD window — the same "Deposit CIF" sheet the daily branch
+ * movers workbook uses (Corporate and staff excluded).
  */
 class WeeklyBranchMoversWorkbookExport implements Export, WithMultipleSheets
 {
@@ -41,28 +41,26 @@ class WeeklyBranchMoversWorkbookExport implements Export, WithMultipleSheets
         $weekStart = (string) ($this->periods['week']['start'] ?? $this->weekEnd);
         $weekEnd   = (string) ($this->periods['week']['end']   ?? $this->weekEnd);
 
-        // The CIF sheet classes are declared inside BranchMoversWorkbookExport.php, so they
-        // only autoload once that file is loaded.
+        // The CIF sheet class is declared inside BranchMoversWorkbookExport.php, so it
+        // only autoloads once that file is loaded.
         class_exists(BranchMoversWorkbookExport::class);
 
         return [
             new WeeklyBranchMoversSummarySheet($this->weekEnd, $this->periods, $this->data, $this->limit),
             new CifMoversByBranchSheet($weekStart, $weekEnd, self::CIF_LIMIT),
-            new LoanAccountMoversByBranchSheet($weekStart, $weekEnd, self::CIF_LIMIT),
         ];
     }
 }
 
 /**
- * Branch summary (Deposits WTD/MTD Δ + Closing Balance, Loans WTD/MTD Δ + Closing Balance,
- * NTB WTD/MTD/YTD) followed by the week's top gainers/losers.
+ * Branch summary (Deposits WTD/MTD/YTD Δ + Closing Balance) followed by the week's top
+ * gainers/losers.
  *
- * Columns: A Branch Code, B Branch Name, C-E Deposits (WTD Δ/MTD Δ/Closing Bal), F-H
- * Loans (WTD Δ/MTD Δ/Closing Bal), I-K NTB (WTD/MTD/YTD).
+ * Columns: A Branch Code, B Branch Name, C Deposits WTD Δ, D MTD Δ, E YTD Δ, F Closing Bal.
  */
 class WeeklyBranchMoversSummarySheet implements FromArray, WithTitle, ShouldAutoSize, WithColumnFormatting, WithEvents
 {
-    private const NUM_COLS = 11;
+    private const NUM_COLS = 6;
 
     private array $boldRows       = [];
     private int   $headerRow      = 0;
@@ -91,7 +89,7 @@ class WeeklyBranchMoversSummarySheet implements FromArray, WithTitle, ShouldAuto
         $mtdData  = $this->data['mtd']  ?? ['summary' => collect()];
         $ytdData  = $this->data['ytd']  ?? ['summary' => collect()];
 
-        // Build branch map: code → [name, dep_week/mtd/balance, loan_week/mtd/balance, ntb_week/mtd/ytd]
+        // Build branch map: code → [name, dep_week/mtd/ytd, dep_balance]
         $map = [];
 
         foreach (['week' => $weekData, 'mtd' => $mtdData, 'ytd' => $ytdData] as $key => $periodData) {
@@ -101,20 +99,13 @@ class WeeklyBranchMoversSummarySheet implements FromArray, WithTitle, ShouldAuto
                 if (!isset($map[$code])) {
                     $map[$code] = [
                         'code' => $code, 'name' => (string) ($r->group_name ?? $code),
-                        'dep_week' => 0, 'dep_mtd' => 0, 'dep_balance' => 0,
-                        'loan_week' => 0, 'loan_mtd' => 0, 'loan_balance' => 0,
-                        'ntb_week' => 0, 'ntb_mtd' => 0, 'ntb_ytd' => 0,
+                        'dep_week' => 0, 'dep_mtd' => 0, 'dep_ytd' => 0, 'dep_balance' => 0,
                     ];
                 }
                 $map[$code]['name']       = (string) ($r->group_name ?? $map[$code]['name']);
-                $map[$code]["ntb_{$key}"] = (int) ($r->ntb_count ?? 0);
-                if ($key !== 'ytd') {
-                    $map[$code]["dep_{$key}"]  = (float) ($r->movement      ?? 0);
-                    $map[$code]["loan_{$key}"] = (float) ($r->loan_movement ?? 0);
-                }
+                $map[$code]["dep_{$key}"] = (float) ($r->movement ?? 0);
                 if ($key === 'week') {
-                    $map[$code]['dep_balance']  = (float) ($r->end_balance ?? 0);
-                    $map[$code]['loan_balance'] = (float) ($r->loan_close  ?? 0);
+                    $map[$code]['dep_balance'] = (float) ($r->end_balance ?? 0);
                 }
             }
         }
@@ -132,7 +123,7 @@ class WeeklyBranchMoversSummarySheet implements FromArray, WithTitle, ShouldAuto
         $rowNum = 0;
 
         // Title
-        $rows[] = array_pad(['ECOBANK KENYA — WEEKLY BRANCH MOVERS'], self::NUM_COLS, '');
+        $rows[] = array_pad(['ECOBANK KENYA — WEEKLY BRANCH MOVERS (DEPOSITS)'], self::NUM_COLS, '');
         $this->boldRows[] = ++$rowNum;
 
         $rows[] = array_pad(["Week ending: {$this->weekEnd}"], self::NUM_COLS, '');
@@ -152,9 +143,7 @@ class WeeklyBranchMoversSummarySheet implements FromArray, WithTitle, ShouldAuto
         $this->headerRow = ++$rowNum;
         $rows[] = [
             'Branch Code', 'Branch Name',
-            'Deposits WTD Δ', 'Deposits MTD Δ', 'Deposits Closing Bal',
-            'Loans WTD Δ', 'Loans MTD Δ', 'Loans Closing Bal',
-            'NTB WTD', 'NTB MTD', 'NTB YTD',
+            'Deposits WTD Δ', 'Deposits MTD Δ', 'Deposits YTD Δ', 'Deposits Closing Bal',
         ];
         $this->boldRows[] = $this->headerRow;
 
@@ -165,13 +154,8 @@ class WeeklyBranchMoversSummarySheet implements FromArray, WithTitle, ShouldAuto
                 (string) $b['name'],
                 (float)  $b['dep_week'],
                 (float)  $b['dep_mtd'],
+                (float)  $b['dep_ytd'],
                 (float)  $b['dep_balance'],
-                (float)  $b['loan_week'],
-                (float)  $b['loan_mtd'],
-                (float)  $b['loan_balance'],
-                (int)    $b['ntb_week'],
-                (int)    $b['ntb_mtd'],
-                (int)    $b['ntb_ytd'],
             ];
         }
         $this->lastBranchRow = $rowNum;
@@ -248,11 +232,6 @@ class WeeklyBranchMoversSummarySheet implements FromArray, WithTitle, ShouldAuto
             'D' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'E' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'F' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
-            'G' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
-            'H' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
-            'I' => NumberFormat::FORMAT_NUMBER,
-            'J' => NumberFormat::FORMAT_NUMBER,
-            'K' => NumberFormat::FORMAT_NUMBER,
         ];
     }
 
@@ -266,55 +245,47 @@ class WeeklyBranchMoversSummarySheet implements FromArray, WithTitle, ShouldAuto
                 $lastRow = $sheet->getHighestRow();
 
                 // Title row
-                $sheet->mergeCells("A1:K1");
-                $sheet->getStyle('A1:K1')->applyFromArray([
+                $sheet->mergeCells('A1:F1');
+                $sheet->getStyle('A1:F1')->applyFromArray([
                     'font'      => ['bold' => true, 'size' => 14, 'color' => ['rgb' => 'FFFFFF']],
                     'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '002E4A']],
                     'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT],
                 ]);
                 $sheet->getRowDimension(1)->setRowHeight(26);
-                $sheet->mergeCells('A2:K2');
+                $sheet->mergeCells('A2:F2');
 
                 foreach ($this->boldRows as $r) {
-                    $sheet->getStyle("A{$r}:K{$r}")->getFont()->setBold(true);
+                    $sheet->getStyle("A{$r}:F{$r}")->getFont()->setBold(true);
                 }
 
                 // Column header row
-                $sheet->getStyle("A{$hdr}:K{$hdr}")->applyFromArray([
+                $sheet->getStyle("A{$hdr}:F{$hdr}")->applyFromArray([
                     'font'      => ['bold' => true, 'size' => 11, 'color' => ['rgb' => 'FFFFFF']],
                     'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1F3A5F']],
                     'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
                 ]);
                 $sheet->getStyle("A{$hdr}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
 
-                // Deposits/Loans/NTB header tints
-                $sheet->getStyle("C{$hdr}:E{$hdr}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1D4ED8']]]);
-                $sheet->getStyle("F{$hdr}:H{$hdr}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '166534']]]);
-                $sheet->getStyle("I{$hdr}:K{$hdr}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'B45309']]]);
+                // Deposits header tint
+                $sheet->getStyle("C{$hdr}:F{$hdr}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1D4ED8']]]);
 
                 // Branch data rows
                 if ($this->lastBranchRow > $hdr) {
                     for ($row = $hdr + 1; $row <= $this->lastBranchRow; $row++) {
-                        // Colour only the movement columns by sign — not the closing-balance columns (E, H)
-                        foreach (['C', 'D', 'F', 'G'] as $col) {
+                        // Colour only the movement columns by sign — not the closing-balance column (F)
+                        foreach (['C', 'D', 'E'] as $col) {
                             $v = $sheet->getCell("{$col}{$row}")->getValue();
                             if (!is_numeric($v)) continue;
                             $vf = (float) $v;
                             if ($vf > 0)     $sheet->getStyle("{$col}{$row}")->getFont()->getColor()->setRGB('0B6E4F');
                             elseif ($vf < 0) $sheet->getStyle("{$col}{$row}")->getFont()->getColor()->setRGB('B00020');
                         }
-                        $sheet->getStyle("C{$row}:E{$row}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'EFF6FF']]]);
-                        $sheet->getStyle("F{$row}:H{$row}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F0FDF4']]]);
-                        $sheet->getStyle("I{$row}:K{$row}")->applyFromArray([
-                            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'FFFBEB']],
-                            'font' => ['color' => ['rgb' => '92400E']],
-                        ]);
-                        $sheet->getStyle("E{$row}")->getFont()->getColor()->setRGB('374151');
-                        $sheet->getStyle("H{$row}")->getFont()->getColor()->setRGB('374151');
+                        $sheet->getStyle("C{$row}:F{$row}")->applyFromArray(['fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'EFF6FF']]]);
+                        $sheet->getStyle("F{$row}")->getFont()->getColor()->setRGB('374151');
                     }
 
                     // ALL row (last branch row) — bold + light grey
-                    $sheet->getStyle("A{$this->lastBranchRow}:K{$this->lastBranchRow}")->applyFromArray([
+                    $sheet->getStyle("A{$this->lastBranchRow}:F{$this->lastBranchRow}")->applyFromArray([
                         'font' => ['bold' => true, 'size' => 11],
                         'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'E2E8F0']],
                     ]);
@@ -331,7 +302,7 @@ class WeeklyBranchMoversSummarySheet implements FromArray, WithTitle, ShouldAuto
                 }
 
                 if ($lastRow > $hdr) {
-                    $sheet->getStyle("A{$hdr}:K{$lastRow}")->getBorders()->getAllBorders()
+                    $sheet->getStyle("A{$hdr}:F{$lastRow}")->getBorders()->getAllBorders()
                         ->setBorderStyle(Border::BORDER_HAIR)->getColor()->setRGB('E2E8F0');
                 }
 

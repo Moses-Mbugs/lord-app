@@ -19,10 +19,7 @@ class BranchMoversReportMail extends Mailable
         public Collection $summaryRows,
         public Collection $topGainers,
         public Collection $topLosers,
-        public int $limit,
-        public Collection $topLoanGainers   = new Collection(),
-        public Collection $topLoanLosers    = new Collection(),
-        public Collection $loanAccountMovers = new Collection()
+        public int $limit
     ) {}
 
     public function build()
@@ -30,15 +27,12 @@ class BranchMoversReportMail extends Mailable
         return $this->subject("Branch Movers Report {$this->start} → {$this->end}")
             ->view('emails.finance.branch_movers_report')
             ->with([
-                'start'             => $this->start,
-                'end'               => $this->end,
-                'summaryRows'       => $this->summaryRows,
-                'topGainers'        => $this->topGainers,
-                'topLosers'         => $this->topLosers,
-                'limit'             => $this->limit,
-                'topLoanGainers'    => $this->topLoanGainers,
-                'topLoanLosers'     => $this->topLoanLosers,
-                'loanAccountMovers' => $this->loanAccountMovers,
+                'start'       => $this->start,
+                'end'         => $this->end,
+                'summaryRows' => $this->summaryRows,
+                'topGainers'  => $this->topGainers,
+                'topLosers'   => $this->topLosers,
+                'limit'       => $this->limit,
             ]);
     }
 }

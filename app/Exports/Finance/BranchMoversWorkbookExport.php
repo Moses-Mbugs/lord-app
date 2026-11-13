@@ -19,8 +19,6 @@ use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithTitle;
 use Maatwebsite\Excel\Events\AfterSheet;
-use PhpOffice\PhpSpreadsheet\Style\Border;
-use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
@@ -46,17 +44,14 @@ class BranchMoversWorkbookExport implements Export, WithMultipleSheets
 
             // Sheet 3: Deposit CIF (Top 20 CIF gainers/losers per branch) (from customer_balances)
             new CifMoversByBranchSheet($this->startDate, $this->endDate, 20),
-
-            // Sheet 4: Loans CIF (Top N loan account gainers/losers per branch)
-            new LoanAccountMoversByBranchSheet($this->startDate, $this->endDate, $limit),
         ];
     }
 }
 
 /**
- * SHEET 1: Branch Summary (group_movers: group_type=BRANCH, scope=SUMMARY)
+ * SHEET 1: Branch Summary (group_movers: group_type=BRANCH, scope=SUMMARY) â€” deposits only
  */
-class BranchSummarySheet implements FromArray, WithTitle, WithHeadings, ShouldAutoSize, WithStyles, WithColumnFormatting, WithEvents
+class BranchSummarySheet implements FromArray, WithTitle, WithHeadings, ShouldAutoSize, WithStyles, WithColumnFormatting
 {
     public function __construct(
         private readonly string $startDate,
@@ -71,7 +66,7 @@ class BranchSummarySheet implements FromArray, WithTitle, WithHeadings, ShouldAu
 
     public function headings(): array
     {
-        return ['Branch Code', 'Branch Name', 'Start Balance', 'End Balance', 'Dep Movement', 'Loan Opening', 'Loan Closing', 'Loan Movement'];
+        return ['Branch Code', 'Branch Name', 'Start Balance', 'End Balance', 'Dep Movement'];
     }
 
     public function array(): array
@@ -92,28 +87,16 @@ class BranchSummarySheet implements FromArray, WithTitle, WithHeadings, ShouldAu
             ]);
 
         if ($rows->isEmpty()) {
-            return [['No data', 'No qualifying movements for this period.', '', '', '', '', '', '']];
+            return [['No data', 'No qualifying movements for this period.', '', '', '']];
         }
 
-        $loanByBranch = $this->fetchLoanData();
-
-        return $rows->map(function ($r) use ($loanByBranch) {
-            $key   = strtoupper(trim((string) ($r->group_key ?? '')));
-            $loan  = $loanByBranch[$key] ?? ['open' => 0.0, 'close' => 0.0];
-            $lOpen  = (float) $loan['open'];
-            $lClose = (float) $loan['close'];
-
-            return [
-                (string) ($r->group_key ?? ''),
-                (string) ($r->group_name ?? ''),
-                (float) ($r->start_balance ?? 0),
-                (float) ($r->end_balance ?? 0),
-                (float) ($r->movement ?? 0),
-                $lOpen,
-                $lClose,
-                round($lClose - $lOpen, 2),
-            ];
-        })->toArray();
+        return $rows->map(fn ($r) => [
+            (string) ($r->group_key ?? ''),
+            (string) ($r->group_name ?? ''),
+            (float) ($r->start_balance ?? 0),
+            (float) ($r->end_balance ?? 0),
+            (float) ($r->movement ?? 0),
+        ])->toArray();
     }
 
     public function styles(Worksheet $sheet): array
@@ -127,108 +110,7 @@ class BranchSummarySheet implements FromArray, WithTitle, WithHeadings, ShouldAu
             'C' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'D' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
             'E' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
-            'F' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
-            'G' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
-            'H' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
         ];
-    }
-
-    public function registerEvents(): array
-    {
-        return [
-            AfterSheet::class => function (AfterSheet $event): void {
-                $sheet   = $event->sheet->getDelegate();
-                $lastRow = $sheet->getHighestRow();
-
-                // Green header for loan columns
-                $sheet->getStyle('F1:H1')->applyFromArray([
-                    'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'DCFCE7']],
-                    'font' => ['bold' => true, 'color' => ['rgb' => '166534']],
-                ]);
-
-                // Left border to separate deposit vs loan section
-                $sheet->getStyle("F1:F{$lastRow}")->applyFromArray([
-                    'borders' => ['left' => ['borderStyle' => Border::BORDER_MEDIUM, 'color' => ['rgb' => 'BBF7D0']]],
-                ]);
-
-                // Light green fill on loan data cells (rows 2+)
-                if ($lastRow > 1) {
-                    $sheet->getStyle("F2:H{$lastRow}")->applyFromArray([
-                        'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F0FDF4']],
-                        'font' => ['color' => ['rgb' => '166534']],
-                    ]);
-                }
-            },
-        ];
-    }
-
-    private function fetchLoanData(): array
-    {
-        $loanStartDate = DB::table('loan_listings')
-            ->whereNotNull('as_at_date')
-            ->whereDate('as_at_date', '<=', $this->startDate)
-            ->max('as_at_date');
-
-        $loanEndDate = DB::table('loan_listings')
-            ->whereNotNull('as_at_date')
-            ->whereDate('as_at_date', '<=', $this->endDate)
-            ->max('as_at_date');
-
-        // Fall back to the last two distinct loan snapshots when the deposit period
-        // has no matching loan data (or both bounds resolve to the same snapshot),
-        // so branch loan movement doesn't silently collapse to zero.
-        if (!$loanStartDate || !$loanEndDate || $loanStartDate === $loanEndDate) {
-            $latest = DB::table('loan_listings')
-                ->whereNotNull('as_at_date')
-                ->select(DB::raw('DATE(as_at_date) AS snap_date'))
-                ->distinct()
-                ->orderByDesc('snap_date')
-                ->limit(2)
-                ->pluck('snap_date');
-
-            if ($latest->count() < 2) return [];
-
-            $loanEndDate   = (string) $latest->first();
-            $loanStartDate = (string) $latest->last();
-        }
-
-        $dates = array_values(array_unique(array_filter([$loanStartDate, $loanEndDate])));
-
-        $rows = DB::table('loan_listings as ll')
-            ->joinSub(
-                DB::table('loan_listings')
-                    ->whereIn(DB::raw('DATE(as_at_date)'), $dates)
-                    ->whereRaw(CifSegment::notCorporateLoanSql(''))
-                    ->whereRaw("(TRIM(COALESCE(loan_status, '')) = '' OR loan_status IN ('NORM', 'Normal', 'OAEM', 'SUBS', 'Watch'))")
-                    ->whereRaw(StaffExclusion::loanSql(''))
-                    ->select(DB::raw('DATE(as_at_date) AS snap_date'), 'related_account', DB::raw('MAX(id) AS max_id'))
-                    ->groupBy(DB::raw('DATE(as_at_date)'), 'related_account'),
-                'dedup', 'll.id', '=', 'dedup.max_id'
-            )
-            ->selectRaw(
-                "UPPER(TRIM(COALESCE(NULLIF(TRIM(ll.branch),''), LEFT(ll.related_account, 3)))) AS branch_code,
-                 SUM(CASE WHEN DATE(ll.as_at_date) = ? THEN ll.loan_book_outstanding ELSE 0 END) AS loan_open,
-                 SUM(CASE WHEN DATE(ll.as_at_date) = ? THEN ll.loan_book_outstanding ELSE 0 END) AS loan_close",
-                [$loanStartDate ?? $loanEndDate, $loanEndDate ?? $loanStartDate]
-            )
-            ->groupByRaw("UPPER(TRIM(COALESCE(NULLIF(TRIM(ll.branch),''), LEFT(ll.related_account, 3))))")
-            ->get();
-
-        $result = [];
-        $allOpen = 0.0;
-        $allClose = 0.0;
-
-        foreach ($rows as $r) {
-            $code = strtoupper(trim((string) $r->branch_code));
-            if ($code === '') continue;
-            $result[$code] = ['open' => (float) $r->loan_open, 'close' => (float) $r->loan_close];
-            $allOpen  += (float) $r->loan_open;
-            $allClose += (float) $r->loan_close;
-        }
-
-        $result['ALL'] = ['open' => $allOpen, 'close' => $allClose];
-
-        return $result;
     }
 }
 
@@ -518,250 +400,6 @@ $found = $byBranch->keys()->map(fn ($k) => (string) $k)->all();
                     $l ? (string) $l->cif : ($items->isEmpty() ? '(no movers)' : ''),
                     $l ? (string) ($l->customer_name ?? '') : '',
                     $l ? (float) ($l->movement ?? 0) : '',
-                ];
-            }
-
-            // Spacer between branches
-            $rows[] = [''];
-            $this->mergeRows[] = count($rows);
-        }
-
-        // Pad to 9 columns
-        return array_map(fn ($r) => array_pad(is_array($r) ? $r : [$r], 9, ''), $rows);
-    }
-
-    public function columnFormats(): array
-    {
-        return [
-            'D' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
-            'I' => NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1,
-        ];
-    }
-
-    public function registerEvents(): array
-    {
-        return [
-            AfterSheet::class => function (AfterSheet $event) {
-                $sheet = $event->sheet->getDelegate();
-
-                foreach ($this->mergeRows as $r) {
-                    $sheet->mergeCells("A{$r}:I{$r}");
-                }
-
-                foreach ($this->boldRows as $r) {
-                    $sheet->getStyle("A{$r}:I{$r}")->getFont()->setBold(true);
-                }
-
-                $sheet->freezePane('A4');
-            },
-        ];
-    }
-
-    private function normalizeBranchCode(string $branchCode): string
-    {
-        $b = strtoupper(trim($branchCode));
-        if (preg_match('/^P(\d{1,2})$/', $b, $m)) {
-            return 'P' . str_pad($m[1], 2, '0', STR_PAD_LEFT);
-        }
-        return $b;
-    }
-
-    private function branchDisplayName(string $branchCode): string
-    {
-        $b = $this->normalizeBranchCode($branchCode);
-
-        return match ($b) {
-            'P01' => 'TOWERS',
-            'P02' => 'MOMBASA MOI AVENUE',
-            'P03' => 'PLAZA',
-            'P04' => 'WESTMINSTER',
-            'P06' => 'THIKA',
-            'P07' => 'ELDORET',
-            'P08' => 'KISUMU',
-            'P09' => 'KISII',
-            'P11' => 'INDUSTRIAL AREA',
-            'P12' => 'KARATINA',
-            'P13' => 'WESTLANDS',
-            'P15' => 'NAKURU',
-            'P17' => 'NYERI',
-            'P22' => 'UPPER HILL',
-            'P23' => 'VALLEY ARCADE',
-            'P24' => 'KAREN',
-            'P25' => 'NYALI',
-            'P30' => 'FORTIS OFFICE PARK',
-            'P50' => 'HEAD OFFICE',
-            default => $b,
-        };
-    }
-}
-
-/**
- * SHEET 4: Loans CIF (Top N loan account gainers/losers per branch, side-by-side, all in one sheet)
- * source: loan_listings (deduped per related_account per date, Corporate excluded)
- * Layout mirrors the Deposit CIF sheet (Rank / Account / Name / Movement, same styling).
- */
-class LoanAccountMoversByBranchSheet implements FromArray, WithTitle, ShouldAutoSize, WithColumnFormatting, WithEvents
-{
-    private array $mergeRows = [];
-    private array $boldRows  = [];
-
-    public function __construct(
-        private readonly string $startDate,
-        private readonly string $endDate,
-        private readonly int $limit = 10
-    ) {}
-
-    public function title(): string
-    {
-        return 'Loans CIF';
-    }
-
-    public function array(): array
-    {
-        $limit = max(1, (int) $this->limit);
-
-        $loanStartDate = DB::table('loan_listings')
-            ->whereNotNull('as_at_date')->whereDate('as_at_date', '<=', $this->startDate)->max('as_at_date');
-        $loanEndDate = DB::table('loan_listings')
-            ->whereNotNull('as_at_date')->whereDate('as_at_date', '<=', $this->endDate)->max('as_at_date');
-
-        // Loan snapshots don't always land on the same dates as the deposit period
-        // (e.g. deposit period 2026-09-04 → 2026-09-07, but loans only refreshed up to
-        // 2026-09-03/2026-09-04) — fall back to the last two distinct snapshots available
-        // so we still show a movement instead of going blank. The period row below states
-        // which loan snapshot dates were actually used.
-        if (!$loanStartDate || !$loanEndDate || $loanStartDate === $loanEndDate) {
-            $latest = DB::table('loan_listings')
-                ->whereNotNull('as_at_date')
-                ->select(DB::raw('DATE(as_at_date) AS snap_date'))
-                ->distinct()
-                ->orderByDesc('snap_date')
-                ->limit(2)
-                ->pluck('snap_date');
-
-            if ($latest->count() < 2) {
-                return [array_pad(['No loan movement data — at least two loan snapshots are required.'], 9, '')];
-            }
-
-            $loanEndDate   = (string) $latest->first();
-            $loanStartDate = (string) $latest->last();
-        }
-
-        $raw = DB::table('loan_listings as ll')
-            ->joinSub(
-                DB::table('loan_listings')
-                    ->whereIn(DB::raw('DATE(as_at_date)'), [$loanStartDate, $loanEndDate])
-                    ->whereRaw(CifSegment::notCorporateLoanSql(''))
-                    ->whereRaw("(TRIM(COALESCE(loan_status, '')) = '' OR loan_status IN ('NORM', 'Normal', 'OAEM', 'SUBS', 'Watch'))")
-                    ->whereRaw(StaffExclusion::loanSql(''))
-                    ->select(DB::raw('DATE(as_at_date) AS snap_date'), 'related_account', DB::raw('MAX(id) AS max_id'))
-                    ->groupBy(DB::raw('DATE(as_at_date)'), 'related_account'),
-                'dedup', 'll.id', '=', 'dedup.max_id'
-            )
-            ->selectRaw(
-                "UPPER(TRIM(COALESCE(NULLIF(TRIM(ll.branch),''), LEFT(ll.related_account, 3)))) AS branch_code,
-                 MAX(COALESCE(NULLIF(TRIM(ll.branch_name),''), NULLIF(TRIM(ll.branch),''), LEFT(ll.related_account, 3))) AS branch_name,
-                 ll.related_account,
-                 MAX(ll.name) AS account_name,
-                 SUM(CASE WHEN DATE(ll.as_at_date) = ? THEN ll.loan_book_outstanding ELSE 0 END) AS loan_open,
-                 SUM(CASE WHEN DATE(ll.as_at_date) = ? THEN ll.loan_book_outstanding ELSE 0 END) AS loan_close",
-                [$loanStartDate, $loanEndDate]
-            )
-            ->groupByRaw("UPPER(TRIM(COALESCE(NULLIF(TRIM(ll.branch),''), LEFT(ll.related_account, 3)))), ll.related_account")
-            ->get()
-            ->map(function ($r) {
-                $r->loan_movement = round((float) $r->loan_close - (float) $r->loan_open, 2);
-                return $r;
-            })
-            ->filter(fn ($r) => $r->loan_movement != 0);
-
-        $byBranch = $raw
-            ->map(function ($r) {
-                $r->branch_code = $this->normalizeBranchCode((string) ($r->branch_code ?? ''));
-                return $r;
-            })
-            ->filter(fn ($r) => is_string($r->branch_code) && trim($r->branch_code) !== '')
-            ->groupBy(fn ($r) => (string) $r->branch_code);
-
-        $preferred = [
-            'P01','P02','P03','P04','P06','P07','P08','P09','P11','P12','P13','P15','P17',
-            'P22','P23','P24','P25','P30',
-        ];
-
-        $found = $byBranch->keys()->map(fn ($k) => (string) $k)->all();
-        $ordered = [];
-        foreach ($preferred as $b) {
-            if (in_array($b, $found, true)) $ordered[] = $b;
-        }
-        $others = array_values(array_diff($found, $preferred));
-        sort($others);
-        $branchOrder = array_merge($ordered, $others);
-
-        $rows = [];
-
-        // Title
-        $rows[] = ['Top Loan Movers by Branch (Gainers vs Losers)'];
-        $this->mergeRows[] = 1;
-        $this->boldRows[]  = 1;
-
-        // Period
-        $rows[] = ["Period: {$this->startDate} → {$this->endDate}  |  Loan snapshots: {$loanStartDate} → {$loanEndDate}  |  Corporate excluded"];
-        $this->mergeRows[] = 2;
-
-        // Spacer
-        $rows[] = [''];
-        $this->mergeRows[] = 3;
-
-        foreach ($branchOrder as $branchCode) {
-            $branchCode = (string) $branchCode;
-            $branchName = $this->branchDisplayName($branchCode);
-            $branchTitle = "Branch {$branchCode} - {$branchName}";
-
-            // Branch header
-            $branchHeaderRow = count($rows) + 1;
-            $rows[] = [$branchTitle];
-            $this->mergeRows[] = $branchHeaderRow;
-            $this->boldRows[]  = $branchHeaderRow;
-
-            // Table headers (side-by-side)
-            $headerRow = count($rows) + 1;
-            $rows[] = [
-                'Rank', 'Account No.', 'Name', 'Movement', '',
-                'Rank', 'Account No.', 'Name', 'Movement',
-            ];
-            $this->boldRows[] = $headerRow;
-
-            /** @var Collection $items */
-            $items = $byBranch->get($branchCode, collect());
-
-            $gainers = $items
-                ->filter(fn ($r) => (float) $r->loan_movement > 0)
-                ->sortByDesc(fn ($r) => (float) $r->loan_movement)
-                ->take($limit)
-                ->values();
-
-            $losers = $items
-                ->filter(fn ($r) => (float) $r->loan_movement < 0)
-                ->sortBy(fn ($r) => (float) $r->loan_movement)
-                ->take($limit)
-                ->values();
-
-            $maxRows = max($gainers->count(), $losers->count(), 1);
-
-            for ($i = 0; $i < $maxRows; $i++) {
-                $g = $gainers->get($i);
-                $l = $losers->get($i);
-
-                $rows[] = [
-                    $g ? ($i + 1) : '',
-                    $g ? (string) $g->related_account : ($items->isEmpty() ? '(no movers)' : ''),
-                    $g ? (string) ($g->account_name ?? '') : '',
-                    $g ? (float) ($g->loan_movement ?? 0) : '',
-                    '',
-                    $l ? ($i + 1) : '',
-                    $l ? (string) $l->related_account : ($items->isEmpty() ? '(no movers)' : ''),
-                    $l ? (string) ($l->account_name ?? '') : '',
-                    $l ? (float) ($l->loan_movement ?? 0) : '',
                 ];
             }
 

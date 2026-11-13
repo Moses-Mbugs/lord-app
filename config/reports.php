@@ -750,7 +750,7 @@ return [
         EOF'
         sudo chmod 600 /etc/cifs-eke.cred
 
-        
+
     */
 
 
@@ -1223,3 +1223,21 @@ return [
 //   AND TRIM(cai.ac_open_date) <> ''
 //   AND STR_TO_DATE(cai.ac_open_date, '%d-%b-%y') BETWEEN '2026-01-01' AND '2026-12-31'
 // ORDER BY cai.branch_code, account_open_date;
+
+
+
+
+
+
+// cd /opt/statement-processor/app/
+// sudo systemctl restart statement-processor
+// sudo systemctl restart statement-processor
+// sudo nano statement_parser_update.py
+//  mv statement_parser.py statement_parser_new
+// mv statement_parser_update.py statement_parser.py
+// 
+// 
+// 
+// 
+// 
+

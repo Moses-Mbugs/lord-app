@@ -25,7 +25,7 @@ class EmailWeeklyBranchMoversCommand extends Command
         {--auto-build : Build branch movers for each period if data is not already stored}
     ';
 
-    protected $description = 'Email Weekly Branch Movers report: Deposits (WTD/MTD/YTD), Loans (WTD/MTD), and NTB (WTD/MTD/YTD) movement per branch.';
+    protected $description = 'Email Weekly Branch Movers report: Deposits (WTD/MTD/YTD) movement per branch.';
 
     public function handle(GroupMoversService $service, BranchPeriodMetricsService $metrics): int
     {
@@ -73,7 +73,7 @@ class EmailWeeklyBranchMoversCommand extends Command
             return self::FAILURE;
         }
 
-        // Deposits: WTD/MTD/YTD. Loans: WTD/MTD only. NTB: WTD/MTD/YTD.
+        // Deposits only: WTD/MTD/YTD.
         $weekEndDate = Carbon::parse($weekEnd);
         $periods = [
             'week' => [
@@ -114,19 +114,6 @@ class EmailWeeklyBranchMoversCommand extends Command
                     $this->warn("  Or re-run this command with --auto-build to build on-the-fly.");
                 }
             }
-
-            // Enrich summary rows with loan data + NTB (new accounts opened in this period)
-            $loanByBranch = $metrics->loanTotals($period['start'], $period['end']);
-            $ntbByBranch  = $metrics->ntbCounts($period['start'], $period['end']);
-            $summary = $summary->map(function ($row) use ($loanByBranch, $ntbByBranch) {
-                $code = strtoupper(trim((string) ($row->group_key ?? '')));
-                $loan = $loanByBranch[$code] ?? ['open' => 0.0, 'close' => 0.0];
-                $row->loan_open     = $loan['open'];
-                $row->loan_close    = $loan['close'];
-                $row->loan_movement = round($loan['close'] - $loan['open'], 2);
-                $row->ntb_count     = $ntbByBranch[$code] ?? 0;
-                return $row;
-            });
 
             $data[$key] = [
                 'period'     => $period,
